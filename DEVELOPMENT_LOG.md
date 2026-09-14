@@ -5,6 +5,196 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Milestone 1.2: authentication over HTTP
+
+Delivered as a git patch rather than an archive — first use of the new handoff workflow.
+
+**Decisions worth defending**
+
+- **Reuse detection is the point of rotation** (ADR-013). Rotation alone only shortens
+  the window; it is what makes theft *detectable*, because a used token reappearing
+  cannot happen legitimately. Revoking the whole family is what makes detection useful —
+  otherwise the attacker keeps the token they just minted.
+- **Conditional UPDATE for the rotation claim.** `WHERE used_at IS NULL` rather than
+  `if (!token.isUsed())`. Third instance of the same principle in this codebase, after
+  `uq_users_username` and `PRIMARY KEY (game_id, ply)`: enforce the invariant where
+  writes are serialised.
+- **SHA-256 for tokens, bcrypt for passwords.** bcrypt's cost defends low-entropy
+  secrets; a 256-bit CSPRNG token has no dictionary. bcrypt here would be ~250ms of CPU
+  per refresh — a DoS lever, not a security gain.
+- **Custom JWT filter over the OAuth2 resource-server DSL.** Phase 2 needs
+  `JwtService.verify` callable with no servlet filter chain (WebSocket first-message
+  auth), so the service exists regardless; a 30-line filter over it beats two auth paths.
+  Crypto is still Nimbus — never hand-rolled.
+- **Access token in memory, refresh token in an httpOnly SameSite=Strict cookie.**
+  Different threats, different storage: XSS cannot read the refresh token, CSRF cannot
+  use it, and the token XSS *could* steal expires in 15 minutes.
+- **`/users/me`, not `/users/{id}`.** Identity comes from the token, so IDOR is
+  unrepresentable rather than merely guarded against.
+
+**Accepted cost, recorded so it is not later mistaken for a bug:** a genuine double-click
+on refresh logs the user out, because the second request is indistinguishable from reuse.
+A grace window would fix it and would also be a hole an attacker can aim at.
+
+**Unverified:** none of this has been compiled. The one new dependency is
+`spring-security-oauth2-jose`; if it fails to resolve, that is the first thing to check.
+
+---
+
+## 2026-09-14 — Milestone 1.1 complete; starter coordinates resolved properly
+
+**Milestone 1.1 is green.** All identity integration tests pass, and Flyway is confirmed
+applying V1 against both the Testcontainers database and the Compose database.
+
+Incidentally, the empty Compose database was a third independent confirmation that Flyway
+had genuinely never run — the integration suite uses its own throwaway container, so a
+green suite says nothing about the state of the local dev database. Worth remembering as
+a general point: **test isolation means test success is not environment verification.**
+
+**Starter coordinates settled from the source, not by diffing.** Rather than delegating
+the `start.spring.io` check, the Boot 4.0 migration guide was read directly. Findings:
+
+| Was | Now | Why it mattered |
+|---|---|---|
+| `org.flywaydb:flyway-core` | `spring-boot-starter-flyway` | raw coordinate carries no auto-config — silent no-op |
+| `spring-boot-starter-web` | `spring-boot-starter-webmvc` | old name is a deprecated alias, so it compiled and gave no signal |
+| — | `spring-boot-starter-webmvc-test` | `@WebMvcTest` / `@AutoConfigureMockMvc` moved to `o.s.boot.webmvc.test.autoconfigure` |
+| `org.springframework.security:spring-security-test` | `spring-boot-starter-security-test` | `@WithMockUser` / `@WithUserDetails` need it to function |
+
+The last two would have broken Milestone 1.2 on its first test, and — like Flyway —
+would have failed in a way that blamed the test code rather than the dependency.
+
+**The rule that generalises.** Boot 4 modularisation creates two distinct traps, and
+neither produces a compile error:
+
+1. A raw third-party coordinate resolves and compiles but ships no auto-configuration.
+2. A renamed starter still resolves as a deprecated alias.
+
+In both cases the build is green and the behaviour is absent. **A coordinate that
+resolves is not a coordinate that works** — the only reliable check is the vendor's own
+starter list.
+
+**Still open:** whether the `Instant`/`TIMESTAMPTZ` fix needed the `@JdbcTypeCode`
+annotation or whether the global `preferred_instant_jdbc_type` property was sufficient.
+Untested either way; two-minute experiment described in PROJECT_STATE next-tasks.
+
+---
+
+## 2026-09-14 — Root cause: Flyway was never auto-configured
+
+**The actual error**, once `testLogging.exceptionFormat = FULL` made it visible:
+
+```
+org.hibernate.tool.schema.spi.SchemaManagementException: Schema validation: missing table [users]
+```
+
+Not a column type mismatch. The table did not exist.
+
+**Cause.** Spring Boot 4 modularised auto-configuration into per-technology jars.
+`FlywayAutoConfiguration` now ships in `spring-boot-flyway`, published via
+`spring-boot-starter-flyway`. The build declared raw `org.flywaydb:flyway-core`, which
+puts Flyway on the classpath with no auto-configuration behind it. The application starts
+cleanly, accepts every `spring.flyway.*` property, and migrates nothing.
+
+**Flyway had therefore never run — including during Phase 0.** `/actuator/health` was
+green because the `db` indicator validates a connection, and an empty database has a
+perfectly good connection. Phase 0 step 9 (`\dt` should list users/games/moves) was the
+check that would have caught it.
+
+**Fix:** `org.springframework.boot:spring-boot-starter-flyway` + `flyway-database-postgresql`.
+
+**Three lessons, in descending order of value**
+
+1. **An absent component is more dangerous than a broken one.** A broken migration tool
+   fails loudly at startup. A missing one hands you an empty database and a green health
+   check, and the failure surfaces phases later, somewhere else, blaming something else.
+   Anything whose absence is indistinguishable from success needs an explicit assertion —
+   hence the new `SchemaMigrationIntegrationTest`.
+2. **A risk written down but not gated on is not managed.** `PROJECT_STATE.md` §4 has said
+   since Phase 0: *"Starter coordinates may have changed. Boot 4 modularised the codebase.
+   Generate a project at start.spring.io and diff the build file. That tool is ground
+   truth; this repo is not."* That verification was Phase 0 step 5. It was not confirmed
+   done, and I proceeded to Milestone 1.1 anyway. The risk register was accurate and
+   useless. **It is now a hard gate in ROADMAP Phase 0's definition of done.**
+3. **The condition evaluation report is the tool for "why didn't my auto-configuration
+   apply".** `--debug` prints which conditions matched. Absent auto-configuration does not
+   appear even in negative matches, which is itself the diagnosis.
+
+**Still unverified:** the `Instant`/`TIMESTAMPTZ` fix from the previous round. Validation
+never reached column types because the table was missing, so both the
+`preferred_instant_jdbc_type` property and the `@JdbcTypeCode` annotation are untested.
+Once the suite is green, remove the annotation and re-run — if it still passes, the global
+property works and the annotation was redundant.
+
+---
+
+## 2026-09-14 — Schema validation failure on the first entity
+
+**Symptom:** all 12 identity integration tests failed. Eleven of them were noise —
+Spring caches a failed application context and replays the failure, so only the first
+stack trace was real.
+
+**Cause:** `ddl-auto: validate` rejected `User`. Hibernate maps `java.time.Instant` to
+plain `TIMESTAMP` by default; `users.created_at` is `TIMESTAMPTZ`. Mismatch, refuse to
+start.
+
+**Fix:** `hibernate.type.preferred_instant_jdbc_type: TIMESTAMP_UTC` — global, so it
+covers `games.last_move_at`, `finished_at` and every future timestamp. The alternatives
+were worse: changing columns to `TIMESTAMP` discards the offset and makes timestamps
+depend on server zone, which is unacceptable in a system whose clock decides game
+outcomes; `@JdbcTypeCode(SqlTypes.TIMESTAMP_UTC)` per field works but has to be
+remembered every time, and forgetting once is a startup failure.
+
+**The lesson worth keeping.** This setting was in `application.yml` throughout Phase 0
+and Phase 0 passed — because there were no entities, so `validate` had nothing to
+validate. **A check that passes over an empty subject set has told you nothing.** The
+same trap applies to the ArchUnit rules (`allowEmptyShould(true)` until Phase 1 gave them
+classes to inspect) and to `-Werror`, which only started failing once real code existed.
+Phase 0's green build was weaker evidence than it looked.
+
+**Also worth keeping:** when many tests fail at once with
+`DefaultCacheAwareContextLoaderDelegate`, that is one bug wearing N costumes. Read the
+first trace; the rest are cache replays.
+
+**Follow-up — the build was configured to hide the answer.** The first fix attempt did
+not resolve it, and the diagnostic `grep` returned nothing, because Gradle's default
+`testLogging.exceptionFormat` is `SHORT`: it prints the exception class and line number
+and discards the message. Hibernate's validation errors name the exact column and both
+types, so the message was the entire diagnosis and it was being thrown away by my own
+build config. Set `exceptionFormat = FULL` and `showCauses = true`.
+
+Generalisable and worth more than the bug itself: **when a second diagnostic attempt
+produces no new information, stop hypothesising and fix the observability.** Two rounds
+of guessing cost more than the one-line logging change would have.
+
+---
+
+## 2026-09-14 — Handoff workflow changed; wrapper added to the repository
+
+**Problem being solved.** Producing an archive after every milestone meant downloading,
+extracting and replacing the tree constantly, and it twice caused work to be done against
+a stale copy — once because three different archives shared the filename
+`chess-platform-phase0.tar.gz`, and once because two different files named
+`build.gradle.kts` collided in a flat output directory. Both times the file *contents*
+were correct and the *delivery* made them useless.
+
+**New workflow** (recorded in `PROJECT_STATE.md` §0): changes are delivered in chat and
+applied in place. An archive is produced only at a major phase boundary, on explicit
+request, or when technically necessary. Milestone size is unchanged — fewer handoffs
+means larger coherent units, not shallower ones.
+
+**Wrapper.** `gradlew` and `gradle/wrapper/gradle-wrapper.properties` (pinned 9.7.1) are
+now committed. `gradle-wrapper.jar` still is not, and deliberately: it is a binary that
+can only come from a real Gradle distribution, and handing over an executable of
+unverified provenance would contradict the wrapper-checksum validation added to CI for
+exactly that reason. `./gradlew wrapper` generates it once, locally, after which it lives
+in git history and never travels again. Same for `gradlew.bat`.
+
+**Standing recommendation: initialise git.** Every delivery failure in this project so far
+is one `git status` away from being a non-event.
+
+---
+
 ## 2026-09-06 — Phase 0 verified complete; Phase 1 Milestone 1.1 (identity domain)
 
 **Phase 0 closed.** Compile, compose stack, health check, Flyway V1, integration tests

@@ -52,6 +52,7 @@ spring-actuator      = { module = "org.springframework.boot:spring-boot-starter-
 spring-test          = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-webmvc-test   = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 spring-security-test = { module = "org.springframework.boot:spring-boot-starter-security-test" }
+spring-security-jose = { module = "org.springframework.security:spring-security-oauth2-jose" }
 
 # --- Persistence ---
 # MUST be the starter, not org.flywaydb:flyway-core.

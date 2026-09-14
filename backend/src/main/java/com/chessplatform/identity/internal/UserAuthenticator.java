@@ -69,4 +69,18 @@ public class UserAuthenticator {
         }
         return candidate.get();
     }
+
+    /**
+     * Loads a user already known to be authenticated, for the refresh flow.
+     *
+     * <p>Unauthorized rather than NotFound on purpose. Reaching here means a valid
+     * refresh token references a user who no longer exists — a deleted account. The
+     * caller holds a credential; the correct response is that the credential is no longer
+     * good, not a 404 that confirms the account was removed.
+     */
+    @Transactional(readOnly = true)
+    public User requireById(java.util.UUID userId) {
+        return users.findById(userId).orElseThrow(() -> new DomainException.Unauthorized(
+                ErrorCode.INVALID_CREDENTIALS, "Session expired. Please sign in again."));
+    }
 }

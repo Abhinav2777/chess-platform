@@ -86,6 +86,20 @@ management:
     key-values:
       application: chess-platform
 
+chess:
+  auth:
+    # Development default ONLY. Overridden by CHESS_AUTH_JWT_SECRET in every other
+    # environment, sourced from AWS Secrets Manager (ADR-010). Committing a real signing
+    # key would let anyone who reads this repository mint valid tokens for production.
+    jwt-secret: ${CHESS_AUTH_JWT_SECRET:dev-only-insecure-secret-change-me-32-bytes-min}
+
+    # 15 minutes. Access tokens cannot be revoked (ADR-009), so this duration IS the
+    # exposure window for a stolen one.
+    access-token-ttl: 15m
+
+    # 14 days. Safe to make long because the token is single-use and rotates: a stolen
+    # one stops working the moment either party refreshes, and reuse revokes the family.
+    refresh-token-ttl: 14d
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
   error:
