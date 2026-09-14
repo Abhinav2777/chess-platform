@@ -75,19 +75,33 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 1 — Core Chess MVP |
-| **Phase status** | Milestone 1.2 code complete; final fix (reuse-detection rollback) awaiting verification |
+| **Phase status** | Milestone 1.2 COMPLETE (green). Milestone 1.3a (chess rules port) written, unverified |
 | **Hours used (estimated)** | Phase 0: ~5 (complete). Phase 1: ~3 of 16–20 |
 | **Cumulative hours (estimated)** | ~8 of 135–175 |
 | **Schedule status** | On track |
 | **Scope status** | On track — three spec contradictions found and resolved (`ROADMAP.md` § Deviations) |
-| **Next milestone** | Milestone 1.3 — chess rules port (chesslib adapter + perft), game lifecycle, move submission |
+| **Next milestone** | 1.3b — game lifecycle, move submission, optimistic locking, move-idempotency API |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
 
-### Phase 1 (in progress) — Milestone 1.2: authentication over HTTP
+### Phase 1 (in progress) — Milestone 1.3a: chess rules port
+
+- `chess` module: `ChessRules` port, `Position`, `MoveIntent`, `MoveResult`,
+  `GameOutcome`, `Side`, `Promotion`, `IllegalMoveException`.
+- `chess.internal.ChesslibRules` — the only class that touches chesslib. Constructs a
+  `Board` per call and discards it, because chesslib's `Board` is mutable and not
+  thread-safe (ADR-002).
+- `DomainException.Rejected` → HTTP 422, for requests understood but not permitted.
+- Tests: `PerftTest` (17 published node counts across 5 standard positions — verifies the
+  library rather than trusting it) and `ChessRulesTest` (legality, pins, castling, en
+  passant, under-promotion, checkmate, stalemate, insufficient material, fifty-move, and a
+  16-thread concurrency test that fails if anyone caches a `Board`).
+- Pure unit tests — no Spring, no Docker. Run via `:backend:test` in seconds.
+
+### Phase 1 — Milestone 1.2: authentication over HTTP (COMPLETE, green)
 
 - `V2__refresh_tokens.sql` — hashed tokens, `family_id` lineage, partial expiry index.
 - `JwtService` — HS256 via Spring Security's `JwtEncoder`/`JwtDecoder` over Nimbus,
@@ -219,6 +233,7 @@ Recorded now so they are not discovered later and mistaken for oversights.
 | JitPack is a build-time availability and mutability dependency | Accepted, scoped to one group (ADR-012). Dependency locking not yet applied. | Phase 6, with Renovate/Dependabot |
 | Spring Boot 4.1 is a recent major; third-party lag is possible | Accepted. AWS SDK used directly to remove the highest-risk coupling. Falling back to 3.5 is **not** an option — it is EOL. | If a dependency blocks progress, replace the dependency, not the framework |
 | No lag/anti-cheat detection | Out of scope | Never |
+| **Threefold repetition is not detected** | Positions are reconstructed from FEN, which carries no history. `GameOutcome.DRAW_REPETITION` exists but never fires. | Phase 3. Cheap fix that keeps statelessness: every move's `fen_after` is already persisted, so repetition is a count query over `moves` keyed on `Position.repetitionKey()`. |
 
 ---
 

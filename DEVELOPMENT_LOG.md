@@ -5,6 +5,50 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Milestone 1.3a: chess rules port
+
+Milestone 1.2 verified green. 1.3 split in two: the rules port first, alone.
+
+**Why split.** chesslib was the largest unverified API surface in the project — the one
+dependency never seen to compile — but it is also pure Java with no Spring and no
+database. Isolating it means an API mismatch surfaces in a seconds-long unit run rather
+than buried inside a fifteen-file milestone with a database and a servlet stack in the
+way. Sequence the risky, cheaply-testable part first.
+
+The API was verified against the project's own README before writing anything:
+`loadFromFen`, `legalMoves`, `doMove`, `undoMove`, `isMated`, `isStaleMate`, `isDraw`,
+`isInsufficientMaterial`, `getSideToMove`, `getFen`, `new Move(uci, side)`.
+
+**Decisions**
+
+- **Perft is the verification, not trust.** 17 published node counts across the five
+  standard positions. A single missing or extra move at any depth changes the total, so
+  this catches a wrong castling right or en passant rule — bugs that otherwise produce
+  games that look normal and are invalid. It is also what would catch a bad library
+  upgrade.
+- **A `Board` per call, never cached.** The adapter constructs, uses, discards. This is
+  the constraint ADR-002's wrapper exists to enforce in one place, and there is now a
+  16-thread test that fails if someone later "optimises" it into a field.
+- **SAN is computed before the move is applied**, since notation depends on what else
+  could have reached the square and on whether the move gives check.
+- **Explicit promotion piece, no queen default.** Underpromotion to a knight is a real
+  tactic; defaulting would be silently wrong occasionally, which is worse than loudly
+  wrong.
+- **`DomainException.Rejected` → 422, not 400.** 400 means "I could not parse that"; an
+  illegal move is syntactically impeccable and semantically refused. The client's correct
+  response is to resync its board, not to change its serialisation.
+- **Draw reasons distinguished**, though chesslib collapses them into one `isDraw()`
+  boolean. A game history that records only "draw" is a worse artifact.
+
+**Known gap, recorded rather than half-implemented: threefold repetition.** A position
+loaded from FEN has no history, so repetition cannot be detected. This is a direct
+consequence of the stateless design, not an oversight. The fix is cheap and keeps
+statelessness — every move's `fen_after` is already persisted, so repetition is a count
+query over `moves` keyed on the position fields of the FEN. Deferred to Phase 3 and
+listed in the technical-debt register.
+
+---
+
 ## 2026-09-14 — Reuse detection was rolling back its own revocation
 
 First genuine logic bug of the project, and a good one.

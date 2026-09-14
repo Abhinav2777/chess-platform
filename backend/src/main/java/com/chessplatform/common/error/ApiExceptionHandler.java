@@ -101,6 +101,7 @@ public class ApiExceptionHandler {
             case DomainException.Conflict ignored -> HttpStatus.CONFLICT;
             case DomainException.NotFound ignored -> HttpStatus.NOT_FOUND;
             case DomainException.Unauthorized ignored -> HttpStatus.UNAUTHORIZED;
+            case DomainException.Rejected ignored -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

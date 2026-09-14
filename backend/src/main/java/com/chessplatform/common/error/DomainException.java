@@ -47,6 +47,22 @@ public abstract class DomainException extends RuntimeException {
     }
 
     /**
+     * The request was understood but cannot be carried out in the current state.
+     * Maps to HTTP 422.
+     *
+     * <p>422 rather than 400 is a real distinction, not pedantry. 400 says "I could not
+     * parse that"; a client receiving it should fix how it builds the request. 422 says
+     * "I understood you perfectly and the answer is no" — an illegal chess move is
+     * syntactically impeccable and semantically wrong, and the client's correct response
+     * is to resync its board, not to change its serialisation.
+     */
+    public static class Rejected extends DomainException {
+        public Rejected(ErrorCode code, String message) {
+            super(code, message);
+        }
+    }
+
+    /**
      * Authentication failed. Maps to HTTP 401.
      *
      * <p>Callers must not distinguish "no such user" from "wrong password" in the
