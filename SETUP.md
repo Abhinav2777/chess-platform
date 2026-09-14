@@ -70,6 +70,12 @@ is DOWN, the app is running but its dependencies are not — do not proceed.
 These credentials are for local development only and are intentionally weak. Production
 credentials come from AWS Secrets Manager and never appear in this repository.
 
+## API collection
+
+`docs/api/chess-platform.postman_collection.json`. Import into Postman and **Run
+collection** against a running app — 38 requests with assertions. See
+`docs/api/README.md`.
+
 ## Tests
 
 ```bash

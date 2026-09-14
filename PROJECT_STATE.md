@@ -102,6 +102,10 @@ left half-migrated because a sub-milestone ended.
   `chess.move.idempotent_replays`, `chess.move.stale_submissions`.
 - `GameController`: create, get (state + move log + legal moves), submit move, resign,
   list my games. `IdentityFacade.findByUsername` added for challenges.
+- `docs/api/chess-platform.postman_collection.json` — 38 requests, 92 assertions,
+  covering every Phase 1 endpoint plus the security behaviours (enumeration timing,
+  refresh reuse detection, mass assignment, idempotent retry). Regenerate at each phase
+  boundary.
 - Tests: `GameplayIntegrationTest` — lifecycle, checkmate awarded to the right side,
   resignation, out-of-turn, illegal, non-player, stale ply, idempotent retry, **and the
   flagship 16-thread concurrency test asserting exactly one move commits at a ply**.
