@@ -1,0 +1,22 @@
+# Local development profile. Matches ops/docker/docker-compose.yml.
+# These credentials are intentionally weak and intentionally committed — they grant
+# access to a throwaway container. Production credentials come from AWS Secrets Manager
+# and never appear in this repository.
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chess
+    username: chess
+    password: chess
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+  jpa:
+    show-sql: false            # use the SQL logger below instead; show-sql bypasses logging config
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE   # shows bound parameters, not just '?'

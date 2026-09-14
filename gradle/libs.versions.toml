@@ -1,0 +1,85 @@
+# Gradle version catalog.
+#
+# Every version in this file carries the date it was verified against the vendor's own
+# documentation. Do not update a version without updating its date. See ADR-011.
+#
+# VERIFY BEFORE FIRST BUILD:
+#   - springBoot: check https://docs.spring.io/spring-boot/system-requirements.html
+#     Spring Boot 4.0.x OSS support ends Dec 2026 — 4.1.x is the correct line.
+#   - Starter coordinates: Boot 4 modularised the codebase into smaller jars. Generate a
+#     throwaway project at https://start.spring.io (Gradle/Kotlin, Java 25, Boot 4.1) and
+#     diff its build file against this one. That tool is ground truth; this file is not.
+
+[versions]
+# Gradle itself. Not resolvable as a dependency — this entry is the single source of
+# truth for the wrapper. The root build's `wrapper` task reads it, and
+# `verifyGradleVersion` fails the build if gradle-wrapper.properties has drifted from it.
+#
+# 9.7.1 is not arbitrary. It is the intersection of four constraints:
+#   - Java 25 as the Gradle daemon JVM requires >= 9.1.0 (Gradle compatibility matrix)
+#   - Spring Boot 4.1's plugin requires 8.14+ or 9.x  (non-binding: 8.14 cannot run on 25)
+#   - 9.7.0 has a Kotlin DSL regression in Option annotation argument order; Gradle
+#     explicitly recommends 9.7.1
+#   - 9.3.0 fixed two repository-handling vulnerabilities
+# Full reasoning: docs/adr/ADR-011-java-spring-gradle.md
+gradle               = "9.7.1"    # verified 2026-09-06 (current stable, released 2026-08-20)
+
+springBoot           = "4.1.1"    # verified 2026-09-06 — CONFIRM LATEST PATCH
+springDepMgmt        = "1.1.7"
+java                 = "25"
+
+# chesslib is NOT on Maven Central under this coordinate — it is distributed via
+# JitPack, per the project's own README. The groupId `com.github.<user>` is the JitPack
+# naming convention and is the tell. See the scoped repository in backend/build.gradle.kts.
+# Licence is Apache 2.0 (an earlier note in this repo said MIT — that was also wrong).
+chesslib             = "1.3.7"    # verified 2026-09-06 against the project README
+logstashEncoder      = "8.0"      # CONFIRM Boot 4 / Logback compatibility
+awsSdk               = "2.31.0"   # BOM. Not needed until Phase 5.
+
+archunit             = "1.3.0"
+testcontainers       = "1.20.4"   # BOM
+assertj              = "3.26.3"
+
+[libraries]
+# --- Spring starters (managed by the Boot BOM; no versions here) ---
+spring-web           = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-websocket     = { module = "org.springframework.boot:spring-boot-starter-websocket" }
+spring-jpa           = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+spring-redis         = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
+spring-security      = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-validation    = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-actuator      = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-test          = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-webmvc-test   = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+spring-security-test = { module = "org.springframework.boot:spring-boot-starter-security-test" }
+
+# --- Persistence ---
+# MUST be the starter, not org.flywaydb:flyway-core.
+# Boot 4 modularised auto-configuration into per-technology jars. FlywayAutoConfiguration
+# now lives in `spring-boot-flyway`, which raw `flyway-core` does not pull in. The result
+# is the worst kind of failure: Flyway is on the classpath, `spring.flyway.*` properties
+# are accepted, the app starts cleanly — and no migration ever runs.
+flyway-starter       = { module = "org.springframework.boot:spring-boot-starter-flyway" }
+flyway-postgres      = { module = "org.flywaydb:flyway-database-postgresql" }
+postgresql           = { module = "org.postgresql:postgresql" }
+
+# --- Observability ---
+micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+logstash-encoder      = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstashEncoder" }
+
+# --- Domain ---
+chesslib             = { module = "com.github.bhlangonijr:chesslib", version.ref = "chesslib" }
+
+# --- Test ---
+archunit             = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+assertj              = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+testcontainers-bom       = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-junit     = { module = "org.testcontainers:junit-jupiter" }
+testcontainers-postgres  = { module = "org.testcontainers:postgresql" }
+
+[bundles]
+observability = ["micrometer-prometheus", "logstash-encoder"]
+
+[plugins]
+springBoot    = { id = "org.springframework.boot", version.ref = "springBoot" }
+springDepMgmt = { id = "io.spring.dependency-management", version.ref = "springDepMgmt" }

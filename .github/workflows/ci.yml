@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch cancels the previous run. Without this, a busy branch
+# queues builds for commits nobody is waiting on any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # gradle-wrapper.jar is a committed binary that executes on every build, on CI and
+      # on every contributor's machine. That makes it a supply-chain surface: a modified
+      # jar runs arbitrary code before any of our own code is compiled. This step
+      # checksums it against Gradle's published releases.
+      #
+      # Runs before setup-gradle, so nothing Gradle-related executes unvalidated.
+      # NOTE: setup-gradle may perform this check itself; kept explicit because the
+      # redundancy is free and the intent should be visible to a reviewer.
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Only write to the shared cache from main. PR branches read it but cannot
+          # poison it, which stops a broken dependency on one branch breaking every
+          # other branch's build.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # Split into two steps deliberately, so the failure is legible at a glance:
+      # a red "Unit tests" step is a logic bug, a red "Integration tests" step is
+      # usually environmental. Debugging starts in a different place for each.
+      # Cheap and fails fast. Catches the case where someone regenerated the wrapper
+      # with an explicit --gradle-version and left libs.versions.toml behind, which
+      # would otherwise mean the pinned version is documentation rather than a constraint.
+      - name: Verify pinned Gradle version
+        run: ./gradlew verifyGradleVersion
+
+      - name: Unit tests and architecture rules
+        run: ./gradlew :backend:test --stacktrace
+
+      - name: Integration tests
+        # Testcontainers uses the Docker daemon that is already present on the runner.
+        run: ./gradlew :backend:integrationTest --stacktrace
+
+      - name: Build jar
+        run: ./gradlew :backend:bootJar
+
+      - name: Upload test reports
+        if: always()   # the reports matter most when the build failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: backend/build/reports/tests/
+          retention-days: 7
+
+# Added in Phase 6: Docker build, Trivy image scan, push to ECR.
+# Deliberately not stubbed here — a commented-out pipeline stage is a lie about what
+# the build does.
