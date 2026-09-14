@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Two appenders, chosen by profile.
+
+  Local: human-readable single lines. JSON in a terminal is unreadable and developers
+  stop looking at logs they cannot read.
+
+  Everything else: JSON, one object per line, for CloudWatch Insights / Loki. Structured
+  from Phase 1 rather than retrofitted in Phase 9 — retrofitting means every log
+  statement written before the change lacks the fields you now need to query by, and
+  those are exactly the statements around the bugs you are chasing.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="local">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %cyan(%logger{25}) [%X{gameId:-}] - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!local">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!--
+                  MDC is included wholesale, so requestId / userId / gameId / moveId
+                  populated by the servlet filter and WebSocket interceptor appear on
+                  every line without each log statement having to remember them.
+                  This is what makes "show me everything that happened to game X"
+                  a single query.
+                -->
+                <includeMdcKeyName>requestId</includeMdcKeyName>
+                <includeMdcKeyName>userId</includeMdcKeyName>
+                <includeMdcKeyName>gameId</includeMdcKeyName>
+                <includeMdcKeyName>moveId</includeMdcKeyName>
+                <customFields>{"service":"chess-platform"}</customFields>
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <message>message</message>
+                    <levelValue>[ignore]</levelValue>
+                </fieldNames>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+</configuration>

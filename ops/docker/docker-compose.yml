@@ -1,0 +1,47 @@
+# Local development dependencies. The application itself runs on the host during
+# Phases 0-5 (faster restarts, working debugger). It gets containerised in Phase 6.
+#
+# Run from the repo root:
+#   docker compose -f ops/docker/docker-compose.yml up -d
+
+name: chess-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chess-postgres
+    environment:
+      POSTGRES_DB: chess
+      POSTGRES_USER: chess
+      POSTGRES_PASSWORD: chess   # local only; production creds come from Secrets Manager
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` alone returns true before the database accepts connections on the
+      # first boot, which produces a flaky "connection refused" on app startup.
+      # Running an actual query is the honest check.
+      test: ["CMD-SHELL", "psql -U chess -d chess -c 'SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: chess-valkey
+    ports:
+      - "6379:6379"
+    # No persistence locally, deliberately. Valkey holds nothing that cannot be rebuilt
+    # from PostgreSQL (ADR-004), and a cache that survives `docker compose down` would
+    # let us accidentally depend on that. Losing it on every restart keeps us honest.
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

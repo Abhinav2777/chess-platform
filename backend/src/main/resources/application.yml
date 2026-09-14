@@ -1,0 +1,98 @@
+spring:
+  application:
+    name: chess-platform
+
+  # Virtual threads. Tomcat serves each request on a virtual thread, so blocking JDBC
+  # costs a platform thread only while it is actually executing. This is what makes
+  # thread-per-request viable at high connection counts and why we do not need WebFlux
+  # (ADR-011).
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    hikari:
+      # The connection pool is the expected first bottleneck (ARCHITECTURE.md §14), so
+      # these numbers are deliberate rather than defaults.
+      #
+      # 10 is not "small". A pool larger than the database can serve turns connection
+      # starvation into database thrashing, which is harder to diagnose. RDS
+      # db.t4g.micro allows roughly 85 connections total, so pods x pool-size is the
+      # real ceiling. Measure in Phase 9 before changing this.
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 3000   # fail fast; a 30s stall looks like a hang, not an error
+      leak-detection-threshold: 20000
+
+  jpa:
+    open-in-view: false
+    # Hibernate NEVER manages the schema. Flyway owns it, in every environment, always.
+    # `ddl-auto: validate` means the app refuses to start if entities and migrations
+    # have drifted apart — which is exactly the failure you want at boot rather than at
+    # 3am on a query.
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Map java.time.Instant to TIMESTAMP WITH TIME ZONE.
+        #
+        # Hibernate's default for Instant is plain TIMESTAMP (no zone). Every timestamp
+        # column in this schema is TIMESTAMPTZ, so without this, `ddl-auto: validate`
+        # rejects every entity with an Instant field:
+        #
+        #   wrong column type encountered in column [created_at] in table [users];
+        #   found [timestamptz (Types#TIMESTAMP_WITH_TIMEZONE)],
+        #   but expecting [timestamp(6) (Types#TIMESTAMP)]
+        #
+        # The alternatives are worse. Changing the columns to TIMESTAMP would discard
+        # the offset and make "when did this happen" depend on the server's zone —
+        # unacceptable for a system whose clock decides game outcomes (ADR-006).
+        # Annotating each field with @JdbcTypeCode(SqlTypes.TIMESTAMP_UTC) works but
+        # must be remembered on every future timestamp, and being forgotten once is a
+        # startup failure. One global setting, correct by default.
+        type:
+          preferred_instant_jdbc_type: TIMESTAMP_UTC
+        jdbc:
+          time_zone: UTC
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false   # an empty database should run V1, not be baselined past it
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always     # locked down in Phase 7 — this leaks infrastructure detail
+      # Readiness vs liveness are different questions (ADR: Phase 8).
+      # Liveness = "is the JVM alive". Readiness = "can I serve traffic", which includes
+      # dependencies. Conflating them makes Kubernetes restart a healthy pod because the
+      # database blipped.
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,redis
+  metrics:
+    tags:
+      application: chess-platform
+  observations:
+    key-values:
+      application: chess-platform
+
+server:
+  shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
+  error:
+    include-message: never     # never leak exception messages to clients
+    include-stacktrace: never
+
+logging:
+  level:
+    root: INFO
+    com.chessplatform: DEBUG

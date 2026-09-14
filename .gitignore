@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Gradle
+# ---------------------------------------------------------------------------
+.gradle/
+build/
+.kotlin/
+
+# The wrapper jar and properties MUST be committed. A clone without them cannot
+# build — `./gradlew` is the bootstrap, not an artifact of it. These negations are
+# defensive: a global gitignore or a stray `*.jar` rule would otherwise drop the jar
+# silently, and the failure only shows up on someone else's machine.
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# ---------------------------------------------------------------------------
+# Java / JVM
+# ---------------------------------------------------------------------------
+*.class
+hs_err_pid*
+replay_pid*
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+.vite/
+
+# ---------------------------------------------------------------------------
+# Secrets and local config
+#
+# Nothing in this section is a substitute for keeping secrets out of the repo in the
+# first place. application-local.yml IS committed on purpose — it holds throwaway
+# container credentials and no real secret. Production values come from AWS Secrets
+# Manager (ADR-010 / DEPLOYMENT.md).
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------------------
+# Terraform (Phase 7)
+#
+# State is remote (S3 + DynamoDB locking), but a stray local state file would contain
+# RDS endpoints and generated passwords in plaintext. Ignored defensively.
+# ---------------------------------------------------------------------------
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+tfplan
+crash.log
+
+# ---------------------------------------------------------------------------
+# Tooling and OS
+# ---------------------------------------------------------------------------
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
