@@ -5,6 +5,113 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Reuse detection was rolling back its own revocation
+
+First genuine logic bug of the project, and a good one.
+
+`RefreshTokenService.rotate` is `@Transactional`. On detecting reuse it revoked the token
+family and then threw `DomainException.Unauthorized` to produce the 401. Spring rolls back
+on `RuntimeException`, so **the revocation was discarded by the exception that signalled
+it**. The victim's replay was correctly rejected, so the response looked right — while the
+attacker's token kept working indefinitely. Family revocation defeated itself.
+
+**Caught only because the test asserts the attacker's token dies too**, not merely that the
+victim's replay 401s. A test that checked the obvious half would have passed and the
+vulnerability would have shipped. Worth remembering when writing security tests: assert
+the property you actually care about, which is usually about the *attacker*, not the
+victim.
+
+**Fix:** `TokenFamilyRevoker` with `REQUIRES_NEW` in a separate bean. Two non-obvious
+details — a separate bean because self-invocation bypasses the transaction proxy, and a
+public method because CGLIB cannot proxy non-public ones and Spring ignores
+`@Transactional` there without complaint. Both failure modes would have silently
+reintroduced the original bug.
+
+**Rejected `noRollbackFor`:** `rotate` joins the outer transaction from
+`AuthenticationService.refresh`, so the outer boundary's rules govern the commit.
+Correct suppression would need annotating every layer, and the guarantee would vanish the
+first time someone wrapped the call in another `@Transactional` method.
+
+**Generalisable rule, now in TROUBLESHOOTING:** *write-then-throw inside a transaction is
+a bug unless the write has its own transaction.* Same trap for audit logs, security
+events, and failed-login counters.
+
+---
+
+## 2026-09-14 — Jackson 2 type injected under Boot 4; added a pre-delivery checklist
+
+`SecurityConfig` and `AuthApiIntegrationTest` both asked for
+`com.fasterxml.jackson.databind.ObjectMapper`. Boot 4 defaults to **Jackson 3**
+(`tools.jackson.databind.JsonMapper`), so there is no such bean. Compiles cleanly, fails
+at startup.
+
+**This one was not an environment limitation.** The fact was recorded in ADR-011 — *"Jackson
+3 is the default in Boot 4"* — and again in this log when Security 7 was checked
+(`SecurityJackson2Modules` -> `SecurityJacksonModules`). I wrote it down and then did not
+consult it. The project accumulated hard-won facts in ADRs and this log, and I was not
+reading my own notes before writing code.
+
+**Fix:** removed Jackson from both. `SecurityConfig` now writes its two fixed RFC 7807
+bodies as strings — four fields, all from constants it controls, no user input, nothing to
+escape. `ApiExceptionHandler` still returns `ProblemDetail` and lets Spring's message
+converters serialise it, which is the distinction worth drawing: **depend on the
+framework's abstraction, not on the library behind it.** The test uses
+`com.jayway.jsonpath.JsonPath`, already on the classpath.
+
+**Process change — `docs/BOOT4_CHECKLIST.md`.** Every Boot 4 trap this project has hit,
+plus four grep commands that would have caught this in seconds. To be run before shipping
+framework-touching code. Promising more care is worthless; a checklist and a grep are not.
+
+An audit of every framework import in Milestone 1.2 found Jackson 2 in exactly three
+places and nothing else — the compile had already proven the rest resolve. That audit is
+one command and should have preceded delivery.
+
+---
+
+## 2026-09-14 — `@Positive` does not apply to `Duration`
+
+`AuthProperties` used `@Positive` on two `Duration` fields. Compiles fine; fails at
+startup with `HV000030: No validator could be found`. Bean Validation's comparison
+constraints only cover numeric types.
+
+Moved both checks into the record's compact constructor, alongside the existing secret
+length check — one place, and an error message that names the offending property.
+
+Fixed a second, quieter bug while there: the secret length check used
+`getBytes()` with the platform default charset while `JwtService` derives the key with
+UTF-8. On a non-UTF-8 JVM the check would have disagreed with the actual key length — a
+validation passing while the thing it validates is wrong. Now explicit UTF-8 on both
+sides.
+
+**Worth keeping:** a validation annotation that compiles is not one that applies.
+Constraints are matched to types at runtime.
+
+---
+
+## 2026-09-14 — Second schema-validation mismatch; added a type-mapping reference
+
+`token_hash` was `CHAR(64)` in V2 and `String length = 64` in the entity. PostgreSQL
+stores `char(n)` as blank-padded `bpchar`; Hibernate expects `varchar`. Fixed to
+`VARCHAR(64)`, which was the correct type anyway — `CHAR(n)` has no storage or speed
+advantage in PostgreSQL and the padding leaks into comparisons. Fixed-width types are a
+habit from databases where the width means something.
+
+**Systemic, not incidental.** This is the second entity/migration disagreement in two
+milestones. It is precisely the class of defect I cannot catch: I can neither compile nor
+run here, and the two sides are written in different files in different languages.
+`ddl-auto: validate` catches it at startup — the design working as intended — but each
+instance costs a round trip.
+
+Mitigation: a type-mapping table in **ARCHITECTURE.md §4.2.1**, to be used when writing
+both sides. Phase 1.3 adds `Game` and `Move` with far more columns than `RefreshToken`,
+so the payoff is immediate.
+
+**Blast radius worth remembering:** one entity's mismatch fails the entire persistence
+unit, so a brand-new entity broke every pre-existing identity test. 25 failures, one
+wrong word, and none of the failures named the new code.
+
+---
+
 ## 2026-09-14 — Milestone 1.2: authentication over HTTP
 
 Delivered as a git patch rather than an archive — first use of the new handoff workflow.

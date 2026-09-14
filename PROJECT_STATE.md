@@ -18,6 +18,19 @@ be building an older extracted copy.
 
 ## 0. Handoff workflow (established 2026-09-14)
 
+**Two rules, both established after being broken:**
+
+1. **Work through `docs/BOOT4_CHECKLIST.md` and run its greps before shipping any
+   framework-touching code.** Four separate round trips in Milestone 1.2 were caused by
+   Boot 4 changes already recorded in this repository's own ADRs and logs, but not
+   consulted.
+2. **Documentation ships with the code that changed it — in the same turn, every turn.**
+   Not "doc-only, it'll land with the export." Every deferral has produced a divergence:
+   a patch that would not apply, and then a set of markdown files silently a week out of
+   date. If a fix updates an ADR, `TROUBLESHOOTING.md` or the log, those files go out
+   with the fix.
+
+
 **No archive is produced per milestone.** Archives are created only at a **major phase
 boundary**, or when explicitly requested, or when there is a technical reason one is
 necessary. Downloading and re-extracting the tree for every small change was costing more
@@ -62,7 +75,7 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 1 — Core Chess MVP |
-| **Phase status** | Milestone 1.1 complete and green. **Milestone 1.2 written, not yet compiled** — auth over HTTP. |
+| **Phase status** | Milestone 1.2 code complete; final fix (reuse-detection rollback) awaiting verification |
 | **Hours used (estimated)** | Phase 0: ~5 (complete). Phase 1: ~3 of 16–20 |
 | **Cumulative hours (estimated)** | ~8 of 135–175 |
 | **Schedule status** | On track |

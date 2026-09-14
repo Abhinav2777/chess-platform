@@ -24,48 +24,19 @@ The build also declares a **Java toolchain**, so Gradle fetches and compiles aga
 JDK 25 even if a different JDK is on your PATH. Compilation is therefore identical on
 every machine and in CI.
 
-## Bootstrapping the Gradle wrapper
+## The Gradle wrapper
 
-Only needed once, on a clone that has no `gradlew`. If `./gradlew` exists, skip this.
-
-**Pinned version: Gradle 9.7.1** (`gradle` in `gradle/libs.versions.toml`).
-Rationale in `docs/adr/ADR-011-java-spring-gradle.md`. Short version: Java 25 as the
-Gradle daemon JVM requires 9.1.0 or later, Gradle 9.7.0 has a Kotlin DSL regression, and
-9.3.0 carried repository-handling security fixes — 9.7.1 is the intersection.
-
-`gradle wrapper` needs Gradle, which you don't have. Pick one:
-
-**A — borrow the wrapper from the reference project (recommended).** You are already
-generating a project at `start.spring.io` to verify starter coordinates. It ships a
-working wrapper:
+`gradlew` and `gradle/wrapper/gradle-wrapper.properties` are in the repository, pinned to
+**Gradle 9.7.1**. `gradle-wrapper.jar` and `gradlew.bat` are not — see
+`gradle/wrapper/README-MISSING-JAR.md`. One command produces them:
 
 ```bash
-cp -r /path/to/reference-project/gradlew /path/to/reference-project/gradlew.bat .
-cp -r /path/to/reference-project/gradle/wrapper gradle/
-./gradlew wrapper          # regenerates at the pinned version; no flag needed
+./gradlew wrapper          # no --gradle-version flag; the root build reads the pin
 ./gradlew verifyGradleVersion
 ```
 
-The bare `./gradlew wrapper` is deliberate — the root build reads the version from the
-catalog, so there is no `--gradle-version` flag to get wrong.
-
-**B — download the distribution once, install nothing.**
-
-```bash
-cd /tmp && curl -LO https://services.gradle.org/distributions/gradle-9.7.1-bin.zip
-unzip -q gradle-9.7.1-bin.zip && cd -
-/tmp/gradle-9.7.1/bin/gradle wrapper
-rm -rf /tmp/gradle-9.7.1*
-./gradlew verifyGradleVersion
-```
-
-**C — `sudo pacman -S gradle`.** Works, but Arch tracks current, so if its Gradle is ever
-newer than what runs on your JDK you hit the class-file-version error you were trying to
-avoid. A and B don't have that failure mode.
-
-Afterwards, **commit `gradlew`, `gradlew.bat`, and `gradle/wrapper/`** — jar included. A
-clone without the wrapper jar cannot build, and `.gitignore` explicitly negates it for
-that reason.
+Commit all four files afterwards, including the jar. A clone without it cannot build.
+`git update-index --chmod=+x gradlew` if the executable bit does not survive.
 
 ## Local development
 

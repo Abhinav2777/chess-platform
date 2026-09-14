@@ -72,7 +72,21 @@ against real Postgres and Valkey containers.
 
 **Done when:** `docker compose up` + `./gradlew :backend:bootRun` yields a health check
 reporting Postgres and Valkey UP; `./gradlew :backend:check` passes locally and in CI;
-Flyway has applied V1; ADRs 001–011 written.
+ADRs 001–011 written; **and both hard gates below pass.**
+
+> **HARD GATE 1 — verify starter coordinates against `start.spring.io`.** Generate a
+> reference project (Gradle Kotlin DSL, Java 25, Boot 4.1, same starters) and diff its
+> build file against `gradle/libs.versions.toml`. Boot 4 modularised auto-configuration
+> into per-technology jars, so a raw coordinate can resolve, compile, and still leave its
+> auto-configuration entirely absent. This gate was skipped once and cost a phase: Flyway
+> was on the classpath but never ran, and the symptom appeared later as a Hibernate
+> "missing table" error blaming the entity mapping.
+>
+> **HARD GATE 2 — prove migrations applied, do not infer it.**
+> `docker exec -it chess-postgres psql -U chess -d chess -c '\dt'` must list `users`,
+> `games`, `moves` **and** `flyway_schema_history`. A green `/actuator/health` does not
+> establish this — the `db` indicator validates a connection, and an empty database has a
+> perfectly good connection.
 
 ---
 
