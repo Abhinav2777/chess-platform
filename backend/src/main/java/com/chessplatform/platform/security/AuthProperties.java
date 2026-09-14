@@ -51,7 +51,7 @@ public record AuthProperties(
             if (bytes < MIN_SECRET_BYTES) {
                 throw new IllegalArgumentException(
                         "chess.auth.jwt-secret must be at least " + MIN_SECRET_BYTES
-                                + " bytes for HS256; got " + bytes);
+                        + " bytes for HS256; got " + bytes);
             }
         }
         requirePositive(accessTokenTtl, "chess.auth.access-token-ttl");

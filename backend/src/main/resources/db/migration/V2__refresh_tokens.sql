@@ -11,6 +11,10 @@ CREATE TABLE refresh_tokens (
     -- CSPRNG — there is no dictionary, and brute force is infeasible regardless of hash
     -- speed. Paying bcrypt's ~250ms on every token refresh would buy nothing and hand an
     -- attacker a CPU-exhaustion lever on an endpoint that runs constantly.
+    --
+    -- VARCHAR, not CHAR. PostgreSQL stores char(n) as blank-padded `bpchar` with no
+    -- storage or speed advantage over varchar, and the padding leaks into comparisons.
+    -- Fixed-width types are a habit from databases where the width means something.
     token_hash  VARCHAR(64) NOT NULL,
 
     -- Rotation lineage. Every token minted by refreshing an earlier one inherits its

@@ -51,7 +51,7 @@ Legend: **MU** = must understand · **MI** = must implement · **SKIP** = delibe
 
 ---
 
-### Phase 0 — Architecture & Setup · 3–5 h · Week 1
+### Phase 0 — Architecture & Setup · 3–5 h · Week 1 — **COMPLETE (~5 h)**
 
 **Target:** a defensible design, a repository skeleton, and a Spring Boot app that boots
 against real Postgres and Valkey containers.
@@ -90,7 +90,7 @@ ADRs 001–011 written; **and both hard gates below pass.**
 
 ---
 
-### Phase 1 — Core Chess MVP · 16–20 h · Weeks 1–3
+### Phase 1 — Core Chess MVP · 16–20 h · Weeks 1–3 — **COMPLETE (2026-09-14, ~14 h)**
 
 **Target:** two authenticated users can play a complete, legal, persisted chess game via
 REST. No real-time yet — moves are polled.
@@ -290,6 +290,23 @@ diagrams committed · `INTERVIEW_NOTES.md` completed · 3 resume bullets · 30-s
 the reasoning for every major decision without asking a question.
 
 ---
+
+## Time checkpoint — end of Phase 1
+
+| | |
+|---|---|
+| **Estimated time used** | ~19 h (Phase 0 ~5, Phase 1 ~14) |
+| **Estimated remaining** | ~116–156 h of the 135–175 plan |
+| **Schedule status** | **On track.** Phases 0–1 came in at the low end of budget. |
+| **Scope status** | **On track.** No P2/P3 feature has been built. Two deliberate deferrals recorded as technical debt (threefold repetition; refresh double-click logout). |
+| **Recommended adjustment** | None. Hold Phase 2 to its 15–18 h budget; the frontend cap of 6 h inside it is the item most likely to slip. |
+
+**Caveat on the estimate.** These hours measure the engineering work, not the wall-clock
+cost of getting it to compile. Several round trips were spent on Boot 4 surface changes —
+Flyway auto-configuration, Jackson 3, starter renames, two column-type mismatches. That
+time was real and is not in the figure above. `docs/BOOT4_CHECKLIST.md` exists to stop it
+recurring, and in Milestone 1.3b it prevented a defect for the first time rather than
+explaining one afterwards.
 
 ## Cumulative schedule
 

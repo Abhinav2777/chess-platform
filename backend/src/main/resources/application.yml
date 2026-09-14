@@ -53,10 +53,15 @@ spring:
         type:
           preferred_instant_jdbc_type: TIMESTAMP_UTC
         jdbc:
+          # Belt-and-braces: forces UTC on the JDBC driver for any type that still goes
+          # through a zoneless path. With TIMESTAMP_UTC above this is mostly redundant,
+          # but it costs nothing and removes a whole class of "works on my laptop,
+          # shifts by 5:30 in CI" bug.
           time_zone: UTC
           batch_size: 20
         order_inserts: true
         order_updates: true
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -94,12 +99,15 @@ chess:
     jwt-secret: ${CHESS_AUTH_JWT_SECRET:dev-only-insecure-secret-change-me-32-bytes-min}
 
     # 15 minutes. Access tokens cannot be revoked (ADR-009), so this duration IS the
-    # exposure window for a stolen one.
+    # exposure window for a stolen one. Short enough to bound the damage, long enough
+    # that refreshes are not constant.
     access-token-ttl: 15m
 
-    # 14 days. Safe to make long because the token is single-use and rotates: a stolen
-    # one stops working the moment either party refreshes, and reuse revokes the family.
+    # 14 days. How long a user stays signed in without re-entering a password. Safe to
+    # make this long because the token is single-use and rotates: a stolen one stops
+    # working the moment either party refreshes, and reuse revokes the whole family.
     refresh-token-ttl: 14d
+
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
   error:

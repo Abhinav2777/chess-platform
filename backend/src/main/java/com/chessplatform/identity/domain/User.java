@@ -8,8 +8,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+
 /**
  * A registered player.
  *
@@ -46,7 +45,7 @@ public class User {
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
-    
+
     @Column(name = "username", nullable = false, length = 32, updatable = false)
     private String username;
 
@@ -63,7 +62,12 @@ public class User {
     @Column(name = "rating", nullable = false)
     private int rating;
 
-
+    /**
+     * {@code TIMESTAMPTZ}. Mapped by {@code hibernate.type.preferred_instant_jdbc_type}
+     * in {@code application.yml} — verified 2026-09-14 that the global property alone is
+     * sufficient, so no per-field {@code @JdbcTypeCode} is needed here or on any future
+     * timestamp.
+     */
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

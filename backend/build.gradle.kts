@@ -51,9 +51,10 @@ dependencies {
     implementation(libs.spring.jpa)
     implementation(libs.spring.redis)
     implementation(libs.spring.security)
+    implementation(libs.spring.security.jose)
     implementation(libs.spring.validation)
     implementation(libs.spring.actuator)
-    implementation(libs.spring.security.jose)
+
     implementation(libs.flyway.starter)    // the STARTER — see libs.versions.toml
     implementation(libs.flyway.postgres)   // Flyway 10+ needs the per-database module
     runtimeOnly(libs.postgresql)
@@ -62,7 +63,7 @@ dependencies {
     implementation(libs.chesslib)
 
     testImplementation(libs.spring.test)
-    testImplementation(libs.spring.webmvc.test)      // new
+    testImplementation(libs.spring.webmvc.test)
     testImplementation(libs.spring.security.test)
     testImplementation(libs.archunit)
     testImplementation(libs.assertj)
@@ -115,12 +116,19 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
         events("passed", "skipped", "failed")
+
+        // FULL, not the SHORT default. SHORT prints
+        //   "Caused by: SchemaManagementException at AbstractSchemaValidator.java:128"
+        // and throws away the message — which is the only part that identifies the
+        // problem. Hibernate's validation errors name the exact column and both types;
+        // without FULL + showCauses you get a class name and a line number and have to
+        // go digging in the HTML report.
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showExceptions = true
         showCauses = true
         showStackTraces = true
-    }    
-  }
+    }
+}
 
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(
