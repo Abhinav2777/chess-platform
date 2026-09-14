@@ -19,3 +19,4 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 010 | ECS Fargate as the production path; EKS time-boxed | Accepted |
 | 011 | Java 25 + Spring Boot 4.1.1 + Gradle 9.7.1 | Accepted |
 | 012 | Accept JitPack, scoped to one group, for chesslib | Accepted |
+| 013 | Refresh token rotation with family-based reuse detection | Accepted |

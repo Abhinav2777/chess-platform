@@ -53,7 +53,7 @@ dependencies {
     implementation(libs.spring.security)
     implementation(libs.spring.validation)
     implementation(libs.spring.actuator)
-
+    implementation(libs.spring.security.jose)
     implementation(libs.flyway.starter)    // the STARTER — see libs.versions.toml
     implementation(libs.flyway.postgres)   // Flyway 10+ needs the per-database module
     runtimeOnly(libs.postgresql)
