@@ -46,6 +46,20 @@ public class IdentityFacade {
         return users.findById(userId).map(IdentityFacade::toSummary);
     }
 
+    /**
+     * Looks a player up by username, for challenges.
+     *
+     * <p>Lowercases the input because {@code UserRegistrar} stores the normalised form —
+     * the lookup must normalise identically or the unique index is missed and the user
+     * appears not to exist. {@code Locale.ROOT} for the reason given there: a
+     * Turkish-locale JVM lowercases "I" to a dotless "i".
+     */
+    @Transactional(readOnly = true)
+    public Optional<UserSummary> findByUsername(String username) {
+        return users.findByUsername(username.strip().toLowerCase(java.util.Locale.ROOT))
+                .map(IdentityFacade::toSummary);
+    }
+
     @Transactional(readOnly = true)
     public UserSummary getById(UUID userId) {
         return findById(userId).orElseThrow(() -> new DomainException.NotFound(

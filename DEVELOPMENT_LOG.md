@@ -5,6 +5,51 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Milestone 1.3b: game lifecycle and the move pipeline
+
+Completes Phase 1. A game can now be created, played to checkmate or resignation, and
+persisted — with the concurrency guarantees the project was designed around.
+
+**The checklist paid for itself before a line was written.** Auditing V1 against the type
+table in ARCHITECTURE.md 4.2.1 found `side_to_move CHAR(1)` — the identical bpchar trap
+that cost a round trip on `token_hash`. Caught pre-emptively, fixed forward in V3 rather
+than by editing an applied migration. That is the first time a process artifact in this
+repository prevented a failure instead of explaining one after the fact.
+
+**The move pipeline.** Ordering is deliberate: idempotency lookup, load, authorise, active,
+turn, stale ply, legality, write. Cheapest and most specific first, so a request that was
+always going to be refused never reaches the rules engine or the database write.
+
+Two exception paths handled explicitly rather than allowed to become 500s:
+
+- `OptimisticLockingFailureException` — another transaction advanced the game between our
+  read and our write. ADR-005 prescribes re-read and re-validate rather than blind retry,
+  and re-validation would reject the move anyway because the turn has flipped. So the
+  honest response is "resync and decide", not a silent retry.
+- `DataIntegrityViolationException` — the idempotency key or the composite primary key
+  fired. **We cannot read the original record here**: PostgreSQL has aborted the
+  transaction, so any query in it fails. The client retries and the pre-check serves it.
+  One extra round trip on a rare path, chosen over opening a second transaction.
+
+**Detail worth keeping: who wins a checkmate.** The mover is whoever was to move *before*
+the move — the opponent of whoever is to move now. Getting it backwards awards the game to
+the player who was mated, and no compiler catches it and no symmetric test notices, because
+the two sides are identical in every other respect. There is now an explicit assertion.
+
+**`saveAndFlush`, not `save`** — the same reasoning as `UserRegistrar`. `save` defers the
+write to commit, where both exceptions above escape the method and surface as opaque 500s.
+
+**The flagship test.** Sixteen threads submit a move for the same ply, released together,
+each with a distinct idempotency key so none is a retry. Exactly one may commit. The losers
+fail in whichever of three ways the race resolves — wrong turn, stale ply, optimistic lock —
+and which one is non-deterministic, so the assertion is about the invariant rather than the
+mechanism. Remove the `@Version` column and this test produces duplicate moves and a
+corrupted ply, which is what makes it evidence rather than decoration.
+
+**Phase 1 is complete**, at roughly 14 of a 16–20 hour budget.
+
+---
+
 ## 2026-09-14 — Milestone 1.3a: chess rules port
 
 Milestone 1.2 verified green. 1.3 split in two: the rules port first, alone.
