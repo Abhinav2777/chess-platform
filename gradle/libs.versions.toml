@@ -42,6 +42,18 @@ assertj              = "3.26.3"
 
 [libraries]
 # --- Spring starters (managed by the Boot BOM; no versions here) ---
+#
+# Boot 4 naming convention: module `spring-boot-<tech>`, root package
+# `org.springframework.boot.<tech>`, starter `spring-boot-starter-<tech>`, and a test
+# companion `spring-boot-starter-<tech>-test`.
+#
+# Two traps, both of which this project has now hit or nearly hit:
+#   1. A raw third-party coordinate (flyway-core) resolves and compiles but carries no
+#      auto-configuration. Silent no-op. Always prefer the starter.
+#   2. Renamed starters still resolve as deprecated aliases, so a stale name compiles
+#      fine and gives no signal that it is wrong.
+#
+# `spring-boot-starter-web` is the deprecated alias for `-webmvc`.
 spring-web           = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
 spring-websocket     = { module = "org.springframework.boot:spring-boot-starter-websocket" }
 spring-jpa           = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
@@ -49,17 +61,42 @@ spring-redis         = { module = "org.springframework.boot:spring-boot-starter-
 spring-security      = { module = "org.springframework.boot:spring-boot-starter-security" }
 spring-validation    = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-actuator      = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+
+# JWT encode/decode. A Spring Security artifact (version managed by the Boot BOM), not a
+# Boot starter, so the Boot 4 starter renames do not apply to it.
+#
+# Deliberately NOT spring-boot-starter-security-oauth2-resource-server: that brings the
+# whole resource-server DSL to model an OAuth2 relationship we do not have (we issue our
+# own tokens), and Phase 2 needs JwtService callable outside any servlet filter chain for
+# WebSocket first-message auth anyway. This artifact is just JwtEncoder/JwtDecoder over
+# Nimbus — the crypto, none of the framework.
+spring-security-jose = { module = "org.springframework.security:spring-security-oauth2-jose" }
+# Test companions. Not optional in Boot 4: the test infrastructure for a technology now
+# ships in its own starter, so the annotation exists on the classpath but its supporting
+# auto-configuration does not.
+#   - @WebMvcTest / @AutoConfigureMockMvc moved to o.s.boot.webmvc.test.autoconfigure
+#     and need spring-boot-starter-webmvc-test.
+#   - @WithMockUser / @WithUserDetails need spring-boot-starter-security-test to work
+#     properly, even though the annotations come from spring-security-test.
+# Both are used heavily from Milestone 1.2 onward.
+#
+# spring-boot-starter-test is technically redundant (every test starter brings it
+# transitively) but kept explicit: it is what the unit-test suite actually depends on,
+# and an implicit transitive dependency is a fragile thing to build a test suite on.
 spring-test          = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-webmvc-test   = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 spring-security-test = { module = "org.springframework.boot:spring-boot-starter-security-test" }
-spring-security-jose = { module = "org.springframework.security:spring-security-oauth2-jose" }
 
 # --- Persistence ---
 # MUST be the starter, not org.flywaydb:flyway-core.
-# Boot 4 modularised auto-configuration into per-technology jars. FlywayAutoConfiguration
-# now lives in `spring-boot-flyway`, which raw `flyway-core` does not pull in. The result
-# is the worst kind of failure: Flyway is on the classpath, `spring.flyway.*` properties
-# are accepted, the app starts cleanly — and no migration ever runs.
+#
+# Spring Boot 4 modularised auto-configuration into per-technology jars. FlywayAutoConfiguration
+# now lives in `spring-boot-flyway`, which raw `flyway-core` does not pull in. The result is the
+# worst kind of failure: Flyway is on the classpath, `spring.flyway.*` properties are accepted,
+# the application starts cleanly — and no migration ever runs. It surfaces later and elsewhere,
+# as "missing table" from Hibernate schema validation.
+#
+# This applies to every dependency that used to be auto-configured from a raw coordinate.
 flyway-starter       = { module = "org.springframework.boot:spring-boot-starter-flyway" }
 flyway-postgres      = { module = "org.flywaydb:flyway-database-postgresql" }
 postgresql           = { module = "org.postgresql:postgresql" }

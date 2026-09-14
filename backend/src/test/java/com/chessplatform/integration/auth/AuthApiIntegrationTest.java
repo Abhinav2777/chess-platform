@@ -2,7 +2,6 @@ package com.chessplatform.integration.auth;
 
 import com.chessplatform.identity.domain.RefreshTokenRepository;
 import com.chessplatform.identity.domain.UserRepository;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +59,6 @@ class AuthApiIntegrationTest {
     private WebApplicationContext context;
     @Autowired
     private FilterChainProxy springSecurityFilterChain;
-
     @Autowired
     private UserRepository users;
     @Autowired

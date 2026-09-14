@@ -93,6 +93,12 @@ public class RefreshTokenService {
 
         if (token.isUsed()) {
             // Theft signal. See the class comment.
+            //
+            // MUST go through TokenFamilyRevoker, not tokens.revokeFamily(...) directly.
+            // This method is transactional and is about to throw a RuntimeException,
+            // which rolls the transaction back — taking the revocation with it. The
+            // caller would still receive a 401 while the attacker's token kept working,
+            // so the bug is invisible in the response.
             int revoked = familyRevoker.revoke(token.familyId(), now);
             log.warn("Refresh token reuse detected; revoked family={} tokens={} user={}",
                     token.familyId(), revoked, token.userId());
@@ -114,7 +120,13 @@ public class RefreshTokenService {
         return new Rotation(token.userId(), issueInFamily(token.userId(), token.familyId()));
     }
 
-    /** Logout. Revokes the whole lineage so no outstanding token survives. */
+    /**
+     * Logout. Revokes the whole lineage so no outstanding token survives.
+     *
+     * <p>Uses the repository directly rather than the revoker: this path returns normally,
+     * so the enclosing transaction commits and the revocation persists. A new transaction
+     * here would cost a second connection for no benefit.
+     */
     @Transactional
     public void revokeFamilyOf(String rawToken) {
         tokens.findByTokenHash(TokenHasher.sha256Hex(rawToken))
