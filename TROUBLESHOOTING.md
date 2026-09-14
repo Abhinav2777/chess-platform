@@ -10,6 +10,84 @@ Format: **Symptom** → **Cause** → **Fix**.
 
 ## Encountered
 
+### `Schema validation: missing table [users]` — Flyway never ran
+
+**Symptom:** every integration test fails on context load. Hibernate reports a missing
+table. The application starts fine outside tests and `/actuator/health` is UP.
+**Cause:** Spring Boot 4 moved auto-configuration into per-technology modules. Depending
+on raw `org.flywaydb:flyway-core` puts Flyway on the classpath **without**
+`FlywayAutoConfiguration`, which now ships in `spring-boot-flyway`. The app starts, every
+`spring.flyway.*` property is accepted, and nothing migrates.
+**Fix:** depend on `org.springframework.boot:spring-boot-starter-flyway` (plus
+`org.flywaydb:flyway-database-postgresql`), not `flyway-core`.
+
+**This applies to any dependency that used to be auto-configured from a raw coordinate.**
+Boot 4 also renames `spring-boot-starter-web` to `spring-boot-starter-webmvc` for Spring
+MVC, and expects a test counterpart starter alongside each main starter.
+
+**The diagnostic to reach for: the condition evaluation report.** When auto-configuration
+does not apply, this says why — which conditions matched and which did not:
+
+```bash
+./gradlew :backend:bootRun --args='--spring.profiles.active=local --debug' 2>&1 | grep -i flyway
+```
+
+An absent auto-configuration does not appear in "Negative matches" — it is simply not on
+the classpath at all, which is itself the answer.
+
+**Why the health check did not catch it.** `db` health validates that a connection can be
+obtained. An empty database passes. **A green health check is not a schema check.**
+
+### Why `/actuator/health` being UP proved nothing about migrations
+
+See above. Generalisable: an absent component is more dangerous than a broken one. A
+broken migration tool fails loudly at startup; a missing one hands you an empty database
+and a green build. Anything whose absence is indistinguishable from success needs an
+explicit assertion — hence `SchemaMigrationIntegrationTest`.
+
+### Every integration test fails with `SchemaManagementException`
+
+**Symptom:** all tests in a class fail. The first shows
+`SchemaManagementException at AbstractSchemaValidator`; the rest show only
+`IllegalStateException at DefaultCacheAwareContextLoaderDelegate:157`.
+**Reading it:** only the *first* failure is real. Spring caches application contexts, so
+once a context fails to load, every subsequent test gets the cached failure. **Debug the
+first failure and ignore the rest** — twelve failures here were one bug.
+**Cause:** `ddl-auto: validate` found the entity mapping disagreeing with the Flyway
+schema. In this case `java.time.Instant` maps to plain `TIMESTAMP` by default while the
+column is `TIMESTAMPTZ`.
+**Fix:** `spring.jpa.properties.hibernate.type.preferred_instant_jdbc_type: TIMESTAMP_UTC`.
+
+**Second instance (2026-09-14):** `wrong column type ... column [token_hash] ... found
+[bpchar (Types#CHAR)], but expecting [varchar(64)]`. The migration said `CHAR(64)`; the
+entity mapped `String` with `length = 64`. Fix: `VARCHAR(64)`. PostgreSQL gains nothing
+from `CHAR(n)` — it is blank-padded `bpchar`. **Write both sides from the type-mapping
+table in ARCHITECTURE.md §4.2.1.**
+
+**Note the blast radius:** one entity's mismatch fails the whole persistence unit, so the
+new `RefreshToken` broke every pre-existing identity test as well. 25 failures, one
+wrong word.
+
+**Why it appeared only in Phase 1:** Phase 0 had no entities, so `validate` had nothing
+to check and passed vacuously. A green build does not mean a setting works — it may mean
+the setting had no input. Worth remembering for `-Werror`, ArchUnit, and any other check
+whose subject set starts empty.
+
+**To see the exact validation message.** Hibernate names the column and both types, so
+the message *is* the diagnosis. Two ways to get it:
+
+```bash
+open backend/build/reports/tests/integrationTest/index.html   # always has the full text
+./gradlew :backend:integrationTest                            # needs exceptionFormat = FULL
+```
+
+**`--info` and `grep` will not help if `exceptionFormat` is SHORT.** Gradle's default
+truncates every exception to a class name and a line number and discards the message.
+The `testLogging` block in `backend/build.gradle.kts` now sets
+`exceptionFormat = TestExceptionFormat.FULL` and `showCauses = true` for exactly this
+reason. Two debugging rounds were lost to a build that was configured to hide the answer
+— **check that failures are legible before trying to interpret them.**
+
 ### `Could not find com.github.bhlangonijr:chesslib:<version>`
 
 **Symptom:** dependency resolution fails; `./gradlew :backend:dependencies --configuration compileClasspath`
@@ -36,6 +114,47 @@ whether a matching JDK is already installed.
 Installing JDK 25 locally works too. Note that dependency resolution happens *before*
 compilation, so a dependency failure will mask this — a build that dies on a missing
 dependency has not yet proven its toolchain works.
+
+---
+
+### `HV000030: No validator could be found for constraint '@Positive' validating type 'java.time.Duration'`
+
+**Symptom:** startup fails binding `@ConfigurationProperties`.
+**Cause:** Bean Validation's comparison constraints (`@Positive`, `@Negative`, `@Min`,
+`@Max`, `@PositiveOrZero`) only have validators for numeric types — `BigDecimal`,
+`BigInteger` and the primitive number types. `Duration` is not one, and the mistake
+compiles cleanly. Spring Boot ships `@DurationUnit` for *conversion*, not validation.
+**Fix:** validate in the record's compact constructor. It also yields a message naming
+the property, which beats a generic constraint violation.
+
+**Generalisable:** a validation annotation that compiles is not a validation annotation
+that applies. Constraints are matched to types at runtime, so an inapplicable one is a
+startup failure, and — worse — a constraint silently doing nothing would be a validation
+that passes while validating nothing.
+
+---
+
+### A side effect vanishes when the method throws
+
+**Symptom:** a database write performed just before throwing an exception is not there
+afterwards. Here: reuse detection revoked a token family, threw 401, and the revocation
+was gone — so the victim's replay was correctly rejected while the attacker's token kept
+working.
+**Cause:** Spring rolls back on `RuntimeException` by default. Any write in the same
+transaction is discarded, including one you intended as a security action or an audit
+record.
+**Fix:** run it in a separate transaction — `@Transactional(propagation = REQUIRES_NEW)`
+**in a different bean**, since self-invocation bypasses the proxy, and on a **public**
+method, since CGLIB cannot proxy non-public ones and Spring ignores `@Transactional`
+there silently.
+
+**Why `noRollbackFor` is the wrong reach:** when the method joins an outer transaction,
+the outer boundary's rules govern the commit. You would have to annotate every layer, and
+the guarantee breaks the moment someone wraps the call in another transactional method.
+
+**Generalisable:** *write-then-throw in a transaction is always a bug unless the write is
+in its own transaction.* Applies to audit logging, security events, failed-login counters,
+and anything else meant to record that something went wrong.
 
 ---
 

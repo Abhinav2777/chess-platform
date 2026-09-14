@@ -1,6 +1,9 @@
-snapshot:  M1.2
+snapshot:  M1.2-docs
 date:      2026-09-14
-contains:  Phase 0 + Milestone 1.1 (identity domain, green) + Milestone 1.2 (auth over HTTP, uncompiled)
+contains:  Phase 0 + Milestone 1.1 (green) + Milestone 1.2 (auth over HTTP)
+           Post-patch fixes: token_hash VARCHAR, Duration validation, Jackson 2 removed,
+           reuse-detection rollback bug (TokenFamilyRevoker / REQUIRES_NEW).
 chesslib:  1.3.7 via JitPack (exclusiveContent, scoped to com.github.bhlangonijr)
 gradle:    9.7.1
-handoff:   in-place patches; archive only at major phase boundaries (PROJECT_STATE.md 0)
+jackson:   Boot 4 defaults to Jackson 3; NO com.fasterxml types anywhere
+handoff:   in-place edits; docs ride with every delivery (PROJECT_STATE.md 0)

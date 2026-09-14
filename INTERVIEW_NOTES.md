@@ -78,6 +78,33 @@ with ArchUnit so extraction stays cheap when a real reason appears — `rating` 
 
 ---
 
+### "Tell me about a subtle bug you found."
+
+Refresh-token reuse detection. When an already-used token comes back, I revoke the whole
+token family and throw to return 401. Spring rolls back on RuntimeException, so the
+revocation was being undone by the very exception that signalled it. The victim still got
+a correct 401, so from outside it looked like it worked — the attacker's token just quietly
+kept working forever.
+
+I found it because the test asserts the *attacker's* token stops working, not just that the
+victim's replay is rejected. Checking only the victim would have passed.
+
+The fix is a separate bean with `REQUIRES_NEW`, so the revocation commits independently.
+Two details matter: it has to be a separate bean because self-invocation bypasses Spring's
+transaction proxy, and the method has to be public because CGLIB can't proxy non-public
+methods and Spring ignores `@Transactional` on them silently. Either mistake silently
+restores the original bug.
+
+I didn't use `noRollbackFor` because the method joins an outer transaction, so the outer
+boundary decides what commits — I'd have had to annotate every layer, and it would break
+the first time someone wrapped the call in another transactional method.
+
+The general rule I took from it: **write-then-throw inside a transaction is a bug unless
+the write has its own transaction.** Same trap for audit logging, security events, and
+failed-login counters — all the things you most want recorded when something goes wrong.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

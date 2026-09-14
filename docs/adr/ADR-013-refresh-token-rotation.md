@@ -61,6 +61,37 @@ indistinguishable from reuse. Mitigations exist (a short grace window where the 
 successor is also accepted) and are **not implemented** — the failure is rare and safe,
 and a grace window is a hole an attacker can aim at.
 
+## The revocation must outlive the exception
+
+Reuse detection revokes the family and then throws, to return 401. Under Spring's default
+rules a `RuntimeException` rolls the transaction back — **discarding the revocation**. The
+victim still gets their 401, so the response looks correct while the attacker's token
+keeps working indefinitely. The mechanism defeats itself, silently.
+
+`TokenFamilyRevoker` therefore runs the revocation with
+`@Transactional(propagation = REQUIRES_NEW)` in a separate bean.
+
+Two details that look like ceremony and are not:
+
+- **A separate bean, not a private method.** Spring's transaction handling is proxy-based,
+  so self-invocation bypasses the interceptor and silently runs in the caller's
+  transaction — reintroducing the bug with no visible cause. The method is public for the
+  same reason: CGLIB cannot proxy non-public methods and Spring ignores `@Transactional`
+  on them without warning.
+- **`REQUIRES_NEW`, not `noRollbackFor`.** `rotate` joins an outer transaction started by
+  `AuthenticationService.refresh`, so the outer boundary's rollback rules govern the
+  actual commit. Suppressing rollback correctly would mean annotating every layer, and the
+  guarantee would evaporate the moment someone wrapped the call in another
+  `@Transactional` method. A separate physical transaction cannot be undone from up the
+  stack.
+
+Cost: a second pooled connection held while the caller's transaction is suspended.
+Acceptable because reuse detection is rare by construction — it only fires when a token
+has genuinely leaked. It would be the wrong pattern on a hot path.
+
+**Only the reuse path needs this.** Logout revokes and returns normally, so its enclosing
+transaction commits; a new transaction there would cost a connection for nothing.
+
 ## Storage
 
 Only `SHA-256(token)` is stored. **Not bcrypt** — bcrypt's slowness defends low-entropy
@@ -104,6 +135,23 @@ the family the attacker keeps their fresh token and the detection is worthless.
 `WHERE used_at IS NULL`, so exactly one request wins and the other is treated as reuse.
 I could add a short grace window that accepts the immediate successor, but that's a hole
 an attacker can aim at, and the failure mode I've chosen is rare and fails safe.
+
+**Q:** "Any subtle bugs you hit building this?"
+**A:** One good one. Reuse detection revoked the family and then threw an exception to
+produce the 401 — and Spring rolls back on RuntimeException, so the revocation was undone
+by the very exception that signalled it. The response was still a correct 401, so from the
+outside it looked like it worked; the attacker's token just quietly kept working. I caught
+it because my test asserts that the *attacker's* token dies too, not just that the victim's
+replay is rejected. Fixed by doing the revocation in a separate bean with REQUIRES_NEW, so
+it commits independently of whatever the caller does next.
+
+**Q:** "Why not just `noRollbackFor`?"
+**A:** Because the method joins an outer transaction, so the outer boundary's rollback
+rules decide what actually commits. I'd have had to annotate every layer, and the
+guarantee would disappear the first time someone wrapped the call in another transactional
+method. A separate physical transaction can't be undone from up the stack. It costs a
+second connection while the caller's transaction is suspended, which is fine here because
+reuse detection only fires when a token has actually leaked.
 
 **Q:** "Why SHA-256 for these and bcrypt for passwords?"
 **A:** bcrypt is slow on purpose to make dictionary attacks on human-chosen secrets

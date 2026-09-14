@@ -206,6 +206,29 @@ CREATE UNIQUE INDEX uq_moves_client_id ON moves (game_id, client_move_id);
   sweeper being O(active games) and O(all games ever).
 - **`version` column.** Optimistic locking. See §7.
 
+### 4.2.1 Type mapping reference
+
+**Write both sides from this table.** Entity/migration disagreement is invisible until
+startup, where `ddl-auto: validate` catches it — by design, but it has now cost two
+debugging rounds (`Instant` vs `TIMESTAMPTZ`, then `CHAR` vs `VARCHAR`). One reference
+removes the guesswork.
+
+| Java | PostgreSQL | Notes |
+|---|---|---|
+| `UUID` | `UUID` | |
+| `String` + `length = n` | `VARCHAR(n)` | **Never `CHAR(n)`** — stored as blank-padded `bpchar`, no benefit in PG, and Hibernate expects `varchar` |
+| `String` unbounded | `TEXT` | |
+| `int` / `Integer` | `INTEGER` | |
+| `long` / `Long` | `BIGINT` | `@Version` columns |
+| `boolean` | `BOOLEAN` | |
+| `Instant` | `TIMESTAMPTZ` | requires `hibernate.type.preferred_instant_jdbc_type: TIMESTAMP_UTC` |
+| `BigDecimal` | `NUMERIC(p,s)` | never `float`/`double` for anything counted |
+| enum + `@Enumerated(STRING)` | `VARCHAR(n)` | with a `CHECK` constraint listing the values |
+
+One entity's mismatch fails the **entire** persistence unit, so a new entity breaks every
+existing test too. That is why a single wrong column type produced 25 failures across two
+unrelated test classes.
+
 ### 4.3 Access patterns
 
 | Query | Frequency | Path |
