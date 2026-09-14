@@ -1,9 +1,8 @@
-snapshot:  M1.2-docs
+snapshot:  M1.3a
 date:      2026-09-14
-contains:  Phase 0 + Milestone 1.1 (green) + Milestone 1.2 (auth over HTTP)
-           Post-patch fixes: token_hash VARCHAR, Duration validation, Jackson 2 removed,
-           reuse-detection rollback bug (TokenFamilyRevoker / REQUIRES_NEW).
-chesslib:  1.3.7 via JitPack (exclusiveContent, scoped to com.github.bhlangonijr)
+contains:  Phase 0 + M1.1 (green) + M1.2 auth over HTTP (green) + M1.3a chess rules port
+chesslib:  1.3.7 via JitPack, verified by 17 perft counts across 5 standard positions
 gradle:    9.7.1
 jackson:   Boot 4 defaults to Jackson 3; NO com.fasterxml types anywhere
+known gap: threefold repetition not detected (FEN carries no history) - PROJECT_STATE 5
 handoff:   in-place edits; docs ride with every delivery (PROJECT_STATE.md 0)

@@ -19,6 +19,12 @@ public enum ErrorCode {
     EMAIL_TAKEN,
     INVALID_CREDENTIALS,
     USER_NOT_FOUND,
+    // --- chess / game --------------------------------------------------------
+    ILLEGAL_MOVE,
+    NOT_YOUR_TURN,
+    GAME_NOT_ACTIVE,
+    GAME_NOT_FOUND,
+    NOT_A_PLAYER,
 
     // --- generic ------------------------------------------------------------
     VALIDATION_FAILED,
