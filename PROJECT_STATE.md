@@ -74,20 +74,39 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 1 — Core Chess MVP |
-| **Phase status** | Milestone 1.2 COMPLETE (green). Milestone 1.3a (chess rules port) written, unverified |
-| **Hours used (estimated)** | Phase 0: ~5 (complete). Phase 1: ~3 of 16–20 |
-| **Cumulative hours (estimated)** | ~8 of 135–175 |
+| **Current phase** | Phase 1 — Core Chess MVP (final milestone) |
+| **Phase status** | 1.1, 1.2, 1.3a green. **1.3b written, unverified** — game lifecycle and move pipeline |
+| **Hours used (estimated)** | Phase 0: ~5. Phase 1: ~14 of 16–20 |
+| **Cumulative hours (estimated)** | ~19 of 135–175 |
 | **Schedule status** | On track |
 | **Scope status** | On track — three spec contradictions found and resolved (`ROADMAP.md` § Deviations) |
-| **Next milestone** | 1.3b — game lifecycle, move submission, optimistic locking, move-idempotency API |
+| **Next milestone** | Phase 2 — WebSockets, real-time moves, reconnection |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
 
-### Phase 1 (in progress) — Milestone 1.3a: chess rules port
+### Phase 1 — Milestone 1.3b: game lifecycle and the move pipeline
+
+- `V3__game_side_to_move_varchar.sql` — fixes `side_to_move CHAR(1)`, the same bpchar trap
+  as `token_hash`. Caught by `docs/BOOT4_CHECKLIST.md` *before* writing the entity.
+  Fixed forward; V1 untouched.
+- `game` module: `Game` and `MoveRecord` entities (composite key `(game_id, ply)` via
+  `@IdClass`), repositories, `GameStatus`/`GameResult`/`Termination`, `GameFacade` +
+  `GameView`.
+- `GameService` — the move pipeline. Three overlapping defences per ADR-005: idempotency
+  key, `@Version` optimistic lock, composite PK. **No distributed lock.** Handles
+  `OptimisticLockingFailureException` and `DataIntegrityViolationException` explicitly.
+- Metrics: `chess.move.processing`, `chess.move.conflicts`,
+  `chess.move.idempotent_replays`, `chess.move.stale_submissions`.
+- `GameController`: create, get (state + move log + legal moves), submit move, resign,
+  list my games. `IdentityFacade.findByUsername` added for challenges.
+- Tests: `GameplayIntegrationTest` — lifecycle, checkmate awarded to the right side,
+  resignation, out-of-turn, illegal, non-player, stale ply, idempotent retry, **and the
+  flagship 16-thread concurrency test asserting exactly one move commits at a ply**.
+
+### Phase 1 — Milestone 1.3a: chess rules port
 
 - `chess` module: `ChessRules` port, `Position`, `MoveIntent`, `MoveResult`,
   `GameOutcome`, `Side`, `Promotion`, `IllegalMoveException`.
