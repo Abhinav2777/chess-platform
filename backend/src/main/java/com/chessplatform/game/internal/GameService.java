@@ -9,12 +9,14 @@ import com.chessplatform.common.id.Uuid7;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRecord;
+import com.chessplatform.game.GameEvents;
 import com.chessplatform.game.domain.MoveRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -67,6 +69,7 @@ public class GameService {
     private final MoveRepository moves;
     private final ChessRules rules;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     private final Timer moveLatency;
     private final Counter conflicts;
@@ -74,11 +77,12 @@ public class GameService {
     private final Counter staleSubmissions;
 
     public GameService(GameRepository games, MoveRepository moves, ChessRules rules,
-                       Clock clock, MeterRegistry metrics) {
+                       Clock clock, ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.moves = moves;
         this.rules = rules;
         this.clock = clock;
+        this.events = events;
 
         this.moveLatency = Timer.builder("chess.move.processing")
                 .description("Time to validate and commit a move")
@@ -208,7 +212,29 @@ public class GameService {
                     "That move was already submitted. Retry to fetch the result.");
         }
 
+        // Published inside the transaction; delivered only after it commits, because the
+        // listener is @TransactionalEventListener(AFTER_COMMIT). Broadcasting from here
+        // directly would mean a rollback leaves every client showing a move that never
+        // happened — and the rollback path is the optimistic-lock conflict, which is
+        // precisely the case this system exists to handle.
+        events.publishEvent(new GameEvents.MovePlayed(gameId, playerId, game.ply(),
+                result.uci(), result.san(), result.positionAfter().fen(),
+                result.sideToMove(), !game.isActive(),
+                // Empty once the game is over, which the client uses to stop accepting
+                // input without needing to interpret the status itself.
+                game.isActive() ? rules.legalMoves(result.positionAfter()) : java.util.List.of()));
+
+        if (!game.isActive()) {
+            publishGameEnded(game);
+        }
+
         return MoveAccepted.of(result, game);
+    }
+
+    private void publishGameEnded(Game game) {
+        events.publishEvent(new GameEvents.GameEnded(game.id(),
+                game.whitePlayerId(), game.blackPlayerId(),
+                game.result(), game.termination()));
     }
 
     @Transactional
@@ -219,6 +245,7 @@ public class GameService {
         // No explicit save: `game` is managed inside this transaction, so the dirty check
         // at commit issues the UPDATE — and the @Version column is bumped with it, so a
         // resignation racing a move is still resolved by optimistic locking.
+        publishGameEnded(game);
         return game;
     }
 

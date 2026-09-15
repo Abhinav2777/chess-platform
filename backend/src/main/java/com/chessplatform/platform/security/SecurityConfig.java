@@ -58,6 +58,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login",
                                          "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
+                        // The WebSocket handshake carries no credential and cannot: the
+                        // browser API will not set an Authorization header on it. The
+                        // socket authenticates in its first frame instead (ADR-009), so
+                        // the filter chain must let the handshake through. "permitAll"
+                        // here means "permitted to open a socket", not "permitted to do
+                        // anything" — every command after AUTH is checked by the handler.
+                        .requestMatchers("/ws/**", "/ws").permitAll()
                         // Everything not listed requires authentication. Deny-by-default:
                         // a new endpoint is protected until someone deliberately opens it,
                         // rather than exposed until someone remembers to close it.

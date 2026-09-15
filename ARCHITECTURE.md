@@ -260,8 +260,16 @@ in this project lives.
 Every frame, both directions:
 
 ```json
-{ "v": 1, "type": "MOVE_MADE", "seq": 42, "ts": "2026-09-06T10:12:03.221Z", "payload": {} }
+{ "v": 1, "type": "MOVE_MADE", "ts": "2026-09-14T10:12:03.221Z", "payload": {} }
 ```
+
+> **Revised 2026-09-14 (Milestone 2.1): `seq` was specified here and then dropped.**
+> Ordering within a connection is already guaranteed by TCP, so a sequence number only
+> helps a client detect that it *missed* something — and `ply` already does that,
+> monotonically and meaningfully. A separate counter would additionally need to be shared
+> across instances once fanout moves to Valkey, putting a distributed counter on the hot
+> path to duplicate information the payload already carries. The design got simpler on
+> contact with implementation; recorded rather than quietly changed.
 
 **Server → client types**
 

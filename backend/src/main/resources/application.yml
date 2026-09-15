@@ -62,6 +62,15 @@ spring:
         order_inserts: true
         order_updates: true
 
+  data:
+    redis:
+      # Fail fast, always. Valkey is a cache and a transport, never the source of truth
+      # (ADR-004), so a request must never block on it for meaningful time. With the
+      # default multi-second timeouts, a Valkey outage would turn every presence lookup
+      # into a stall and convert a degraded feature into a degraded application.
+      timeout: 1s
+      connect-timeout: 500ms
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -107,6 +116,37 @@ chess:
     # make this long because the token is single-use and rotates: a stolen one stops
     # working the moment either party refreshes, and reuse revokes the whole family.
     refresh-token-ttl: 14d
+
+  realtime:
+    # How long a socket may stay open without authenticating. The pre-auth window is
+    # unavoidable — the browser cannot set handshake headers (ADR-009) — so it is bounded
+    # instead. Five seconds is generous for a client that already holds its token.
+    auth-timeout: 5s
+
+    # Cap on concurrent unauthenticated sockets. Without it, opening connections and never
+    # sending AUTH consumes file descriptors for free.
+    max-unauthenticated: 100
+
+    # Per-socket outbound buffer before the connection is closed. A client that stops
+    # reading must not make the server buffer without limit — that is how one phone that
+    # lost signal becomes an out-of-memory error. 512 KB is far more than a chess game
+    # generates; it exists to catch pathology, not normal traffic.
+    send-buffer-bytes: 524288
+
+    # How long a single write may block before the session is abandoned.
+    send-timeout: 5s
+
+    # How events reach subscribers.
+    #   local  - in-JVM. Correct for exactly one instance. Two instances behind a load
+    #            balancer will silently desynchronise games, because the two players
+    #            frequently connect to different ones.
+    #   valkey - cross-instance pub/sub (Milestone 2.2).
+    fanout: local
+
+    # Origins permitted to open a socket. Overridden per environment.
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
 
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
