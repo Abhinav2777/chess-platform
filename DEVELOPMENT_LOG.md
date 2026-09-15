@@ -5,6 +5,263 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Milestone 2.3: React client. Phase 2 complete.
+
+Deliberately thin, per the roadmap's 6-hour frontend cap. Came in around 4.
+
+**Chose not to use `react-chessboard`.** Its v5 API moved to a single `options` prop with
+`onPieceDrop` taking an object, which most search results still show in the old positional
+form — I could confirm the shape but not every option name. Given how many rounds this
+project has lost to half-verified APIs, betting the UI on one was not worth it.
+
+The better justification is that it was not needed. A board is an 8×8 grid and a FEN
+parser, about eighty lines. ADR-002's principle is about not reimplementing a *rules
+engine* — genuinely hard, wrong in subtle ways — and a grid of divs is not that. Swapping
+a library in later is a single component change.
+
+**The client has no chess rules at all.** `Board.tsx` cannot distinguish a legal move from
+an illegal one; every square it accepts comes from the server's `legalMoves`. Promotion is
+detected without rules knowledge: the plain move is absent from the list while the
+five-character forms are present. This makes "the client is never authoritative"
+structural rather than a convention.
+
+**Decisions worth keeping**
+
+- **Backoff resets on `AUTH_OK`, not on socket open.** A server that accepts TCP
+  connections but rejects every token would otherwise look healthy and be hammered at full
+  rate indefinitely.
+- **Full jitter on reconnect.** A restart drops every connection at the same instant;
+  without randomisation clients retry in lockstep and the storm can prevent the server
+  coming back at all.
+- **`AUTH_FAILED` is not retryable** — closes rather than backs off, or it is an infinite
+  loop with a dead token.
+- **Unknown message types are ignored**, so the server can add types without breaking
+  deployed clients. Unknown protocol *versions* are not ignored — those are reported.
+- **Access token in a module variable, never `localStorage`.** Web storage is readable by
+  any script on the page. It also does not survive a reload, which forces a refresh through
+  the httpOnly cookie the browser will not hand to script.
+- **Connection state always visible.** A user who cannot see the socket is live assumes a
+  quiet board means a broken app and reloads — the worst response in a real-time app,
+  since it drops the connection.
+
+## 2026-09-14 — Two bugs found by actually playing a game
+
+**Black could not move.** `useGame` cleared `legalMoves` on every `MOVE_MADE`, with a
+comment reasoning that the next legal moves were "the server's to supply". Nothing supplied
+them: `MOVE_MADE` did not carry them and no new snapshot was sent. So after one move a
+player's board had zero legal destinations and accepted no input at all.
+
+The comment is the interesting part — it stated a correct principle (the client has no
+rules engine, so it must not invent legality) and then implemented the opposite of what
+the principle requires. **A justification is not a verification.** The fix is to carry
+`legalMoves` on the event, which is a few hundred bytes per move and means a client is
+never holding a board it cannot play on.
+
+Both clients receive the same list even though only the side to move can use it, keeping
+every subscriber's frame byte-identical. Two regression tests: a move event carries 20
+legal replies, and a terminal move ends the game.
+
+**Pieces rendered as tofu boxes.** The board used U+2654–2659 for white and U+265A–265F
+for black. The reporting machine had the outline set and not the filled one — partial
+coverage of a Unicode block is normal and cannot be feature-detected.
+
+Now six glyphs instead of twelve, used for both colours and distinguished with `color` plus
+`-webkit-text-stroke`, on a symbol-capable font stack. Halves the surface area, and a white
+piece reads as genuinely white rather than hollow, which is easier to see on a light
+square.
+
+**Both were only findable by running it.** The integration suite plays complete games
+through the service and the socket and passes — because it asserts on server state, which
+was correct throughout. Neither bug existed on the server. A green backend suite says
+nothing about whether a human can play a game.
+
+---
+
+**A reported "opponent offline" that was not a bug at all.** The Valkey keys showed two
+*different* game ids with one player each: both users had clicked Challenge, creating two
+separate games. Each was alone in their own, so the badge was literally correct.
+
+Two process failures worth recording. I asked for the diagnostic output and then shipped a
+fix in the same message rather than waiting for it — so the reference-count fix below,
+while a genuine bug, was not the reported problem. And the lobby rendered games as
+`as white · ply 0`, which cannot distinguish one game from another: the UI made the mistake
+easy and then hid it.
+
+Fixed by returning opponent usernames from the list endpoint — resolved through
+`IdentityFacade.findAllById` in one query, which is precisely what that batch method was
+built for — and by saying plainly on the lobby that challenging back creates a second game.
+
+**Bug found by running it: presence flapped offline.** Reported as "opponent offline" with
+both clients connected.
+
+`PresenceTracker` stored one flag per (game, user) and wrote it from per-socket events.
+React StrictMode mounts, unmounts and remounts effects in development, so every page load
+performed subscribe → close → subscribe; the close is handled on a different thread and
+when it landed last it marked a connected player offline.
+
+**StrictMode did not cause this — it made a production race deterministic.** The same
+sequence happens on every reconnect after a network blip. Worth keeping StrictMode on for
+precisely that reason.
+
+Fixed by storing a **set of session ids** per (game, user): online means non-empty, and only
+the transition to or from empty is announced. A Redis set rather than a local counter,
+because a per-instance count fixes the reconnect case and reintroduces the identical bug
+across instances.
+
+Generalisable: **state that several connections can assert is a reference count, not a
+boolean.** The boolean version is correct until the first overlap, which is also the first
+reconnect.
+
+**Known gap, recorded not hidden:** the move list resets on reconnect. The snapshot carries
+the position but not the log, and showing a stale list that contradicts the board would be
+worse than showing none. `GET /api/games/{id}` returns the full log; wiring it in is a
+small follow-up.
+
+**Phase 2 complete** at roughly 17 hours against a 15–18 hour budget.
+
+---
+
+## 2026-09-14 — Milestone 2.2: cross-instance fanout and presence
+
+**ADR-003 is now verified rather than argued.** `ValkeyFanoutIntegrationTest` starts a
+second Spring context by hand — its own Tomcat, its own session registry, its own Valkey
+subscriptions, sharing only the database and Valkey — connects one player to each instance,
+and asserts a move on one reaches the other. Flipping `chess.realtime.fanout` back to
+`local` fails that test while the rest of the suite still passes.
+
+That is the whole point. The bug an in-JVM broker causes is silent: nothing throws, nothing
+logs, and one player's board simply stops updating. A test is the only way to hold a claim
+like that honest.
+
+**Design decisions**
+
+- **Subscribe per instance, not per socket.** One upstream subscription serves every local
+  socket watching a game. Per-socket would make subscriptions scale with connections rather
+  than with games in play.
+- **Unsubscribing matters as much as subscribing.** Without it an instance accumulates a
+  subscription for every game it has ever seen and keeps receiving traffic for games it has
+  no sockets for — invisible in testing, obvious after a week of uptime.
+- **The publisher receives its own message.** Redis delivers to every subscriber including
+  the publishing instance, so the mover is served through the same path as the opponent
+  rather than a local shortcut. One delivery path, one set of bugs, byte-identical frames.
+- **Presence: explicit delete plus a TTL.** The delete covers ordinary disconnects; the TTL
+  covers the case it cannot — the instance itself dying, which runs no cleanup. Accepted
+  cost: up to 60 s where a player whose pod died still shows as online. Eventually correct,
+  never blocking, wrong only in the direction of optimism.
+- **Unknown presence reads as offline.** Failing toward "we don't know" is less misleading
+  than asserting a connection that may not exist.
+- **Fail-fast Redis timeouts (1 s / 500 ms).** With the defaults, a Valkey outage would
+  stall every presence lookup for seconds and convert a degraded *feature* into a degraded
+  *application*.
+
+**Two breakages caught before shipping, both caused by adding presence**
+
+1. The test client's `await()` failed on *any* unexpected frame. Presence announcements now
+   interleave legitimately between a subscribe and a move, so every 2.1 test would have
+   broken. Now it skips other types but still fails fast on `ERROR`/`AUTH_FAILED` — those
+   are almost always the real problem, and "ILLEGAL_MOVE: e2e5" beats "timed out waiting
+   for MOVE_MADE".
+2. The realtime tests had no Valkey container, and subscribing now writes a presence key.
+   Added one there; `IntegrationTestBase` still has none, because nothing it reaches
+   touches Valkey and a container per run would buy nothing.
+
+**The cross-instance test was silently testing nothing.** The second instance was
+configured with `SpringApplicationBuilder.properties(...)`, which maps to
+`setDefaultProperties` — the *lowest*-precedence source, below `application.yml`. So
+`fanout: local` from the yaml won, and the "cross-instance" test ran two instances that
+shared a database and nothing else.
+
+The datasource and Redis settings applied correctly, because `application.yml` does not
+define them. Only the one key the application already had a value for was ignored — which
+is exactly the shape that makes this hard to spot.
+
+Fixed by passing command-line arguments, the highest-precedence source, plus an assertion
+in `@BeforeAll` that the override actually took. Without that assertion the test would go
+green the day someone changes how the instance is configured, while proving nothing. **A
+test that cannot fail for the reason it exists is worse than no test**, because it also
+consumes the attention that would have gone to writing a real one.
+
+**Also fixed: the presence assertion read the wrong frame.** A client receives its own
+presence echo — pub/sub delivers to every subscriber including the publishing instance —
+so white's first `PLAYER_PRESENCE` was about white. Filtering by user id is what a real
+client does too, so the test now does the same.
+
+**Wrong assertion, caught by the build.** `ValkeyFanoutConfig` declared its own
+`RedisMessageListenerContainer` with a comment stating that Spring Boot does not
+auto-configure one. It does. Two candidates, context refused to start. Class deleted; the
+auto-configured container is used instead, which also hands us its lifecycle and shutdown
+handling.
+
+This is the second Boot fact I asserted confidently and wrongly in Phase 2 — the first was
+`@ConditionalOnMissingBean` working on a component-scanned bean. Both were of the form "the
+framework doesn't do X". The cheap check is the **condition evaluation report**
+(`--debug`), which lists every auto-configuration that applied and every one that did not,
+with reasons. Reasoning about what Boot provides is not a substitute for reading it.
+
+**Ordering detail worth keeping.** Disconnect announces presence *before* unsubscribing
+upstream. Reversed, the instance publishes to a channel it has just stopped listening to —
+and the opponent, who may be on the other instance, never hears that their opponent left.
+
+---
+
+## 2026-09-14 — Milestone 2.1: WebSocket protocol and handler
+
+Phase 2 split so the fanout mechanism is a seam rather than an assumption: 2.1 builds the
+protocol against a `GameEventPublisher` port with an in-JVM implementation; 2.2 swaps in
+Valkey. That makes ADR-003's central claim — that an in-JVM broker breaks across instances
+— demonstrable instead of merely argued.
+
+**Verified before writing.** Boot 4 auto-configures `tools.jackson.databind.json.JsonMapper`;
+`JacksonAutoConfiguration` is `@ConditionalOnClass(JsonMapper.class)`. A trap worth
+recording: `JsonMapper` extends `ObjectMapper` and the auto-configuration backs off only
+for a `JsonMapper` bean, so declaring `@Bean ObjectMapper` leaves both in the context with
+the auto-configured one primary and the customisation silently ignored. Annotations stayed
+on `com.fasterxml.jackson.core`; only the engine moved.
+
+**Design decisions**
+
+- **`seq` dropped from the envelope.** ARCHITECTURE specified it. TCP already orders frames
+  within a connection, so `seq` only helps detect a *gap* — which `ply` does, monotonically
+  and meaningfully. Keeping it would put a distributed counter on the hot path in 2.2 to
+  duplicate what the payload carries. Revision recorded in ARCHITECTURE rather than made
+  quietly.
+- **`AFTER_COMMIT`, not `@EventListener`.** Broadcasting inside the transaction means a
+  rollback leaves every client showing a move that never happened — and because the clients
+  agree with each other, nothing looks wrong until a reload. The rollback path is the
+  optimistic-lock conflict, i.e. exactly the case the system is built for. The converse is
+  accepted: commit-then-fail-to-broadcast leaves a stale board that reconnection repairs.
+  **Committed-but-not-broadcast is recoverable; broadcast-but-not-committed is not.**
+- **The mover gets no private reply.** It learns the outcome from the same `MOVE_MADE`
+  broadcast as its opponent, so both observe identical state by construction rather than
+  the mover trusting a reply the opponent may never have received.
+- **One pipeline, two transports.** WebSocket MOVE calls the same `GameService.submitMove`
+  as REST. A second validation path would be a second place for the rules to drift.
+
+**Bug caught while writing, worth keeping.** The first `WebSocketHandlerDecorator` wrapped
+the session only in `afterConnectionEstablished`. The container hands every *later* callback
+the original session, so the handler's own sends would have bypassed the concurrency
+decorator entirely — half the writes protected and half not, which is worse than none
+because it looks correct. Fixed by remembering the wrapper for the life of the connection.
+Interleaved writes produce a corrupt frame that surfaces on the client as an unparseable
+message, under load, intermittently, and never in a test.
+
+**`@ConditionalOnMissingBean` on a `@Component` produced no bean at all.** That annotation
+is only reliable inside auto-configuration classes — Spring Boot's docs say so — because on
+a component-scanned bean the condition is evaluated during scanning in an order undefined
+relative to other user beans. Replaced with `@ConditionalOnProperty` on
+`chess.realtime.fanout` (`local` | `valkey`).
+
+The better framing is that the original was the wrong design, not just the wrong
+annotation. "Use this unless something else is present" makes deployment topology an
+emergent property of the classpath; a named property makes it a decision an operator takes
+and can inspect. Silently selecting in-JVM fanout behind a load balancer would
+desynchronise games with no configuration to point at.
+
+**Also fixed:** allowed origins were hardcoded in Java. They differ per environment, so a
+rebuild to deploy would have been required. Now configuration.
+
+---
+
 ## 2026-09-14 — Milestone 1.3b: game lifecycle and the move pipeline
 
 Completes Phase 1. A game can now be created, played to checkmate or resignation, and

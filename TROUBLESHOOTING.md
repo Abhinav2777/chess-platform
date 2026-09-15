@@ -158,6 +158,101 @@ and anything else meant to record that something went wrong.
 
 ---
 
+### `No qualifying bean of type X` when the bean has `@ConditionalOnMissingBean`
+
+**Symptom:** a `@Component` annotated `@ConditionalOnMissingBean(SomeInterface.class)` is
+never registered, and everything depending on that interface fails to autowire.
+**Cause:** **`@ConditionalOnMissingBean` is only reliable inside auto-configuration
+classes.** Spring Boot's documentation restricts it to them explicitly. On a
+component-scanned bean the condition is evaluated during scanning, in an order undefined
+relative to other user beans, so it can run before the registry is in the state you
+assumed.
+**Fix:** `@ConditionalOnProperty`, `@Profile`, or an explicit `@Bean` method — anything
+whose outcome does not depend on scan order.
+
+**The design lesson is bigger than the annotation.** "Use this implementation unless
+another one is present" makes deployment topology an emergent property of the classpath.
+Making it a named property means an operator chooses it deliberately and can see what was
+chosen. Here, silently selecting in-JVM fanout behind a load balancer would desynchronise
+games with no configuration to point at.
+
+---
+
+### `expected single matching bean but found 2`
+
+**Symptom:** a context fails to start because two beans of the same type exist — one of
+them yours, one auto-configured.
+**Cause:** declaring a bean the framework already provides. Here,
+`RedisMessageListenerContainer`: Spring Boot auto-configures one whenever Spring Data
+Redis is on the classpath, and a hand-written `@Bean` collided with it.
+**Fix:** delete yours and inject the auto-configured bean. Only declare one when you need
+behaviour the default does not provide — and then mark it `@Primary` or qualify the
+injection point deliberately.
+
+**How to check before writing the bean:** run with `--debug` and read the condition
+evaluation report. It lists every auto-configuration that applied, every one that did not,
+and why. That is the authoritative answer to "does Boot give me this already?" — reasoning
+about it is not.
+
+---
+
+### A property override silently does not apply
+
+**Symptom:** a programmatically started Spring context ignores a property you passed it,
+and behaves as if `application.yml` were authoritative. Here, a second instance started
+with `chess.realtime.fanout=valkey` kept using in-JVM fanout, so a cross-instance test
+exercised two unconnected instances and timed out.
+
+**Cause:** `SpringApplicationBuilder.properties(...)` maps to
+`SpringApplication.setDefaultProperties`, which is the **lowest**-precedence property
+source — *below* `application.yml`. Any key the application already defines wins. Keys the
+application does not define appear to work, which is what makes this so confusing: in this
+case the datasource and Redis settings applied and only `fanout` did not.
+
+**Fix:** pass them as command-line arguments — `run("--chess.realtime.fanout=valkey")` —
+which is the highest-precedence source. `@SpringBootTest(properties = ...)` and
+`@DynamicPropertySource` also override correctly; only the builder's `properties()` is the
+trap.
+
+**Guard against it:** assert the override took.
+
+```java
+assertThat(context.getEnvironment().getProperty("chess.realtime.fanout"))
+        .isEqualTo("valkey");
+```
+
+Without that, the day someone changes how the instance is configured, the test goes green
+while proving nothing — a test that cannot fail for the reason it exists is worse than no
+test.
+
+---
+
+### A player shows offline while they are connected
+
+**Symptom:** the presence badge says offline even though the opponent is in the game and
+moves arrive normally.
+**Cause:** presence was stored as one flag per (game, user) but written from per-socket
+events. During any reconnect the old and new sockets overlap, and if the old one's close is
+processed last it overwrites the new one's "online".
+**Fix:** store a **set of session ids** per (game, user). Online means the set is non-empty;
+only the transition to or from empty is announced. An overlapping reconnect becomes a
+no-op.
+
+**Why a Redis set rather than a local counter:** a per-instance count fixes the reconnect
+case and reintroduces the identical bug across instances — a player with sockets on two
+instances would be announced offline when either closed.
+
+**React StrictMode is how this was found**, and it is worth keeping enabled for exactly
+that reason. It mounts, unmounts and remounts every effect in development, which performs
+a reconnect on every page load. It did not cause the bug; it made a production race
+deterministic.
+
+**Generalisable:** state about an entity that several connections can assert is a
+*reference count*, not a boolean. The boolean version is correct until the first overlap,
+which is also the first reconnect.
+
+---
+
 ## Anticipated issues
 
 These have not occurred yet. They are recorded because they are predictable and the

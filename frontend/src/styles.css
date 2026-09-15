@@ -1,0 +1,114 @@
+:root {
+  --light: #edd6b0;
+  --dark: #b88762;
+  --highlight: #b9ca43;
+  --bg: #1f1f1d;
+  --panel: #2a2a28;
+  --text: #ecebe9;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.panel, .game { width: min(880px, 100%); }
+
+.panel { display: flex; flex-direction: column; gap: .75rem; max-width: 22rem; }
+.panel h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+
+input, button {
+  font: inherit;
+  padding: .55rem .7rem;
+  border-radius: 6px;
+  border: 1px solid #45443f;
+  background: var(--panel);
+  color: var(--text);
+}
+button { cursor: pointer; }
+button:hover { border-color: #6a685f; }
+button.link { background: none; border: none; text-decoration: underline; padding: .2rem; text-align: left; }
+
+.game header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.game-body { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+aside { flex: 1 1 12rem; display: flex; flex-direction: column; gap: .5rem; }
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(70vw, 480px);
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.square {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(1.6rem, 6vw, 2.6rem);
+  line-height: 1;
+}
+.square.light { background: var(--light); }
+.square.dark { background: var(--dark); }
+.square.last-move { box-shadow: inset 0 0 0 100vmax rgba(185, 202, 67, .28); }
+.square.selected { box-shadow: inset 0 0 0 4px var(--highlight); }
+
+/* A legal destination, drawn from the server's list — never computed here. */
+.square.target::after {
+  content: ''; width: 28%; aspect-ratio: 1; border-radius: 50%;
+  background: rgba(0, 0, 0, .28);
+}
+.square.capture { box-shadow: inset 0 0 0 5px rgba(0, 0, 0, .28); }
+
+/*
+ * Symbol-capable fonts first. The generic stack in `body` has no chess coverage on many
+ * systems, which is how the pieces became tofu boxes.
+ */
+.piece {
+  font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans",
+               "Apple Symbols", "Arial Unicode MS", sans-serif;
+  line-height: 1;
+}
+
+/* Both sides use the outline glyph; the stroke is what makes it read as a solid piece. */
+.piece.white {
+  color: #fdfdfb;
+  -webkit-text-stroke: 1.5px #2b2b28;
+  paint-order: stroke fill;
+}
+.piece.black {
+  color: #201f1c;
+  -webkit-text-stroke: 1.5px #201f1c;
+  paint-order: stroke fill;
+}
+
+.promotion {
+  display: flex; gap: .4rem; margin-top: .6rem;
+  padding: .4rem; background: var(--panel); border-radius: 6px; width: max-content;
+}
+.promotion button { font-size: 1.6rem; color: #111; background: var(--light); }
+
+.connection { font-size: .85rem; padding: .2rem .6rem; border-radius: 999px; background: var(--panel); }
+.connection.live { color: #8fd18f; }
+.connection.reconnecting { color: #e0c168; }
+.connection.closed { color: #e08a8a; }
+
+.status { font-weight: 600; margin: 0; }
+.online { color: #8fd18f; margin: 0; }
+.offline { color: #9a9a95; margin: 0; }
+.hint { color: #9a9a95; font-size: .85rem; margin: 0; }
+.error { color: #e08a8a; margin: 0; }
+
+.moves, .games { margin: 0; padding-left: 1.2rem; max-height: 14rem; overflow-y: auto; }
+.games { list-style: none; padding-left: 0; }

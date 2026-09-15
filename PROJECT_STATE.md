@@ -74,18 +74,75 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 1 — Core Chess MVP (final milestone) |
-| **Phase status** | 1.1, 1.2, 1.3a green. **1.3b written, unverified** — game lifecycle and move pipeline |
-| **Hours used (estimated)** | Phase 0: ~5. Phase 1: ~14 of 16–20 |
-| **Cumulative hours (estimated)** | ~19 of 135–175 |
+| **Current phase** | Phase 2 — Real-Time Multiplayer |
+| **Phase status** | Phase 1, 2.1, 2.2 green. **Milestone 2.3 written, unverified** — React client |
+| **Hours used (estimated)** | Phase 0: ~5. Phase 1: ~14. Phase 2: ~17 of 15–18 (frontend ~4 of its 6 h cap) |
+| **Cumulative hours (estimated)** | ~36 of 135–175 |
 | **Schedule status** | On track |
 | **Scope status** | On track — three spec contradictions found and resolved (`ROADMAP.md` § Deviations) |
-| **Next milestone** | Phase 2 — WebSockets, real-time moves, reconnection |
+| **Next milestone** | Phase 3 — server-authoritative clock, concurrency hardening |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 2 — Milestone 2.3: React client
+
+- Vite + React 19 + TypeScript. **No chess library, no chess rules on the client.**
+- `GameSocket.ts` — protocol client: first-frame auth, 25 s heartbeat, reconnect with
+  exponential backoff **plus full jitter**. Backoff resets on `AUTH_OK`, not socket open.
+- `useGame.ts` — snapshot adopted unconditionally (ADR-007). `clientMoveId` generated
+  client-side; `expectedPly` sent with every move.
+- `Board.tsx` — hand-written 8×8 grid. Contains no chess logic: legal destinations are
+  read from the server's `legalMoves`, and promotion is detected by the absence of the
+  4-character move rather than by knowing about the eighth rank.
+- `api.ts` — access token in a module variable, never web storage. Refresh token never
+  touched by client code; `credentials: 'include'` throughout.
+- Connection state always visible, so a quiet board is not mistaken for a broken app.
+- **Known gap:** the move list resets on reconnect (the snapshot carries position, not the
+  log). `GET /api/games/{id}` has it; small follow-up.
+
+### Phase 2 — Milestone 2.2: cross-instance fanout and presence
+
+- `ValkeyGameEventPublisher` + `GameChannelListener` + `ValkeyFanoutConfig`. One channel
+  per game; instances subscribe on **first local subscriber** and unsubscribe on **last**,
+  so upstream subscriptions scale with games in play rather than with connections.
+- `GameEventPublisher` gained default `onFirstLocalSubscriber` / `onLastLocalSubscriber`
+  hooks, so the handler stays unaware of the transport.
+- `PresenceTracker` — Valkey keys with a 60 s TTL. Explicit delete on disconnect; the TTL
+  is the safety net for an instance that dies without cleanup. Degrades silently: unknown
+  reads as offline.
+- `PLAYER_PRESENCE` protocol message; `GameSnapshot` now carries `opponentOnline`.
+- `spring.data.redis` fail-fast timeouts (1 s / 500 ms). A cache must never stall a request.
+- **`ValkeyFanoutIntegrationTest` starts two real Spring instances** and proves a move on
+  one reaches a player on the other — plus a Valkey-outage test asserting moves still
+  commit with no fanout at all.
+- ADR-003 updated: its central claim is now verified rather than argued.
+
+### Phase 2 — Milestone 2.1: WebSocket protocol
+
+- `realtime` module: versioned JSON envelope, closed `ClientMessage`/`ServerMessage`
+  enums, record payloads. **No `seq`** — dropped as redundant with `ply`
+  (ARCHITECTURE.md §5.2 revision).
+- `ChessWebSocketHandler`: first-frame auth with timer + unauthenticated cap,
+  subscribe → `GAME_SNAPSHOT`, MOVE/RESIGN through the **same `GameService` pipeline as
+  REST**, PING/PONG.
+- `GameSessionRegistry`: local sockets only, never game state. Reports first/last local
+  subscriber so 2.2 can subscribe upstream per game rather than per socket.
+- `GameEventPublisher` port + `LocalGameEventPublisher` (in-JVM, `@ConditionalOnMissingBean`).
+  **This is the implementation ADR-003 rejects** — it exists so 2.2's Valkey version is a
+  demonstrable improvement rather than an asserted one.
+- `GameEvents` + `GameEventBroadcaster` with `@TransactionalEventListener(AFTER_COMMIT)`.
+  Committed-but-not-broadcast is recoverable; broadcast-but-not-committed is not.
+- `ConcurrentWebSocketSessionDecorator` for write serialisation **and** send-buffer
+  backpressure. Applied to every callback, not just connection setup.
+- Allowed origins moved from Java to configuration.
+- Metrics: `chess.ws.connections.active`, `chess.ws.games.watched`,
+  `chess.ws.moves.broadcast`, `chess.ws.games.finished`.
+- Tests: `RealtimeGameplayIntegrationTest` — 12 cases with two real sockets, including
+  forged token, auth timeout, command-before-auth, foreign-game subscribe, and a
+  **reconnect that restores a client which missed a move entirely**.
 
 ### Phase 1 — Milestone 1.3b: game lifecycle and the move pipeline
 

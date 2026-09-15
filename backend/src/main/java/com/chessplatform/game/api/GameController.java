@@ -31,7 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RestController
 @RequestMapping("/api/games")
@@ -134,9 +138,30 @@ public class GameController {
             @AuthenticationPrincipal AuthenticatedUser caller,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return gameFacade.findByPlayer(caller.id(), page, size).stream()
-                .map(GameResponses.GameSummary::from)
+
+        List<GameView> games = gameFacade.findByPlayer(caller.id(), page, size);
+
+        // Every player id across every game, resolved in a single query. This is what
+        // IdentityFacade.findAllById exists for: the obvious implementation looks up each
+        // game's two players as it maps, which is 2N queries — invisible at two games and
+        // ruinous at two hundred. Giving callers a batch method is more effective than
+        // telling them not to loop.
+        Set<UUID> playerIds = games.stream()
+                .flatMap(game -> Stream.of(game.whitePlayerId(), game.blackPlayerId()))
+                .collect(Collectors.toSet());
+        Map<UUID, UserSummary> players = identity.findAllById(playerIds);
+
+        return games.stream()
+                .map(game -> GameResponses.GameSummary.withNames(game,
+                        nameOf(players, game.whitePlayerId()),
+                        nameOf(players, game.blackPlayerId())))
                 .toList();
+    }
+
+    /** A deleted account leaves a game that still needs rendering, so this never throws. */
+    private static String nameOf(Map<UUID, UserSummary> players, UUID id) {
+        UserSummary player = players.get(id);
+        return player == null ? "unknown" : player.username();
     }
 
     /**

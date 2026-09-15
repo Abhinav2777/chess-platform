@@ -37,12 +37,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * core we already have and behaves identically. Worth revisiting once the dependency is
  * confirmed.
  *
- * <h2>No Valkey container yet</h2>
+ * <h2>Still no Valkey container, deliberately</h2>
  *
- * <p>Identity does not touch Valkey. Lettuce connects lazily, so the context starts
- * without it. A Valkey container joins this base class in Phase 4, when something
- * actually depends on it — adding it now would mean starting a container on every run
- * to serve no assertion.
+ * <p>Nothing reached from this base class touches Valkey: identity and gameplay run
+ * entirely through PostgreSQL, and presence is only written when a WebSocket subscribes.
+ * Lettuce connects lazily, so the context starts without it.
+ *
+ * <p>The realtime tests do start one, because they do subscribe. Starting a container
+ * here as well would add seconds to every run to serve no assertion — and short
+ * {@code spring.data.redis} timeouts mean that even if something did reach for Valkey, it
+ * would degrade in milliseconds rather than stall.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 public abstract class IntegrationTestBase {

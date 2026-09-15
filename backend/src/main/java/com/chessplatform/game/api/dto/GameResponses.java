@@ -15,13 +15,26 @@ public final class GameResponses {
     private GameResponses() {
     }
 
+    /**
+     * @param whiteUsername may be null when the caller did not ask for names — the single
+     *                      game endpoint omits them, the list endpoint supplies them.
+     *                      A client that only has opaque UUIDs cannot tell one game from
+     *                      another, which turns a game list into a row of identical
+     *                      buttons.
+     */
     public record GameSummary(UUID id, UUID whitePlayerId, UUID blackPlayerId,
+                              String whiteUsername, String blackUsername,
                               GameStatus status, GameResult result, Termination termination,
                               String fen, int ply, Side sideToMove,
                               Instant createdAt, Instant finishedAt) {
 
         public static GameSummary from(GameView view) {
+            return withNames(view, null, null);
+        }
+
+        public static GameSummary withNames(GameView view, String white, String black) {
             return new GameSummary(view.id(), view.whitePlayerId(), view.blackPlayerId(),
+                    white, black,
                     view.status(), view.result(), view.termination(), view.fen(),
                     view.ply(), view.sideToMove(), view.createdAt(), view.finishedAt());
         }

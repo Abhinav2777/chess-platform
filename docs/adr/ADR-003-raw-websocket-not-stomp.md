@@ -41,6 +41,17 @@ reason about and test for no engineering value.
   the browser's native `WebSocket` API is adequate.
 - The protocol is versioned (`v: 1`) from day one so it can evolve.
 
+## Verified, 2026-09-14 (Milestone 2.2)
+
+The central claim here — that an in-JVM broker does not fan out across instances — is no
+longer an argument. `ValkeyFanoutIntegrationTest` starts **two Spring contexts**, connects
+one player to each, and asserts a move on one reaches the other. Switching
+`chess.realtime.fanout` from `valkey` back to `local` fails that test while every other
+test in the suite still passes.
+
+That is worth more than the reasoning above, because the failure it guards against is the
+silent kind: nothing throws, nothing logs, and one player's board simply stops updating.
+
 ## Interview angle
 
 **Q:** "Spring has STOMP support built in. Why write your own protocol?"
@@ -53,6 +64,14 @@ infrastructure I already have." I also wanted control over the message envelope,
 because my `MOVE` command carries a client-generated idempotency key and an expected
 ply for stale-client detection, and those are the mechanisms that make concurrent and
 retried moves safe.
+
+**Follow-up:** "How do you know the in-JVM version was actually broken?"
+**A:** I built it first and then wrote a test with two real application instances sharing
+a database and a Valkey, one player connected to each. With in-JVM fanout the move never
+crosses and the test fails; with Valkey pub/sub it passes. It's a one-property switch, so
+the difference is demonstrable rather than something I have to be believed about. That
+mattered to me because the bug it prevents is invisible — no exception, no log line, just
+a board that stops updating for one of the two players.
 
 **Follow-up:** "When would you have chosen STOMP?"
 **A:** If the client team wanted an off-the-shelf JS client, if we needed many
