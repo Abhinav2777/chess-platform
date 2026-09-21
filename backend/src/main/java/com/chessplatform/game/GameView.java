@@ -22,6 +22,22 @@ public record GameView(UUID id,
                        String fen,
                        int ply,
                        Side sideToMove,
+                       long initialMs,
+                       long incrementMs,
+                       long whiteMsLeft,
+                       long blackMsLeft,
+                       Instant lastMoveAt,
                        Instant createdAt,
                        Instant finishedAt) {
+
+    /**
+     * Remaining time for a side as of {@code now}.
+     *
+     * <p>Derived, never stored — which is the whole point of ADR-006. The side to move has
+     * been spending since {@code lastMoveAt}; the other side's clock is frozen.
+     */
+    public long remainingMs(Side side, Instant now) {
+        return com.chessplatform.game.ClockCalculator.remainingMs(
+                side, sideToMove, whiteMsLeft, blackMsLeft, lastMoveAt, now);
+    }
 }

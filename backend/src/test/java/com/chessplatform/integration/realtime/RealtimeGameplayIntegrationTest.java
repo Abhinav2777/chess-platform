@@ -1,6 +1,7 @@
 package com.chessplatform.integration.realtime;
 
 import com.chessplatform.chess.Side;
+import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRepository;
@@ -26,6 +27,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -101,7 +103,7 @@ class RealtimeGameplayIntegrationTest {
                 UUID.randomUUID() + "@example.com", "correct-horse-battery");
         whiteToken = jwt.issueAccessToken(white.id(), white.username());
         blackToken = jwt.issueAccessToken(black.id(), black.username());
-        game = gameService.createGame(white.id(), black.id());
+        game = gameService.createGame(white.id(), black.id(), TimeControl.BLITZ_5_3);
     }
 
     @AfterEach
@@ -253,7 +255,13 @@ class RealtimeGameplayIntegrationTest {
 
                 Map<String, Object> toBlack = blackClient.payloadOf(blackClient.await("MOVE_MADE"));
 
-                assertThat((java.util.List<?>) toBlack.get("legalMoves"))
+                // Typed, not a wildcard. `List<?>` gives AssertJ a capture type, so
+                // contains(String) has nothing to match against — the cast has to name the
+                // element type for the assertion to mean anything.
+                @SuppressWarnings("unchecked")
+                List<String> legalReplies = (List<String>) toBlack.get("legalMoves");
+
+                assertThat(legalReplies)
                         .as("black must be able to reply without waiting for a snapshot")
                         .hasSize(20)
                         .contains("e7e5");

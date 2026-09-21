@@ -10,6 +10,7 @@ import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRecord;
 import com.chessplatform.game.GameEvents;
+import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.MoveRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -69,19 +70,23 @@ public class GameService {
     private final MoveRepository moves;
     private final ChessRules rules;
     private final Clock clock;
+    private final ServerClock serverClock;
     private final ApplicationEventPublisher events;
 
     private final Timer moveLatency;
     private final Counter conflicts;
     private final Counter idempotentReplays;
     private final Counter staleSubmissions;
+    private final Counter flagFalls;
 
     public GameService(GameRepository games, MoveRepository moves, ChessRules rules,
-                       Clock clock, ApplicationEventPublisher events, MeterRegistry metrics) {
+                       Clock clock, ServerClock serverClock,
+                       ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.moves = moves;
         this.rules = rules;
         this.clock = clock;
+        this.serverClock = serverClock;
         this.events = events;
 
         this.moveLatency = Timer.builder("chess.move.processing")
@@ -99,12 +104,18 @@ public class GameService {
         this.staleSubmissions = Counter.builder("chess.move.stale_submissions")
                 .description("Moves rejected because the client's ply was out of date")
                 .register(metrics);
+        this.flagFalls = Counter.builder("chess.move.flag_falls")
+                .description("Moves rejected because the mover had already run out of time")
+                .register(metrics);
     }
 
     @Transactional
-    public Game createGame(UUID whitePlayerId, UUID blackPlayerId) {
+    public Game createGame(UUID whitePlayerId, UUID blackPlayerId, TimeControl timeControl) {
+        // Started from the DATABASE clock, not the application's. White's clock begins the
+        // instant the game is created, so this value decides a game and must come from the
+        // same authority every subsequent move is measured against (ServerClock).
         Game game = Game.start(Uuid7.generate(), whitePlayerId, blackPlayerId,
-                rules.startingPosition(), Instant.now(clock));
+                rules.startingPosition(), timeControl, serverClock.now());
         return games.save(game);
     }
 
@@ -175,11 +186,26 @@ public class GameService {
                             .formatted(command.expectedPly(), game.ply()));
         }
 
-        // 6. Legality. The only authority on whether this move is playable.
+        // 6. The clock, before legality. A player who has already run out does not get to
+        //    play a legal move: the game ended the moment their time did, and only nobody
+        //    having looked kept it ACTIVE. Checking after would let a move land on a game
+        //    that was over.
+        Instant now = serverClock.now();
+        if (game.hasFlagged(now)) {
+            flagFalls.increment();
+            game.flagOnTime(now);
+            games.saveAndFlush(game);
+            publishGameEnded(game);
+            throw new DomainException.Rejected(
+                    ErrorCode.OUT_OF_TIME, "Your time ran out.");
+        }
+
+        // 7. Legality. The only authority on whether this move is playable.
         MoveResult result = rules.apply(game.position(), command.intent());
 
-        Instant now = Instant.now(clock);
         moves.save(MoveRecord.of(gameId, game.ply() + 1, result, command.clientMoveId(), now));
+        // Charges the mover, adds their increment, and recomputes the deadline for the
+        // player who must now move.
         game.applyMove(result, now);
 
         try {
@@ -222,7 +248,8 @@ public class GameService {
                 result.sideToMove(), !game.isActive(),
                 // Empty once the game is over, which the client uses to stop accepting
                 // input without needing to interpret the status itself.
-                game.isActive() ? rules.legalMoves(result.positionAfter()) : java.util.List.of()));
+                game.isActive() ? rules.legalMoves(result.positionAfter()) : java.util.List.of(),
+                game.whiteMsLeft(), game.blackMsLeft()));
 
         if (!game.isActive()) {
             publishGameEnded(game);
@@ -241,7 +268,7 @@ public class GameService {
     public Game resign(UUID gameId, UUID playerId) {
         Game game = requireGame(gameId);
         Side side = game.sideOf(playerId);
-        game.resign(side, Instant.now(clock));
+        game.resign(side, serverClock.now());
         // No explicit save: `game` is managed inside this transaction, so the dirty check
         // at commit issues the UPDATE — and the @Version column is bumped with it, so a
         // resignation racing a move is still resolved by optimistic locking.
@@ -249,14 +276,23 @@ public class GameService {
         return game;
     }
 
-    /** What the caller needs after a successful (or replayed) move. */
+    /**
+     * What the caller needs after a successful (or replayed) move.
+     *
+     * @param whiteMsLeft stored remaining time, not "remaining right now". The side to
+     *                    move is spending from this instant onward, so a client ticks it
+     *                    down locally for display and resyncs on the next server message.
+     *                    Sending a snapshot of a moving value is the only honest option —
+     *                    any "live" figure is stale by the network latency anyway.
+     */
     public record MoveAccepted(int ply, String uci, String san, String fenAfter,
-                               Side sideToMove, boolean gameOver, boolean replayed) {
+                               Side sideToMove, boolean gameOver, boolean replayed,
+                               long whiteMsLeft, long blackMsLeft) {
 
         static MoveAccepted of(MoveResult result, Game game) {
             return new MoveAccepted(game.ply(), result.uci(), result.san(),
                     result.positionAfter().fen(), result.sideToMove(),
-                    !game.isActive(), false);
+                    !game.isActive(), false, game.whiteMsLeft(), game.blackMsLeft());
         }
 
         /**
@@ -266,7 +302,8 @@ public class GameService {
          */
         static MoveAccepted replayOf(MoveRecord record, Game game) {
             return new MoveAccepted(record.ply(), record.uci(), record.san(),
-                    record.fenAfter(), game.sideToMove(), !game.isActive(), true);
+                    record.fenAfter(), game.sideToMove(), !game.isActive(), true,
+                    game.whiteMsLeft(), game.blackMsLeft());
         }
     }
 }

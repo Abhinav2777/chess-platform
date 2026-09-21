@@ -8,6 +8,7 @@ import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.game.GameFacade;
 import com.chessplatform.game.GameView;
+import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.api.dto.GameRequests;
 import com.chessplatform.game.api.dto.GameResponses;
 import com.chessplatform.game.domain.Game;
@@ -71,10 +72,15 @@ public class GameController {
                     ErrorCode.VALIDATION_FAILED, "You cannot play against yourself.");
         }
 
+        TimeControl timeControl = request.initialSeconds() == null
+                ? TimeControl.BLITZ_5_3
+                : TimeControl.ofSeconds(request.initialSeconds(),
+                        request.incrementSeconds() == null ? 0 : request.incrementSeconds());
+
         Side callerSide = resolveSide(request.playAs());
         Game game = callerSide == Side.WHITE
-                ? gameService.createGame(caller.id(), opponent.id())
-                : gameService.createGame(opponent.id(), caller.id());
+                ? gameService.createGame(caller.id(), opponent.id(), timeControl)
+                : gameService.createGame(opponent.id(), caller.id(), timeControl);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GameResponses.GameSummary.from(GameFacade.toView(game)));
@@ -123,7 +129,7 @@ public class GameController {
 
         return new GameResponses.MoveAccepted(accepted.ply(), accepted.uci(), accepted.san(),
                 accepted.fenAfter(), accepted.sideToMove(), accepted.gameOver(),
-                accepted.replayed());
+                accepted.replayed(), accepted.whiteMsLeft(), accepted.blackMsLeft());
     }
 
     @PostMapping("/{gameId}/resign")

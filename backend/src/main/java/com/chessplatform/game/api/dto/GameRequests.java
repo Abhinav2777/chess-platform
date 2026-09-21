@@ -1,6 +1,8 @@
 package com.chessplatform.game.api.dto;
 
 import com.chessplatform.chess.Promotion;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -19,10 +21,16 @@ public final class GameRequests {
      * @param playAs           WHITE, BLACK, or null for a random draw. Null is the honest
      *                         default — letting the challenger always pick White is a real
      *                         advantage.
+     * @param initialSeconds   starting time per player. Null takes the 5+3 default rather
+     *                         than rejecting: a challenge form should not force a decision
+     *                         about time control on someone who just wants a game.
+     * @param incrementSeconds added after each move. Null means the default, 0 means none.
      */
     public record CreateGame(
             @NotBlank String opponentUsername,
-            String playAs) {
+            String playAs,
+            @Min(10) @Max(86_400) Long initialSeconds,
+            @Min(0) @Max(120) Long incrementSeconds) {
     }
 
     /**

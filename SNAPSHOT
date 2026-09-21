@@ -1,7 +1,9 @@
-snapshot:  M2.3  (Phase 2 complete)
+snapshot:  M3.1
 date:      2026-09-14
-contains:  Phase 1 + 2.1 protocol + 2.2 Valkey fanout/presence + 2.3 React client
-frontend:  Vite + React 19 + TS. No chess library, no chess rules on the client.
-           cd frontend && npm install && npm run dev  ->  http://localhost:5173
-fanout:    chess.realtime.fanout = local | valkey  (cross-instance proven by test)
-next:      Phase 3 - server-authoritative clock (ADR-006), concurrency hardening
+contains:  Phase 1 + Phase 2 complete (played end-to-end) + M3.1 server-authoritative clock
+migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock
+clock:     ADR-006 - never ticks. Derived from white_ms_left/black_ms_left/last_move_at
+           and PostgreSQL now(). turn_deadline stored + partial index for the sweeper.
+sweeper:   @Scheduled(fixedDelay=1s), FOR UPDATE SKIP LOCKED, batch 100.
+           Disable with chess.clock.sweeper-enabled=false
+next:      3.2 - clock in the UI, abandonment abort for pre-move games

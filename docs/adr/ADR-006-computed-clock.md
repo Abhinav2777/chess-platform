@@ -52,6 +52,23 @@ over three columns, and creates a new single point of failure.
   and opens an abuse vector where a client fakes latency to gain time.
 - `turn_deadline` must be maintained on every move so the sweeper index stays useful.
 
+## Implemented, 2026-09-14 (Milestone 3.1)
+
+Five columns on `games`, one partial index, and a pure function. No timer exists anywhere
+in the codebase.
+
+- `ClockCalculator` — static, dependency-free, 14 unit tests covering flag-fall at exactly
+  zero, increment at the boundary, and a clock that moved backwards. No database, no
+  sleeping.
+- `ServerClock` — `SELECT now()`, so one machine is the time authority for every game.
+- `games.turn_deadline` with a partial index on ACTIVE games, so the sweeper is an index
+  scan bounded by *expired* games.
+- `TimeoutSweeper` — `FOR UPDATE SKIP LOCKED`, so replicas take disjoint batches with no
+  leader election and no distributed lock.
+
+**The reconnect-to-another-instance case required no code at all.** That is the result the
+design was chosen for: there was nothing to restore, because nothing was ever held.
+
 ## Interview angle
 
 **Q:** "How does your chess clock work?"
@@ -74,6 +91,13 @@ column with a partial index on active games, so that query is an index scan boun
 the number of *expired* games, not a scan of every game. Multiple sweeper replicas use
 `FOR UPDATE SKIP LOCKED`, so they partition the work without coordinating and can never
 finalise the same game twice.
+
+**Q:** "How did you test something time-dependent without slow, flaky tests?"
+**A:** Because the clock is a pure function, most of it needed no time at all — 14 unit
+tests pass instants in as arguments and compare numbers, so flag-fall at exactly zero or a
+clock that moved backwards are ordinary assertions. The database-level tests push
+`turn_deadline` into the past with SQL rather than sleeping. Nothing in the suite waits for
+real time to pass, which is the practical payoff of a clock with no state of its own.
 
 **Q:** "Why take the timestamp from the database instead of the application?"
 **A:** Clock skew. Two pods on different hosts differ by tens of milliseconds even

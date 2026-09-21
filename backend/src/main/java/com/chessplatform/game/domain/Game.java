@@ -6,9 +6,11 @@ import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.game.ClockCalculator;
 import com.chessplatform.game.GameResult;
 import com.chessplatform.game.GameStatus;
 import com.chessplatform.game.Termination;
+import com.chessplatform.game.TimeControl;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -82,6 +84,35 @@ public class Game {
     @Column(name = "side_to_move", nullable = false, length = 5)
     private Side sideToMove;
 
+    // ---- clock (ADR-006) --------------------------------------------------
+    // Five values, no ticking process. Remaining time is derived from these and the
+    // current time on every read, which is why the clock survives a reconnect to a
+    // different instance without any handling at all.
+
+    @Column(name = "initial_ms", nullable = false, updatable = false)
+    private long initialMs;
+
+    @Column(name = "increment_ms", nullable = false, updatable = false)
+    private long incrementMs;
+
+    @Column(name = "white_ms_left", nullable = false)
+    private long whiteMsLeft;
+
+    @Column(name = "black_ms_left", nullable = false)
+    private long blackMsLeft;
+
+    /** When the clock last changed hands. The side to move has been spending since then. */
+    @Column(name = "last_move_at", nullable = false)
+    private Instant lastMoveAt;
+
+    /**
+     * {@code lastMoveAt + } the mover's remaining time. Stored rather than computed so the
+     * sweeper's query is an index scan bounded by expired games rather than a scan of all
+     * of them.
+     */
+    @Column(name = "turn_deadline", nullable = false)
+    private Instant turnDeadline;
+
     @Version
     @Column(name = "version", nullable = false)
     private long version;
@@ -95,8 +126,8 @@ public class Game {
     protected Game() {
     }
 
-    private Game(UUID id, UUID whitePlayerId, UUID blackPlayerId,
-                 String fen, Side sideToMove, Instant createdAt) {
+    private Game(UUID id, UUID whitePlayerId, UUID blackPlayerId, String fen,
+                 Side sideToMove, TimeControl timeControl, Instant startedAt) {
         this.id = id;
         this.whitePlayerId = whitePlayerId;
         this.blackPlayerId = blackPlayerId;
@@ -104,16 +135,25 @@ public class Game {
         this.fen = fen;
         this.ply = 0;
         this.sideToMove = sideToMove;
-        this.createdAt = createdAt;
+        this.initialMs = timeControl.initialMs();
+        this.incrementMs = timeControl.incrementMs();
+        this.whiteMsLeft = timeControl.initialMs();
+        this.blackMsLeft = timeControl.initialMs();
+        // White's clock starts the moment the game does. Nobody has moved, so the
+        // "previous move" is the start of the game.
+        this.lastMoveAt = startedAt;
+        this.turnDeadline = ClockCalculator.deadline(startedAt, timeControl.initialMs());
+        this.createdAt = startedAt;
     }
 
     public static Game start(UUID id, UUID whitePlayerId, UUID blackPlayerId,
-                             Position startingPosition, Instant createdAt) {
+                             Position startingPosition, TimeControl timeControl,
+                             Instant startedAt) {
         if (whitePlayerId.equals(blackPlayerId)) {
             throw new IllegalArgumentException("a player cannot play themselves");
         }
-        return new Game(id, whitePlayerId, blackPlayerId,
-                startingPosition.fen(), startingPosition.sideToMove(), createdAt);
+        return new Game(id, whitePlayerId, blackPlayerId, startingPosition.fen(),
+                startingPosition.sideToMove(), timeControl, startedAt);
     }
 
     /**
@@ -126,9 +166,27 @@ public class Game {
      */
     public void applyMove(MoveResult move, Instant at) {
         requireActive();
+
+        // Charge the mover before anything else. The caller is expected to have checked
+        // hasFlagged() already, so reaching here with a flagged clock is a programming
+        // error rather than a game outcome — and failing loudly beats silently applying a
+        // move that should never have been accepted.
+        ClockCalculator.Charge charge = ClockCalculator.charge(
+                msLeftFor(sideToMove), lastMoveAt, at, incrementMs);
+        if (charge.flagged()) {
+            throw new IllegalStateException(
+                    "applyMove called on a flagged clock; check hasFlagged() first");
+        }
+        setMsLeftFor(sideToMove, charge.msLeft());
+        this.lastMoveAt = at;
+
         this.fen = move.positionAfter().fen();
         this.ply += 1;
         this.sideToMove = move.sideToMove();
+
+        // The deadline belongs to whoever must move next. Recomputed on every move or the
+        // sweeper's index would point at a stale time and flag the wrong player.
+        this.turnDeadline = ClockCalculator.deadline(at, msLeftFor(this.sideToMove));
 
         if (move.outcome().isTerminal()) {
             // The mover is whoever was to move BEFORE this move, i.e. the opponent of
@@ -146,6 +204,66 @@ public class Game {
     public void resign(Side resigningSide, Instant at) {
         requireActive();
         finish(GameResult.winFor(resigningSide.opponent()), Termination.RESIGNATION, at);
+    }
+
+    /** True when the side to move has no time left. Cheap: arithmetic on stored values. */
+    public boolean hasFlagged(Instant now) {
+        return remainingMs(sideToMove, now) <= 0;
+    }
+
+    /**
+     * Ends the game on time. The side to move lost; their opponent wins.
+     *
+     * <p>Their clock is zeroed so the persisted state matches what every client was
+     * already showing — a finished game whose loser still has 400ms on the board would be
+     * a permanent, visible inconsistency in the game record.
+     */
+    public void flagOnTime(Instant at) {
+        requireActive();
+        setMsLeftFor(sideToMove, 0);
+        finish(GameResult.winFor(sideToMove.opponent()), Termination.TIMEOUT, at);
+    }
+
+    /** Remaining time for a side at a given instant. Never negative. */
+    public long remainingMs(Side side, Instant now) {
+        return ClockCalculator.remainingMs(side, sideToMove, whiteMsLeft, blackMsLeft,
+                lastMoveAt, now);
+    }
+
+    private long msLeftFor(Side side) {
+        return side == Side.WHITE ? whiteMsLeft : blackMsLeft;
+    }
+
+    private void setMsLeftFor(Side side, long msLeft) {
+        if (side == Side.WHITE) {
+            this.whiteMsLeft = msLeft;
+        } else {
+            this.blackMsLeft = msLeft;
+        }
+    }
+
+    public long initialMs() {
+        return initialMs;
+    }
+
+    public long incrementMs() {
+        return incrementMs;
+    }
+
+    public long whiteMsLeft() {
+        return whiteMsLeft;
+    }
+
+    public long blackMsLeft() {
+        return blackMsLeft;
+    }
+
+    public Instant lastMoveAt() {
+        return lastMoveAt;
+    }
+
+    public Instant turnDeadline() {
+        return turnDeadline;
     }
 
     public void abort(Instant at) {

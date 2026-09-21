@@ -48,6 +48,9 @@ public class GameFacade {
     public static GameView toView(Game game) {
         return new GameView(game.id(), game.whitePlayerId(), game.blackPlayerId(),
                 game.status(), game.result(), game.termination(), game.fen(),
-                game.ply(), game.sideToMove(), game.createdAt(), game.finishedAt());
+                game.ply(), game.sideToMove(),
+                game.initialMs(), game.incrementMs(),
+                game.whiteMsLeft(), game.blackMsLeft(), game.lastMoveAt(),
+                game.createdAt(), game.finishedAt());
     }
 }
