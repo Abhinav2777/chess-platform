@@ -51,6 +51,18 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 public abstract class IntegrationTestBase {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /**
+     * Raw SQL, for arranging states the domain deliberately refuses to produce — moving a
+     * clock backwards, for instance. Keeping that capability out of the entity and in the
+     * tests means it cannot be reached by accident from production code.
+     */
+    protected org.springframework.jdbc.core.JdbcTemplate jdbc() {
+        return jdbcTemplate;
+    }
+
     protected static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>("postgres:16-alpine");
 

@@ -51,16 +51,23 @@ public final class Payloads {
                                Side yourSide, boolean opponentOnline,
                                String status, String result,
                                String termination, List<String> legalMoves,
-                               String lastMoveUci) {
+                               String lastMoveUci,
+                               long whiteMsLeft, long blackMsLeft, long incrementMs) {
     }
 
     /**
-     * @param legalMoves legality in the new position. Sent with the move so a client is
-     *                   never holding a board it cannot play on — it has no rules engine
-     *                   and cannot work them out.
+     * @param legalMoves  legality in the new position. Sent with the move so a client is
+     *                    never holding a board it cannot play on — it has no rules engine
+     *                    and cannot work them out.
+     * @param whiteMsLeft stored remaining time as of this move, not "right now". The side
+     *                    to move is spending from here; the client ticks locally for
+     *                    display and resyncs on the next server message. Any figure the
+     *                    server sends is stale by the network latency anyway, so pretending
+     *                    otherwise would be a fiction with no benefit.
      */
     public record MoveMade(UUID gameId, int ply, String uci, String san,
-                           String fenAfter, Side sideToMove, List<String> legalMoves) {
+                           String fenAfter, Side sideToMove, List<String> legalMoves,
+                           long whiteMsLeft, long blackMsLeft) {
     }
 
     public record GameFinished(UUID gameId, String result, String termination) {

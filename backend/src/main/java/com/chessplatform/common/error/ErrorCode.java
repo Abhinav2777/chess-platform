@@ -24,6 +24,7 @@ public enum ErrorCode {
     ILLEGAL_MOVE,
     NOT_YOUR_TURN,
     GAME_NOT_ACTIVE,
+    OUT_OF_TIME,
     GAME_NOT_FOUND,
     NOT_A_PLAYER,
 

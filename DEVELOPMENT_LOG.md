@@ -5,6 +5,54 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-14 — Milestone 3.1: the server-authoritative clock
+
+Phase 2 closed after a full game was played by hand through the UI. Phase 3 begins with the
+piece the whole architecture was arranged around.
+
+**The clock does not tick.** No timer, no scheduled decrement, no in-memory counter.
+Remaining time is computed from three persisted values and the current time, every read.
+The design is ADR-006 and it was written in Phase 0; implementing it changed nothing about
+it, which is the first time that has happened in this project.
+
+**The payoff arrived exactly where predicted.** Reconnecting to a different instance
+mid-game required *no code*. There is nothing to restore because nothing was ever held.
+Everything that made Phases 1 and 2 more work — stateless handlers, no game state in
+memory, PostgreSQL as the only source of truth — is what made this milestone small.
+
+**Decisions**
+
+- **Time comes from PostgreSQL, not the JVM.** Two hosts disagree by tens of milliseconds
+  under NTP; measuring successive moves of one game against different clocks accumulates
+  error and can go negative. `now()` rather than `clock_timestamp()`, because `now()` is
+  transaction start time — the player is charged until the server *began* processing, not
+  for our own database writes.
+- **`turn_deadline` is stored, not computed.** A derived expression cannot be usefully
+  indexed, so the sweeper would be a full scan every second. Stored plus a partial index
+  makes it O(expired) instead of O(all games ever).
+- **The clock is checked before legality.** A player whose time is gone does not get to
+  play a legal move: the game ended when their time did, and only nobody looking kept it
+  ACTIVE.
+- **`FOR UPDATE SKIP LOCKED` in the sweeper.** Replicas take disjoint batches with no
+  leader election and no distributed lock — ADR-005's argument applied to background work.
+- **The sweeper never propagates exceptions.** An exception out of a `@Scheduled` method
+  with `fixedDelay` cancels the schedule for the life of the process, so a transient
+  database blip would silently stop all timeout handling until a restart.
+- **`fixedDelay`, not `fixedRate`.** Fixed rate schedules from the previous *start*, so a
+  slow sweep overlaps itself and the backlog compounds.
+- **No column defaults in the migration.** A default would let a bug that forgets to set
+  the clock produce a silently playable game rather than failing.
+- **Exactly zero is a flag.** The off-by-one that would decide a real game and be
+  impossible to argue about afterwards, so it has its own test.
+
+**On testing something time-dependent.** Nothing in this milestone sleeps. The arithmetic
+is a pure function taking instants as arguments, so 14 unit tests cover flag-fall at the
+boundary, increments, and clock regression with no database at all. The database tests push
+`turn_deadline` into the past with SQL. A suite that waits for real time is a suite nobody
+runs — and making the clock stateless is what made that avoidable.
+
+---
+
 ## 2026-09-14 — Milestone 2.3: React client. Phase 2 complete.
 
 Deliberately thin, per the roadmap's 6-hour frontend cap. Came in around 4.

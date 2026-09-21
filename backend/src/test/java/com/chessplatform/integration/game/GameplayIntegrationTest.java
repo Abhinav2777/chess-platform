@@ -6,6 +6,7 @@ import com.chessplatform.common.error.DomainException;
 import com.chessplatform.game.GameResult;
 import com.chessplatform.game.GameStatus;
 import com.chessplatform.game.Termination;
+import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRepository;
@@ -57,7 +58,7 @@ class GameplayIntegrationTest extends IntegrationTestBase {
     void createPlayers() {
         white = registrar.register("magnus", "w@example.com", "correct-horse-battery");
         black = registrar.register("hikaru", "b@example.com", "correct-horse-battery");
-        game = gameService.createGame(white.id(), black.id());
+        game = gameService.createGame(white.id(), black.id(), TimeControl.BLITZ_5_3);
     }
 
     @AfterEach

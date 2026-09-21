@@ -74,18 +74,38 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 2 — Real-Time Multiplayer |
-| **Phase status** | Phase 1, 2.1, 2.2 green. **Milestone 2.3 written, unverified** — React client |
-| **Hours used (estimated)** | Phase 0: ~5. Phase 1: ~14. Phase 2: ~17 of 15–18 (frontend ~4 of its 6 h cap) |
-| **Cumulative hours (estimated)** | ~36 of 135–175 |
+| **Current phase** | Phase 3 — Concurrency, Clock & Reliability |
+| **Phase status** | Phase 2 COMPLETE (verified by playing a full game). **Milestone 3.1 written, unverified** — the clock |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18 (done). Phase 3: ~9 of 16–20 |
+| **Cumulative hours (estimated)** | ~46 of 135–175 |
 | **Schedule status** | On track |
 | **Scope status** | On track — three spec contradictions found and resolved (`ROADMAP.md` § Deviations) |
-| **Next milestone** | Phase 3 — server-authoritative clock, concurrency hardening |
+| **Next milestone** | 3.2 — clock in the UI, abandonment abort, concurrency hardening |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 3 (in progress) — Milestone 3.1: the server-authoritative clock
+
+- `V4__game_clock.sql` — five columns plus a partial index on `turn_deadline` for ACTIVE
+  games. **No column defaults**, so a bug that forgets the clock fails loudly instead of
+  silently producing a playable 5+3 game.
+- `ClockCalculator` — pure static functions, the clock never ticks (ADR-006). 14 unit
+  tests, no database, no sleeping.
+- `ServerClock` — `SELECT now()` from PostgreSQL. One time authority for every instance;
+  `now()` rather than `clock_timestamp()` so a player is not billed for our processing.
+- `Game` gains clock state, `hasFlagged`, `flagOnTime`, `remainingMs`.
+- Move pipeline checks the clock **before** legality — a player already out of time does
+  not get to play a legal move.
+- `TimeoutSweeper` — `@Scheduled(fixedDelay)`, `FOR UPDATE SKIP LOCKED`, batch of 100,
+  never propagates exceptions (that would cancel the schedule permanently).
+- `TimeControl` value type with validation; `POST /api/games` accepts it, defaults to 5+3.
+- Clocks flow through `GameView`, REST DTOs, `GAME_SNAPSHOT` and `MOVE_MADE`.
+- Metric `chess.clock.timeouts`, `chess.move.flag_falls`.
+- **The reconnect-to-another-instance case needed no code**, which is the result ADR-006
+  was chosen for.
 
 ### Phase 2 — Milestone 2.3: React client
 

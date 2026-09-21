@@ -55,7 +55,9 @@ public final class GameEvents {
                              String fenAfter,
                              Side sideToMove,
                              boolean gameOver,
-                             java.util.List<String> legalMoves) {
+                             java.util.List<String> legalMoves,
+                             long whiteMsLeft,
+                             long blackMsLeft) {
     }
 
     /**

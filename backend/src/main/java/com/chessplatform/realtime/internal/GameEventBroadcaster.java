@@ -52,7 +52,7 @@ public class GameEventBroadcaster {
         publisher.publish(event.gameId(), Envelope.of(ServerMessage.MOVE_MADE,
                 new Payloads.MoveMade(event.gameId(), event.ply(), event.uci(),
                         event.san(), event.fenAfter(), event.sideToMove(),
-                        event.legalMoves())));
+                        event.legalMoves(), event.whiteMsLeft(), event.blackMsLeft())));
         movesBroadcast.increment();
     }
 

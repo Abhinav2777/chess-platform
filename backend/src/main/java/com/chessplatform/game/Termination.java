@@ -19,10 +19,12 @@ public enum Termination {
     DRAW_REPETITION,
     DRAW_INSUFFICIENT_MATERIAL,
 
+    /** The side to move ran out of time. Their opponent wins. */
+    TIMEOUT,
+
     /** Both players left without finishing. Set by the abandonment sweeper. */
     ABANDONED;
 
-    /** TIMEOUT joins this enum in Phase 3, with the clock. */
     public static Termination from(GameOutcome outcome) {
         return switch (outcome) {
             case CHECKMATE -> CHECKMATE;
@@ -32,6 +34,8 @@ public enum Termination {
             case DRAW_INSUFFICIENT_MATERIAL -> DRAW_INSUFFICIENT_MATERIAL;
             case IN_PROGRESS -> throw new IllegalArgumentException(
                     "IN_PROGRESS is not a termination");
+            // TIMEOUT, RESIGNATION and ABANDONED are decided by the game module, not by
+            // the position, so they never arrive through a GameOutcome.
         };
     }
 }

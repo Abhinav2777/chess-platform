@@ -6,6 +6,7 @@ import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.game.GameFacade;
+import com.chessplatform.game.internal.ServerClock;
 import com.chessplatform.game.GameView;
 import com.chessplatform.game.domain.MoveRecord;
 import com.chessplatform.game.domain.MoveRepository;
@@ -86,6 +87,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private final RealtimeProperties properties;
     private final GameEventPublisher publisher;
     private final PresenceTracker presence;
+    private final ServerClock serverClock;
 
     /**
      * One thread for auth timeouts. These fire rarely and do almost nothing, so a pool
@@ -103,7 +105,8 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                                  JwtService jwt, GameService gameService, GameFacade gameFacade,
                                  MoveRepository moves, ChessRules rules,
                                  RealtimeProperties properties, GameEventPublisher publisher,
-                                 PresenceTracker presence, MeterRegistry metrics) {
+                                 PresenceTracker presence, ServerClock serverClock,
+                                 MeterRegistry metrics) {
         this.registry = registry;
         this.sender = sender;
         this.jwt = jwt;
@@ -114,6 +117,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         this.properties = properties;
         this.publisher = publisher;
         this.presence = presence;
+        this.serverClock = serverClock;
 
         Gauge.builder("chess.ws.connections.active", registry,
                         GameSessionRegistry::localConnectionCount)
@@ -339,6 +343,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     }
 
     private Payloads.GameSnapshot snapshotOf(GameView game, UUID viewerId) {
+        java.time.Instant now = serverClock.now();
         Side yourSide = viewerId.equals(game.whitePlayerId()) ? Side.WHITE
                 : viewerId.equals(game.blackPlayerId()) ? Side.BLACK : null;
 
@@ -358,7 +363,13 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                 game.status().name(),
                 game.result() == null ? null : game.result().name(),
                 game.termination() == null ? null : game.termination().name(),
-                legal, lastMove);
+                legal, lastMove,
+                // Remaining time AS OF NOW, not the stored value: a subscriber joining
+                // three minutes into someone's think must not be shown the clock as it
+                // stood before they started thinking. Derived from the database clock, so
+                // every instance answers identically (ADR-006).
+                game.remainingMs(Side.WHITE, now), game.remainingMs(Side.BLACK, now),
+                game.incrementMs());
     }
 
     @Override

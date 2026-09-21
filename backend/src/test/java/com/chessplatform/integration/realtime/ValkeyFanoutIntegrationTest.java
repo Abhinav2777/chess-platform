@@ -1,6 +1,7 @@
 package com.chessplatform.integration.realtime;
 
 import com.chessplatform.ChessPlatformApplication;
+import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRepository;
@@ -164,7 +165,7 @@ class ValkeyFanoutIntegrationTest {
         // for sticky sessions (ADR-009).
         whiteToken = jwt.issueAccessToken(white.id(), white.username());
         blackToken = jwt.issueAccessToken(black.id(), black.username());
-        game = gameService.createGame(white.id(), black.id());
+        game = gameService.createGame(white.id(), black.id(), TimeControl.BLITZ_5_3);
     }
 
     @AfterEach
@@ -288,6 +289,13 @@ class ValkeyFanoutIntegrationTest {
             // Black reconnects: the new socket is established BEFORE the old one closes,
             // exactly as a client that re-dials on a blip would.
             try (TestWebSocketClient blackSecond = subscribedOn(secondPort, blackToken)) {
+                // Asserted rather than merely held open: -Xlint:try objects to a resource
+                // that is never referenced, and it is right to. A socket whose only job is
+                // to exist should at least be shown to exist.
+                assertThat(blackSecond.isOpen())
+                        .as("the replacement socket is live before the old one closes")
+                        .isTrue();
+
                 blackFirst.close();
                 Thread.sleep(500);
 
