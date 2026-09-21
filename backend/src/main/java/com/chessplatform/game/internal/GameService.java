@@ -71,6 +71,7 @@ public class GameService {
     private final ChessRules rules;
     private final Clock clock;
     private final ServerClock serverClock;
+    private final GameTimeouts timeouts;
     private final ApplicationEventPublisher events;
 
     private final Timer moveLatency;
@@ -80,13 +81,14 @@ public class GameService {
     private final Counter flagFalls;
 
     public GameService(GameRepository games, MoveRepository moves, ChessRules rules,
-                       Clock clock, ServerClock serverClock,
+                       Clock clock, ServerClock serverClock,GameTimeouts timeouts,
                        ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.moves = moves;
         this.rules = rules;
         this.clock = clock;
         this.serverClock = serverClock;
+        this.timeouts = timeouts;
         this.events = events;
 
         this.moveLatency = Timer.builder("chess.move.processing")
@@ -193,9 +195,9 @@ public class GameService {
         Instant now = serverClock.now();
         if (game.hasFlagged(now)) {
             flagFalls.increment();
-            game.flagOnTime(now);
-            games.saveAndFlush(game);
-            publishGameEnded(game);
+            // Finalised in its OWN transaction (REQUIRES_NEW), because we are about to
+            // throw — and a write in this transaction would be rolled back with the move.
+            timeouts.finaliseIfFlagged(gameId);
             throw new DomainException.Rejected(
                     ErrorCode.OUT_OF_TIME, "Your time ran out.");
         }

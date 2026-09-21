@@ -11,9 +11,9 @@ import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRepository;
 import com.chessplatform.game.internal.GameService;
+import com.chessplatform.game.internal.GameTimeouts;
 import com.chessplatform.game.internal.ServerClock;
 import com.chessplatform.game.internal.SubmitMoveCommand;
-import com.chessplatform.game.internal.TimeoutSweeper;
 import com.chessplatform.identity.domain.User;
 import com.chessplatform.identity.domain.UserRepository;
 import com.chessplatform.identity.internal.UserRegistrar;
@@ -24,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -34,21 +35,31 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The clock against a real database.
  *
- * <p>{@code ClockCalculatorTest} covers the arithmetic exhaustively and without a database.
- * What can only be tested here is the part that involves PostgreSQL: that time comes from
- * the database rather than the JVM, that the deadline column and the sweeper's index agree,
- * and that {@code FOR UPDATE SKIP LOCKED} finalises an abandoned game exactly once.
+ * <p>{@code ClockCalculatorTest} covers the arithmetic exhaustively without a database.
+ * What can only be tested here is the part involving PostgreSQL: that time comes from the
+ * database, that timeouts persist, and that {@code FOR UPDATE SKIP LOCKED} finalises an
+ * abandoned game exactly once.
+ *
+ * <h2>Why the scheduled sweeper is disabled here</h2>
+ *
+ * <p>Once the sweeper genuinely worked, it began racing these tests: the background job
+ * could finalise a game between {@code expireClock()} and the test's own assertion, so a
+ * test expecting "this sweep finalised one game" would see zero. Tests drive sweeps
+ * explicitly through {@link GameTimeouts} instead, which makes them deterministic.
+ *
+ * <p>Worth noting that the race only appeared after the fix. The broken sweeper finalised
+ * nothing, so there was nothing to race against — a green test run was hiding a dead job.
  */
+@TestPropertySource(properties = "chess.clock.sweeper-enabled=false")
 @DisplayName("Game clock")
 class ClockIntegrationTest extends IntegrationTestBase {
 
-    /** Short enough that a test can exhaust it without sleeping for minutes. */
     private static final TimeControl TEN_SECONDS = new TimeControl(10_000, 0);
 
     @Autowired
     private GameService gameService;
     @Autowired
-    private TimeoutSweeper sweeper;
+    private GameTimeouts timeouts;
     @Autowired
     private ServerClock serverClock;
     @Autowired
@@ -91,12 +102,6 @@ class ClockIntegrationTest extends IntegrationTestBase {
     @DisplayName("time is taken from the database")
     class TimeAuthority {
 
-        /**
-         * Two instances on different hosts disagree by tens of milliseconds even under NTP.
-         * If successive moves in one game were measured against different clocks, the error
-         * would accumulate and could go negative. This asserts the authority is PostgreSQL,
-         * not the JVM.
-         */
         @Test
         @DisplayName("ServerClock reports the database's time, not the JVM's")
         void usesDatabaseTime() {
@@ -104,10 +109,8 @@ class ClockIntegrationTest extends IntegrationTestBase {
             Instant fromDatabase = serverClock.now();
             Instant after = Instant.now();
 
-            // Both clocks are on this machine in a test, so they agree closely. What
-            // matters is that a value was genuinely round-tripped through PostgreSQL —
-            // a hardcoded Instant.now() would also pass this, so the real assertion is
-            // structural and lives in ServerClock's implementation.
+            // Both clocks are on this machine in a test, so they agree closely. The real
+            // assertion is structural and lives in ServerClock's implementation.
             assertThat(fromDatabase).isBetween(before.minusSeconds(5), after.plusSeconds(5));
         }
     }
@@ -162,12 +165,16 @@ class ClockIntegrationTest extends IntegrationTestBase {
     @DisplayName("running out of time")
     class FlagFall {
 
+        /**
+         * The write-then-throw case. The move is rejected with an exception, and the
+         * timeout must persist anyway — which it did not, until the finalisation moved into
+         * its own REQUIRES_NEW transaction. Asserting on the reloaded game rather than on
+         * the exception is what caught it: the exception was correct, the database was not.
+         */
         @Test
         @DisplayName("a move by a player whose time has gone ends the game on time")
-        void movingAfterFlaggingLosesOnTime() throws Exception {
-            Game game = newGame(new TimeControl(10_000, 0));
-            // Rewind the clock rather than sleeping: a test that sleeps for ten seconds is
-            // a test nobody runs.
+        void movingAfterFlaggingLosesOnTime() {
+            Game game = newGame(TEN_SECONDS);
             expireClock(game.id());
 
             assertThatThrownBy(() -> play(game, white, 0, "e2", "e4"))
@@ -175,7 +182,9 @@ class ClockIntegrationTest extends IntegrationTestBase {
                     .hasMessageContaining("time ran out");
 
             Game finished = games.findById(game.id()).orElseThrow();
-            assertThat(finished.status()).isEqualTo(GameStatus.FINISHED);
+            assertThat(finished.status())
+                    .as("the timeout must survive the exception that rejected the move")
+                    .isEqualTo(GameStatus.FINISHED);
             assertThat(finished.termination()).isEqualTo(Termination.TIMEOUT);
             assertThat(finished.result())
                     .as("white's flag fell, so black wins")
@@ -194,20 +203,21 @@ class ClockIntegrationTest extends IntegrationTestBase {
             assertThatThrownBy(() -> play(game, white, 0, "e2", "e4"))
                     .isInstanceOf(DomainException.class);
 
-            // A finished game whose loser still shows 400ms would be a permanent
+            // A finished game whose loser still shows time would be a permanent
             // inconsistency in the record.
             assertThat(games.findById(game.id()).orElseThrow().whiteMsLeft()).isZero();
         }
     }
 
     @Nested
-    @DisplayName("the timeout sweeper")
-    class Sweeper {
+    @DisplayName("the timeout sweep")
+    class Sweep {
 
         /**
-         * The case laziness cannot cover: both players walked away, so nothing will ever
-         * read the game and notice. Without the sweeper it stays ACTIVE forever, shows in
-         * both players' lists, and is never rated.
+         * The case laziness cannot cover: both players walked away. Before the fix this
+         * returned 1 — the row WAS claimed — while persisting nothing, because the method
+         * was called on {@code this} and never ran in a transaction. Asserting on the
+         * reloaded game is what exposed it.
          */
         @Test
         @DisplayName("finalises an abandoned game nobody is looking at")
@@ -215,7 +225,7 @@ class ClockIntegrationTest extends IntegrationTestBase {
             Game game = newGame(TEN_SECONDS);
             expireClock(game.id());
 
-            assertThat(sweeper.sweepNow()).isEqualTo(1);
+            assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
 
             Game finished = games.findById(game.id()).orElseThrow();
             assertThat(finished.status()).isEqualTo(GameStatus.FINISHED);
@@ -228,19 +238,15 @@ class ClockIntegrationTest extends IntegrationTestBase {
         void ignoresLiveGames() {
             newGame(TimeControl.BLITZ_5_3);
 
-            assertThat(sweeper.sweepNow())
+            assertThat(timeouts.finaliseExpiredBatch())
                     .as("a game with five minutes left is not expired")
                     .isZero();
         }
 
         /**
-         * Several replicas sweep concurrently. {@code FOR UPDATE SKIP LOCKED} makes each
-         * take a disjoint batch, so no leader election or distributed lock is required —
-         * the same argument as ADR-005, applied to background work.
-         *
-         * <p>Running it twice in sequence proves the idempotence that matters: the second
-         * sweep finds nothing, because the first left the game FINISHED and it no longer
-         * matches the predicate.
+         * The second sweep finds nothing because the first persisted FINISHED, so the row
+         * no longer matches {@code status = 'ACTIVE'}. Before the fix the second sweep also
+         * returned 1 — the same game, claimed again, because nothing had been written.
          */
         @Test
         @DisplayName("a second sweep finds nothing to do")
@@ -248,8 +254,8 @@ class ClockIntegrationTest extends IntegrationTestBase {
             Game game = newGame(TEN_SECONDS);
             expireClock(game.id());
 
-            assertThat(sweeper.sweepNow()).isEqualTo(1);
-            assertThat(sweeper.sweepNow()).isZero();
+            assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
+            assertThat(timeouts.finaliseExpiredBatch()).isZero();
 
             assertThat(games.findById(game.id()).orElseThrow().result())
                     .isEqualTo(GameResult.BLACK_WIN);
@@ -262,7 +268,7 @@ class ClockIntegrationTest extends IntegrationTestBase {
             gameService.resign(game.id(), white.id());
             expireClock(game.id());
 
-            sweeper.sweepNow();
+            timeouts.finaliseExpiredBatch();
 
             assertThat(games.findById(game.id()).orElseThrow().termination())
                     .as("a resignation must not be rewritten as a timeout")
@@ -273,9 +279,8 @@ class ClockIntegrationTest extends IntegrationTestBase {
     /**
      * Pushes a game's clock into the past so it is expired, without waiting.
      *
-     * <p>Written as SQL rather than through the entity because the entity deliberately
-     * offers no way to move time backwards — that is the kind of API that gets used in
-     * production by accident.
+     * <p>Raw SQL because the entity deliberately offers no way to move time backwards —
+     * that is the kind of API that gets used in production by accident.
      */
     private void expireClock(UUID gameId) {
         jdbc().update("""
