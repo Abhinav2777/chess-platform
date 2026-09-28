@@ -228,6 +228,40 @@ CI runs 10 rounds; `-Pchess.concurrency.rounds=100` reproduces the soak.
 
 ---
 
+## Milestone 4.1 — matchmaking, and a test that checked nothing
+
+### "Tell me about a test that was lying to you." (strongest story in the project)
+My ArchUnit module-boundary test had been green since Phase 1 — and checking nothing. The
+library version couldn't parse Java 25 bytecode; it logged a warning per class, imported
+zero, and every rule had `allowEmptyShould(true)` so the empty project could go green in
+Phase 0. I found it because a new import looked like it should have failed the build and
+didn't, so I wrote a probe that counted what ArchUnit saw: zero. After upgrading, three of
+four rules failed — internal packages used across modules, an entity crossing a boundary,
+and a four-module cycle. I fixed them by moving types to their owning modules and widening
+two facades, then added a guard that the importer sees the codebase, and mutation-checked
+the rule by planting a violation. Lesson: a test you have never seen fail hasn't been shown
+to test anything.
+
+### "How do concurrent matchmakers avoid pairing a player twice?"
+Pairing is one Lua script; Valkey runs scripts one at a time, so "choose two and remove
+both" is atomic across instances. No lock, no leader. Tested with four matchmakers ticking
+concurrently while 20 players each seek twice: exactly ten games — and cross-instance, with
+two JVMs' schedulers racing over one queue.
+
+### "Pub/sub is fire-and-forget. What if MATCH_FOUND is lost?"
+The match is also stored for 60 s. A reconnecting socket is told after AUTH_OK, and a
+re-seek returns it. Opening the game acknowledges it — tracked per socket, so an ordinary
+subscribe never calls Valkey and can't be slowed by a Valkey outage. Push for latency, pull
+for correctness: the same shape as snapshot-on-reconnect.
+
+### "Why did you add REPEATABLE READ to a read?"
+The snapshot reads the game row and the move log. Under READ COMMITTED those are two
+snapshots, and a move committing between them gives a board and a move list that disagree.
+One read-only REPEATABLE READ transaction makes PostgreSQL use one snapshot for both — and a
+read-only transaction can't hit a serialisation failure, so it costs nothing.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

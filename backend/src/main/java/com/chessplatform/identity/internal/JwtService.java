@@ -1,6 +1,6 @@
 package com.chessplatform.identity.internal;
 
-import com.chessplatform.platform.security.AuthProperties;
+import com.chessplatform.identity.AuthenticatedUser;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -12,6 +12,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -44,6 +45,7 @@ import java.util.UUID;
  * {@code jti} exists so a denylist is possible later without a token format change.
  */
 @Service
+@EnableConfigurationProperties(AuthProperties.class)
 public class JwtService {
 
     private static final String CLAIM_USERNAME = "username";
@@ -91,17 +93,14 @@ public class JwtService {
      * exceptional one, and turning every one into a stack trace is both noisy and a way
      * for an unauthenticated caller to burn server CPU.
      */
-    public Optional<VerifiedToken> verify(String tokenValue) {
+    public Optional<AuthenticatedUser> verify(String tokenValue) {
         try {
             Jwt jwt = decoder.decode(tokenValue);
-            return Optional.of(new VerifiedToken(
+            return Optional.of(new AuthenticatedUser(
                     UUID.fromString(jwt.getSubject()),
                     jwt.getClaimAsString(CLAIM_USERNAME)));
         } catch (JwtException | IllegalArgumentException invalid) {
             return Optional.empty();
         }
-    }
-
-    public record VerifiedToken(UUID userId, String username) {
     }
 }

@@ -1,4 +1,4 @@
-package com.chessplatform.platform.security;
+package com.chessplatform.identity.internal;
 
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;

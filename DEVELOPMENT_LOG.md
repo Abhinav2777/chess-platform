@@ -5,6 +5,56 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 4.1b: matchmaking over WebSocket — and a test that checked nothing
+
+**Built:** `SEEK` / `CANCEL_SEEK` / `SEEK_STATUS` / `MATCH_FOUND`; `UserNotifier` (local and
+Valkey `user:{id}` with a `user:*` pattern subscription); `MatchAnnouncer`; sockets indexed by
+user; unseen match re-sent after `AUTH_OK`, acknowledged on subscribe; seek cancelled on close.
+
+**The finding: `ModuleBoundaryTest` had never checked anything.**
+
+Writing the handler, the import list showed `realtime` using `game.internal.GameService` and
+`identity.internal.JwtService` — exactly what `internalPackagesAreModulePrivate` forbids — and
+the test was green. A probe test printed what ArchUnit imported: **zero classes**, with a
+`Couldn't import class` warning for each. ArchUnit 1.3.0 cannot parse Java 25 class files
+(major version 69). Every rule carried `allowEmptyShould(true)`, added in Phase 0 so the empty
+project could go green, and that turned "checked nothing" into "passed".
+
+After upgrading to 1.5.1, three of four rules failed:
+
+- `identity.internal.JwtService` used by `platform` (HTTP filter) and `realtime` (socket auth).
+- `game.internal` (`GameService`, `ServerClock`, `SubmitMoveCommand`) and the `MoveRecord`
+  entity used by `realtime`.
+- A cycle game → identity → platform → realtime → game, via `AuthProperties` and
+  `AuthenticatedUser` (identity concepts living in `platform`) and `WebSocketConfig`
+  (realtime wiring living in `platform`).
+
+Fixed by moving each type to the module that owns it and widening two facades
+(`IdentityFacade.verifyAccessToken`; `GameFacade.state`, `submitMove`, `resign`). Then a guard
+test that the importer sees a class from every module, and a mutation check — a planted
+`realtime → game.internal` reference turned the rule red, then was removed.
+
+**The refactor surfaced a real latent bug.** Both REST `GET /games/{id}` and `GAME_SNAPSHOT`
+read the game row and the move log as separate statements under READ COMMITTED. A move
+committing between them yields a board at ply N and a log of N+1 moves. `GameFacade.state`
+now does both reads, and `SELECT now()`, in one read-only `REPEATABLE READ` transaction —
+one PostgreSQL snapshot, and read-only so it cannot fail on serialisation.
+
+**Lessons**
+- A test you have never seen fail has not been shown to test anything. Mutation-check new
+  architecture and security rules once.
+- A permissive escape hatch added for bootstrapping (`allowEmptyShould`) outlives its reason.
+  Guard the input, not just the rule.
+- Anything that parses bytecode lags the JDK and may degrade to warnings.
+
+**Verified:** unit 76 (guard added), integration 101 — incl. matchmaking over real sockets
+with the live scheduler, reconnect recovery and acknowledgement, cancel on close, and a
+cross-instance match with two JVMs' matchmakers racing over one queue.
+
+**Hours:** ~3.5 (≈1.5 of it the boundary fix). Phase 4 at ~6.5 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 4.1a: matchmaking core
 
 **Decided before building (with the project owner)**

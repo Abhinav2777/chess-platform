@@ -1,18 +1,18 @@
 package com.chessplatform.realtime.internal;
 
-import com.chessplatform.chess.ChessRules;
 import com.chessplatform.chess.MoveIntent;
-import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
+import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.game.TimeControl;
+import com.chessplatform.matchmaking.MatchmakingFacade;
+import com.chessplatform.matchmaking.SeekResult;
 import com.chessplatform.game.GameFacade;
-import com.chessplatform.game.internal.ServerClock;
+import com.chessplatform.game.GameState;
+import com.chessplatform.game.SubmitMoveCommand;
+import com.chessplatform.identity.AuthenticatedUser;
+import com.chessplatform.identity.IdentityFacade;
 import com.chessplatform.game.GameView;
-import com.chessplatform.game.domain.MoveRecord;
-import com.chessplatform.game.domain.MoveRepository;
-import com.chessplatform.game.internal.GameService;
-import com.chessplatform.game.internal.SubmitMoveCommand;
-import com.chessplatform.identity.internal.JwtService;
 import com.chessplatform.realtime.protocol.ClientMessage;
 import com.chessplatform.realtime.GameEventPublisher;
 import com.chessplatform.realtime.protocol.Envelope;
@@ -47,6 +47,8 @@ import java.util.concurrent.TimeUnit;
  *     -> AUTH {token}        -> AUTH_OK       (timer cancelled)
  *     -> SUBSCRIBE {gameId}  -> GAME_SNAPSHOT
  *     -> MOVE / RESIGN / PING
+ *     -> SEEK {tc}           -> SEEK_STATUS | MATCH_FOUND      (no game needed)
+ *     -> CANCEL_SEEK         -> SEEK_STATUS | MATCH_FOUND
  *   close -> deregister
  * </pre>
  *
@@ -61,7 +63,7 @@ import java.util.concurrent.TimeUnit;
  * <h2>No game state here</h2>
  *
  * <p>This class holds sockets, not positions. Every command is answered from the database
- * through {@code GameService}, which is why a player can disconnect and reconnect to a
+ * through {@code GameFacade}, which is why a player can disconnect and reconnect to a
  * different instance mid-game and see a correct board — the state was never in any pod's
  * memory to lose.
  *
@@ -79,15 +81,12 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
 
     private final GameSessionRegistry registry;
     private final WebSocketSender sender;
-    private final JwtService jwt;
-    private final GameService gameService;
+    private final IdentityFacade identity;
     private final GameFacade gameFacade;
-    private final MoveRepository moves;
-    private final ChessRules rules;
     private final RealtimeProperties properties;
     private final GameEventPublisher publisher;
     private final PresenceTracker presence;
-    private final ServerClock serverClock;
+    private final MatchmakingFacade matchmaking;
 
     /**
      * One thread for auth timeouts. These fire rarely and do almost nothing, so a pool
@@ -102,22 +101,18 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
             });
 
     public ChessWebSocketHandler(GameSessionRegistry registry, WebSocketSender sender,
-                                 JwtService jwt, GameService gameService, GameFacade gameFacade,
-                                 MoveRepository moves, ChessRules rules,
+                                 IdentityFacade identity, GameFacade gameFacade,
                                  RealtimeProperties properties, GameEventPublisher publisher,
-                                 PresenceTracker presence, ServerClock serverClock,
+                                 PresenceTracker presence, MatchmakingFacade matchmaking,
                                  MeterRegistry metrics) {
         this.registry = registry;
         this.sender = sender;
-        this.jwt = jwt;
-        this.gameService = gameService;
+        this.identity = identity;
         this.gameFacade = gameFacade;
-        this.moves = moves;
-        this.rules = rules;
         this.properties = properties;
         this.publisher = publisher;
         this.presence = presence;
-        this.serverClock = serverClock;
+        this.matchmaking = matchmaking;
 
         Gauge.builder("chess.ws.connections.active", registry,
                         GameSessionRegistry::localConnectionCount)
@@ -210,6 +205,8 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
             case UNSUBSCRIBE -> unsubscribe(session, state, envelope);
             case MOVE -> move(session, state, envelope);
             case RESIGN -> resign(session, state, envelope);
+            case SEEK -> seek(session, state, envelope);
+            case CANCEL_SEEK -> cancelSeek(session, state);
             case PING -> {
                 // A heartbeat also refreshes presence, so a player who is connected but
                 // quiet does not expire and appear to have vanished mid-game.
@@ -224,7 +221,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private void authenticate(WebSocketSession session, GameSessionRegistry.SessionState state,
                               Envelope envelope) {
         Payloads.Auth auth = sender.parsePayload(envelope.payload(), Payloads.Auth.class);
-        Optional<JwtService.VerifiedToken> verified = jwt.verify(auth.token());
+        Optional<AuthenticatedUser> verified = identity.verifyAccessToken(auth.token());
 
         if (verified.isEmpty()) {
             sender.send(session, Envelope.of(ServerMessage.AUTH_FAILED,
@@ -235,18 +232,77 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        JwtService.VerifiedToken token = verified.get();
-        state.authenticate(token.userId(), token.username());
+        AuthenticatedUser user = verified.get();
+        registry.authenticate(session, user.id(), user.username());
         sender.send(session, Envelope.of(ServerMessage.AUTH_OK,
-                new Payloads.AuthOk(token.userId(), token.username())));
+                new Payloads.AuthOk(user.id(), user.username())));
+
+        // The pull half of match delivery. A player whose socket was reconnecting when
+        // their MATCH_FOUND was pushed would otherwise sit in a lobby while their clock
+        // runs. Sent after AUTH_OK, so a client sees it as the first thing it is told.
+        matchmaking.unseenMatch(user.id())
+                .flatMap(gameFacade::findById)
+                .ifPresent(game -> announceMatch(session, state, game, user.id()));
+    }
+
+    private void seek(WebSocketSession session, GameSessionRegistry.SessionState state,
+                      Envelope envelope) {
+        Payloads.Seek request = sender.parsePayload(envelope.payload(), Payloads.Seek.class);
+        if (request.initialSeconds() == null || request.incrementSeconds() == null) {
+            throw new DomainException.Rejected(ErrorCode.VALIDATION_FAILED,
+                    "SEEK needs initialSeconds and incrementSeconds.");
+        }
+        TimeControl timeControl;
+        try {
+            timeControl = TimeControl.ofSeconds(request.initialSeconds(), request.incrementSeconds());
+        } catch (IllegalArgumentException outOfRange) {
+            throw new DomainException.Rejected(ErrorCode.VALIDATION_FAILED, outOfRange.getMessage());
+        }
+        replyToSeek(session, state, matchmaking.seek(state.userId(), timeControl));
+    }
+
+    private void cancelSeek(WebSocketSession session, GameSessionRegistry.SessionState state) {
+        replyToSeek(session, state, matchmaking.cancel(state.userId()));
+    }
+
+    /**
+     * MATCHED is always reported as MATCH_FOUND, never as a seek status, so the client has
+     * exactly one message that takes it to a game.
+     */
+    private void replyToSeek(WebSocketSession session, GameSessionRegistry.SessionState state,
+                             SeekResult result) {
+        if (result.status() == SeekResult.Status.MATCHED) {
+            state.seeking(false);
+            gameFacade.findById(result.gameId())
+                    .ifPresent(game -> announceMatch(session, state, game, state.userId()));
+            return;
+        }
+        state.seeking(result.status() == SeekResult.Status.QUEUED
+                      || result.status() == SeekResult.Status.PAIRING);
+        TimeControl tc = result.timeControl();
+        sender.send(session, Envelope.of(ServerMessage.SEEK_STATUS, new Payloads.SeekStatus(
+                result.status().name(),
+                tc == null ? null : (int) (tc.initialMs() / 1000),
+                tc == null ? null : (int) (tc.incrementMs() / 1000))));
+    }
+
+    private void announceMatch(WebSocketSession session, GameSessionRegistry.SessionState state,
+                               GameView game, UUID userId) {
+        Side side = userId.equals(game.whitePlayerId()) ? Side.WHITE : Side.BLACK;
+        state.announcedMatch(game.id());
+        sender.send(session, MatchAnnouncer.envelope(game.id(), side,
+                new TimeControl(game.initialMs(), game.incrementMs())));
     }
 
     private void subscribe(WebSocketSession session, GameSessionRegistry.SessionState state,
                            Envelope envelope) {
         Payloads.Subscribe request = sender.parsePayload(envelope.payload(), Payloads.Subscribe.class);
-        GameView game = gameFacade.findById(request.gameId())
+        // One consistent read of board, log and clock (GameFacade#state) — the same one the
+        // REST endpoint serves, so the two transports cannot disagree.
+        GameState gameState = gameFacade.state(request.gameId())
                 .orElseThrow(() -> new DomainException.NotFound(
-                        com.chessplatform.common.error.ErrorCode.GAME_NOT_FOUND, "No such game."));
+                        ErrorCode.GAME_NOT_FOUND, "No such game."));
+        GameView game = gameState.game();
 
         // Authorisation is re-checked on every subscribe. A valid token proves who you
         // are, not that you may watch this particular game.
@@ -254,7 +310,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                            || state.userId().equals(game.blackPlayerId());
         if (!isPlayer) {
             throw new DomainException.Rejected(
-                    com.chessplatform.common.error.ErrorCode.NOT_A_PLAYER,
+                    ErrorCode.NOT_A_PLAYER,
                     "You are not a player in this game.");
         }
 
@@ -276,10 +332,19 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         // before it is told anything about it, and the announcement goes through the
         // fanout so an opponent on another instance hears it too.
         sender.send(session, Envelope.of(ServerMessage.GAME_SNAPSHOT,
-                snapshotOf(game, state.userId())));
+                snapshotOf(gameState, state.userId())));
 
         if (nowOnline) {
             announcePresence(request.gameId(), state.userId(), true);
+        }
+
+        // Opening the game this socket was told about is the acknowledgement: stop
+        // re-announcing it. Keyed on what THIS socket was told, so an ordinary subscribe
+        // makes no Valkey call at all — and cannot be slowed by a Valkey outage.
+        if (request.gameId().equals(state.announcedMatch())) {
+            state.announcedMatch(null);
+            state.seeking(false);
+            matchmaking.acknowledge(state.userId(), request.gameId());
         }
     }
 
@@ -326,7 +391,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         // Exactly the same pipeline the REST endpoint uses. The transport does not get its
         // own validation, its own turn check, or its own idempotency handling — one set of
         // rules, or they drift.
-        gameService.submitMove(request.gameId(), state.userId(),
+        gameFacade.submitMove(request.gameId(), state.userId(),
                 new SubmitMoveCommand(request.clientMoveId(), request.expectedPly(),
                         new MoveIntent(request.from(), request.to(), request.promotion())));
 
@@ -339,20 +404,16 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private void resign(WebSocketSession session, GameSessionRegistry.SessionState state,
                         Envelope envelope) {
         Payloads.Resign request = sender.parsePayload(envelope.payload(), Payloads.Resign.class);
-        gameService.resign(request.gameId(), state.userId());
+        gameFacade.resign(request.gameId(), state.userId());
     }
 
-    private Payloads.GameSnapshot snapshotOf(GameView game, UUID viewerId) {
-        java.time.Instant now = serverClock.now();
+    private Payloads.GameSnapshot snapshotOf(GameState gameState, UUID viewerId) {
+        GameView game = gameState.game();
         Side yourSide = viewerId.equals(game.whitePlayerId()) ? Side.WHITE
                 : viewerId.equals(game.blackPlayerId()) ? Side.BLACK : null;
 
-        List<MoveRecord> played = moves.findByGameIdOrderByPlyAsc(game.id());
+        List<GameState.MoveView> played = gameState.moves();
         String lastMove = played.isEmpty() ? null : played.getLast().uci();
-
-        List<String> legal = game.status().isTerminal()
-                ? List.of()
-                : rules.legalMoves(new Position(game.fen()));
 
         UUID opponentId = viewerId.equals(game.whitePlayerId())
                 ? game.blackPlayerId() : game.whitePlayerId();
@@ -363,15 +424,14 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                 game.status().name(),
                 game.result() == null ? null : game.result().name(),
                 game.termination() == null ? null : game.termination().name(),
-                legal, lastMove,
+                gameState.legalMoves(), lastMove,
                 // Remaining time AS OF NOW, not the stored value: a subscriber joining
                 // three minutes into someone's think must not be shown the clock as it
                 // stood before they started thinking. Derived from the database clock, so
                 // every instance answers identically (ADR-006).
-                game.remainingMs(Side.WHITE, now), game.remainingMs(Side.BLACK, now),
+                gameState.remainingMs(Side.WHITE), gameState.remainingMs(Side.BLACK),
                 game.incrementMs(),
-                // Already loaded for lastMoveUci; sending it costs bytes, not a query.
-                played.stream().map(MoveRecord::san).toList());
+                played.stream().map(GameState.MoveView::san).toList());
     }
 
     @Override
@@ -396,7 +456,22 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         if (state != null && state.subscribedGame() != null) {
             releaseGame(state.subscribedGame(), state.userId(), session);
         }
+        if (state != null && state.seeking()) {
+            // A seek belongs to the socket that made it: closing the tab leaves the queue
+            // now, rather than when the seek's TTL lapses 45 s later and someone has been
+            // paired with an empty chair. An instance crash runs no cleanup — that is what
+            // the TTL is for.
+            cancelQuietly(state.userId());
+        }
         registry.remove(session);
+    }
+
+    private void cancelQuietly(UUID userId) {
+        try {
+            matchmaking.cancel(userId);
+        } catch (RuntimeException unavailable) {
+            log.debug("Could not cancel seek for {} on close: {}", userId, unavailable.toString());
+        }
     }
 
     private void closeQuietly(WebSocketSession session, CloseStatus status) {

@@ -1,4 +1,4 @@
-package com.chessplatform.platform.security;
+package com.chessplatform.identity;
 
 import java.util.UUID;
 

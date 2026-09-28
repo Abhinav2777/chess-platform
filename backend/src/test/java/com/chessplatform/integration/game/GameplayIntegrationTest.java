@@ -11,7 +11,7 @@ import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
 import com.chessplatform.game.domain.MoveRepository;
 import com.chessplatform.game.internal.GameService;
-import com.chessplatform.game.internal.SubmitMoveCommand;
+import com.chessplatform.game.SubmitMoveCommand;
 import com.chessplatform.identity.domain.User;
 import com.chessplatform.identity.domain.UserRepository;
 import com.chessplatform.identity.internal.UserRegistrar;

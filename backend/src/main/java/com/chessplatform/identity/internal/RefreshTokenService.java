@@ -5,7 +5,7 @@ import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.common.id.Uuid7;
 import com.chessplatform.identity.domain.RefreshToken;
 import com.chessplatform.identity.domain.RefreshTokenRepository;
-import com.chessplatform.platform.security.AuthProperties;
+import com.chessplatform.identity.internal.AuthProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

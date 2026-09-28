@@ -32,12 +32,27 @@ public final class Payloads {
     public record Resign(UUID gameId) {
     }
 
+    /** Seconds, as the REST API takes them. Boxed so a missing field is detectable. */
+    public record Seek(Integer initialSeconds, Integer incrementSeconds) {
+    }
+
     // --------------------------------------------------------------- outbound
 
     public record AuthOk(UUID userId, String username) {
     }
 
     public record Failure(String code, String message) {
+    }
+
+    /**
+     * @param status QUEUED, PAIRING, CANCELLED or NOT_SEEKING. MATCHED never appears here —
+     *               a match is always reported as {@code MATCH_FOUND}, so a client has one
+     *               place that navigates to a game.
+     */
+    public record SeekStatus(String status, Integer initialSeconds, Integer incrementSeconds) {
+    }
+
+    public record MatchFound(UUID gameId, Side yourSide, long initialSeconds, long incrementSeconds) {
     }
 
     /**

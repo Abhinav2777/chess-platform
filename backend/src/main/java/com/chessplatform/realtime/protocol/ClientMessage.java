@@ -27,6 +27,17 @@ public enum ClientMessage {
     RESIGN,
 
     /**
+     * Join the matchmaking queue, or re-assert an existing seek. Idempotent by design: the
+     * client repeats it every 15 s while waiting, and that repetition is the seek's
+     * heartbeat and its recovery path (ADR-016). Answered with {@code SEEK_STATUS}, or with
+     * {@code MATCH_FOUND} if a match already exists.
+     */
+    SEEK,
+
+    /** Leave the queue. Too late once paired — answered with {@code MATCH_FOUND} then. */
+    CANCEL_SEEK,
+
+    /**
      * Application-level heartbeat.
      *
      * <p>Not redundant with TCP keepalive or WebSocket ping frames. An idle connection

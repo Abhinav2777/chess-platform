@@ -1,4 +1,4 @@
-package com.chessplatform.game.internal;
+package com.chessplatform.game;
 
 import com.chessplatform.chess.MoveIntent;
 

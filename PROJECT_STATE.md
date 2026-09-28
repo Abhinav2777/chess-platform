@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1a (matchmaking core)
+**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1b (WebSocket matchmaking + ArchUnit fix)
 
 
 ---
@@ -75,17 +75,39 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 4 — Valkey + Matchmaking |
-| **Phase status** | **4.1a green** (matchmaking core): unit 75, integration 95. Phase 3 complete. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~3 of 12–16 |
-| **Cumulative hours (estimated)** | ~58 of 135–175 |
+| **Phase status** | **4.1b green**: unit 76, integration 101; module boundaries now genuinely enforced. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~6.5 of 12–16 |
+| **Cumulative hours (estimated)** | ~61.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 4.1b — WebSocket seek + `MATCH_FOUND` push (§10) |
+| **Next milestone** | 4.1c — lobby UI (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 4 — Milestone 4.1b: matchmaking over WebSocket, and the ArchUnit fix (2026-09-28, green)
+
+- **Protocol:** `SEEK` / `CANCEL_SEEK` → `SEEK_STATUS` | `MATCH_FOUND`. MATCHED is always
+  `MATCH_FOUND`, so the client has one message that navigates to a game.
+- **Delivery:** `MatchFound` event → `MatchAnnouncer` → `UserNotifier` port (local in-JVM;
+  Valkey: publish `user:{id}`, every instance pattern-subscribes `user:*`). Registry indexes
+  sockets by user.
+- **Recovery:** unseen match re-sent after `AUTH_OK`; subscribing to the announced game
+  acknowledges it (per-socket, so a plain subscribe makes no Valkey call). Closing the
+  seeking socket cancels the seek.
+- **ArchUnit was checking nothing** (1.3.0 could not read Java 25 bytecode; zero classes;
+  `allowEmptyShould` hid it). Upgraded to 1.5.1; fixed every violation: `IdentityFacade
+  .verifyAccessToken`; `AuthenticatedUser` → identity, `AuthProperties` → identity.internal,
+  `WebSocketConfig` → realtime; `GameFacade.state/submitMove/resign`; `SubmitMoveCommand`
+  public. New guard `importerSeesTheCodebase`; rule mutation-checked.
+- **`GameFacade.state`** — one read-only `REPEATABLE READ` snapshot (game + log + `now()`)
+  for both REST and `GAME_SNAPSHOT`; closes a latent board/move-list skew under READ COMMITTED.
+- Tests: realtime matchmaking (5: pair over sockets with the live scheduler, seek/cancel,
+  close cancels, reconnect recovery + ack, validation) and cross-instance match with two
+  JVMs' matchmakers racing.
+
 
 ### Phase 4 — Milestone 4.1a: matchmaking core (2026-09-28, green)
 
@@ -365,7 +387,7 @@ working on the development machine.
 
 ## 3. Not yet started
 
-- **4.1b** WebSocket seek/`MATCH_FOUND`, **4.1c** lobby UI, **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
+- **4.1c** lobby UI, **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
 - **Phases 5–10** per `ROADMAP.md`.
 - **Phases 4–10** per `ROADMAP.md`.
 
@@ -374,8 +396,10 @@ working on the development machine.
 ## 4. Known bugs / unverified state
 
 The Phase 0 risk table that used to live here is resolved: the build, Boot 4.1 starter
-coordinates, the Java 25 toolchain, `-Werror`, ArchUnit, Flyway, Testcontainers and CI were
-all verified green through Milestone 3.1. The history is in `DEVELOPMENT_LOG.md`.
+coordinates, the Java 25 toolchain, `-Werror`, Flyway, Testcontainers and CI were all
+verified green through Milestone 3.1. **ArchUnit was green but vacuous until 4.1b** — it
+imported zero Java 25 classes; fixed and guarded (ADR-001 correction). The history is in
+`DEVELOPMENT_LOG.md`.
 
 | Item | State | How to check |
 |---|---|---|
@@ -412,7 +436,7 @@ Full reasoning in `docs/adr/`. Summary:
 
 | # | Decision |
 |---|---|
-| 001 | Modular monolith; boundaries enforced by ArchUnit; workers = same JAR, `worker` profile |
+| 001 | Modular monolith; boundaries enforced by ArchUnit (really, since 4.1b); workers = same JAR, `worker` profile |
 | 002 | `chesslib` behind a `ChessRules` port; verified with perft tests |
 | 003 | Raw WebSocket + custom JSON envelope; Valkey Pub/Sub fanout; **not** STOMP |
 | 004 | PostgreSQL is the only source of truth; Valkey holds nothing unrecoverable |
@@ -460,22 +484,20 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 4.1b — WebSocket seek + `MATCH_FOUND` push** (ADR-016 §Delivery):
+**Milestone 4.1c — lobby UI** (~1–1.5 h):
 
-- Client messages `SEEK {initialSeconds, incrementSeconds}` and `CANCEL_SEEK`; server replies
-  `SEEK_STATUS`. Seek allowed on an authenticated socket with no game subscribed.
-- Close of a user's **last** socket cancels their seek (the TTL covers instance crashes).
-- `MatchFound` → Valkey channel `mm:matches` (every instance listens, delivers to local
-  sockets of the two players) → `MATCH_FOUND {gameId, yourSide, timeControl}`. Local fanout
-  mode delivers in-JVM.
-- After `AUTH_OK`, re-send an unseen match (`unseenMatch`); `SUBSCRIBE` to that game
-  acknowledges it.
-- Tests: two sockets seek and both receive `MATCH_FOUND` for the same game; cross-instance
-  delivery (extend `ValkeyFanoutIntegrationTest`); reconnect recovers a missed match; socket
-  close cancels.
+- Lobby: a Play button per preset → open an authenticated socket (no game) and `SEEK`;
+  "Looking for an opponent…" with elapsed time and Cancel; re-send `SEEK` every 15 s.
+- `MATCH_FOUND` → navigate to the game (subscribing acknowledges it). Handle it on the lobby
+  socket *and* after `AUTH_OK` on any socket. `SEEK_STATUS` errors (`ALREADY_IN_GAME`,
+  `MATCHMAKING_UNAVAILABLE`) shown inline, direct challenge still offered.
+- `GameSocket` currently requires a gameId; either make it optional or add a small
+  `LobbySocket` sharing the reconnect/backoff code — decide by which duplicates less.
+- Verify in two browsers: both players land in the same game with opposite colours.
 
-Then **4.1c** lobby UI (Play buttons per preset, seeking state, auto re-seek every 15 s,
-navigate on match), **4.2** rate limiting, **4.3** Valkey-down full game + client polling.
+Then **4.2** rate limiting (Bucket4j over Valkey vs a Lua token bucket — check Bucket4j's
+Lettuce integration against Boot 4 first), **4.3** full game with Valkey stopped + client
+polling fallback.
 
 ---
 
