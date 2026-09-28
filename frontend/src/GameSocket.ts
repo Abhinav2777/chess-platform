@@ -1,17 +1,24 @@
 import { PROTOCOL_VERSION, type Envelope, type Failure, type GameFinished,
-         type GameSnapshot, type MoveMade, type PlayerPresence } from './protocol';
+         type GameSnapshot, type MatchFound, type MoveMade, type PlayerPresence,
+         type SeekStatus } from './protocol';
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080/ws';
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
+/**
+ * Game handlers are optional because the same socket serves the lobby, where there is no
+ * game. A message with no handler is ignored, like an unknown type.
+ */
 export interface GameSocketHandlers {
   onState: (state: ConnectionState) => void;
-  onSnapshot: (snapshot: GameSnapshot) => void;
-  onMove: (move: MoveMade) => void;
-  onFinished: (finished: GameFinished) => void;
-  onPresence: (presence: PlayerPresence) => void;
   onError: (failure: Failure) => void;
+  onSnapshot?: (snapshot: GameSnapshot) => void;
+  onMove?: (move: MoveMade) => void;
+  onFinished?: (finished: GameFinished) => void;
+  onPresence?: (presence: PlayerPresence) => void;
+  onSeekStatus?: (status: SeekStatus) => void;
+  onMatchFound?: (match: MatchFound) => void;
 }
 
 export interface MoveRequest {
@@ -29,6 +36,11 @@ export interface MoveRequest {
  * concerns with their own lifecycle, and expressing them through effects and refs makes
  * them harder to follow, not easier. `useGame` adapts this to React; this file can be
  * reasoned about — and tested — without React at all.
+ *
+ * One class for the game and the lobby (Milestone 4.1c). With a gameId it subscribes after
+ * AUTH_OK; with null it is a lobby socket that only authenticates, for matchmaking. A
+ * second socket class would have been a second copy of reconnect, backoff, heartbeat and
+ * first-frame auth — the parts of this file that are hard to get right.
  */
 export class GameSocket {
   private socket: WebSocket | null = null;
@@ -38,7 +50,7 @@ export class GameSocket {
   private closedByUs = false;
 
   constructor(
-    private readonly gameId: string,
+    private readonly gameId: string | null,
     private readonly token: () => string | null,
     private readonly handlers: GameSocketHandlers,
   ) {}
@@ -91,7 +103,9 @@ export class GameSocket {
         // token would otherwise look healthy and be hammered at full rate forever.
         this.attempt = 0;
         this.handlers.onState('live');
-        this.send('SUBSCRIBE', { gameId: this.gameId });
+        if (this.gameId !== null) {
+          this.send('SUBSCRIBE', { gameId: this.gameId });
+        }
         this.startHeartbeat();
         break;
 
@@ -105,16 +119,22 @@ export class GameSocket {
         break;
 
       case 'GAME_SNAPSHOT':
-        this.handlers.onSnapshot(envelope.payload as GameSnapshot);
+        this.handlers.onSnapshot?.(envelope.payload as GameSnapshot);
         break;
       case 'MOVE_MADE':
-        this.handlers.onMove(envelope.payload as MoveMade);
+        this.handlers.onMove?.(envelope.payload as MoveMade);
         break;
       case 'GAME_FINISHED':
-        this.handlers.onFinished(envelope.payload as GameFinished);
+        this.handlers.onFinished?.(envelope.payload as GameFinished);
         break;
       case 'PLAYER_PRESENCE':
-        this.handlers.onPresence(envelope.payload as PlayerPresence);
+        this.handlers.onPresence?.(envelope.payload as PlayerPresence);
+        break;
+      case 'SEEK_STATUS':
+        this.handlers.onSeekStatus?.(envelope.payload as SeekStatus);
+        break;
+      case 'MATCH_FOUND':
+        this.handlers.onMatchFound?.(envelope.payload as MatchFound);
         break;
       case 'ERROR':
         this.handlers.onError(envelope.payload as Failure);
@@ -130,6 +150,15 @@ export class GameSocket {
 
   move(request: MoveRequest): void {
     this.send('MOVE', { gameId: this.gameId, ...request });
+  }
+
+  /** Idempotent on the server: repeating it is the seek's heartbeat (ADR-016). */
+  seek(initialSeconds: number, incrementSeconds: number): void {
+    this.send('SEEK', { initialSeconds, incrementSeconds });
+  }
+
+  cancelSeek(): void {
+    this.send('CANCEL_SEEK', null);
   }
 
   resign(): void {

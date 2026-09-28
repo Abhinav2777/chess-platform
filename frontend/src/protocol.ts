@@ -78,3 +78,22 @@ export interface Failure {
   code: string;
   message: string;
 }
+
+/** Reply to SEEK / CANCEL_SEEK (ADR-016). A match never appears here — see MatchFound. */
+export interface SeekStatus {
+  status: 'QUEUED' | 'PAIRING' | 'CANCELLED' | 'NOT_SEEKING';
+  initialSeconds: number | null;
+  incrementSeconds: number | null;
+}
+
+/**
+ * A game has been created for this player. The one matchmaking message that takes the
+ * client to a game — whether pushed at pairing time, returned to a seek, or re-sent after
+ * AUTH_OK because the push was missed.
+ */
+export interface MatchFound {
+  gameId: string;
+  yourSide: Side;
+  initialSeconds: number;
+  incrementSeconds: number;
+}

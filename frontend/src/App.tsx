@@ -3,7 +3,8 @@ import { api, ApiError, type GameSummary, type Session, type TimeControl } from 
 import { Board } from './Board';
 import { PlayerClock } from './Clock';
 import { useGame } from './useGame';
-import type { GameSnapshot, Side } from './protocol';
+import { useSeek } from './useSeek';
+import type { GameSnapshot, MatchFound, Side } from './protocol';
 
 /**
  * Presets rather than free-form inputs. The server accepts anything from 10 s to 24 h
@@ -78,14 +79,32 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
     api.myGames().then(setGames).catch(() => setError('Could not load games.'));
   }, []);
 
-  // Loaded on arrival and then polled. A challenged player receives no notification —
-  // there is no invitation system — so without this the lobby is a dead end: an empty
-  // screen with no reason to click anything.
-  //
-  // Polling, not a WebSocket. The socket in this app is scoped to a single game, and a
-  // second lobby-wide channel is real design work (who subscribes to what, and when) for
-  // a screen people look at for five seconds. Ten-second polling is the honest choice
-  // until there is a reason for more.
+  // A match arrives as a game id. The game list already carries usernames, so the new
+  // game is read from there rather than adding an endpoint for one screen.
+  const openMatch = useCallback((match: MatchFound) => {
+    api.myGames()
+      .then((latest) => {
+        const found = latest.find((entry) => entry.id === match.gameId);
+        if (found) onOpen(found);
+        else setError('Matched — open the game from the list below.');
+      })
+      .catch(() => setError('Matched — open the game from the list below.'));
+  }, [onOpen]);
+
+  const seek = useSeek(openMatch);
+
+  // A ticking "waiting for 0:12" while seeking. Display only.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (seek.state.phase === 'idle') return;
+    const timer = window.setInterval(() => setTick((n) => n + 1), 1_000);
+    return () => window.clearInterval(timer);
+  }, [seek.state.phase]);
+
+  // Direct challenges are still discovered by polling: a challenged player gets no
+  // notification. Matchmaking does not need this — MATCH_FOUND is pushed (ADR-016) — and a
+  // challenge notification over the same user channel is the natural next step if
+  // challenges ever matter more than they do in a portfolio build.
   useEffect(() => {
     load();
     const timer = window.setInterval(load, 10_000);
@@ -107,6 +126,35 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
   return (
     <div className="panel">
       <h1>Hello, {session.username}</h1>
+
+      <h2>Play online</h2>
+      {seek.state.phase === 'idle' ? (
+        <div className="seek">
+          {TIME_CONTROLS.map((option) => (
+            <button key={option.label} type="button" onClick={() => seek.start(option.value)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="seek seeking">
+          <span>
+            Looking for a {seek.state.timeControl.initialSeconds / 60}+
+            {seek.state.timeControl.incrementSeconds} opponent…{' '}
+            {elapsed(seek.state.since)}
+            {seek.connection !== 'live' ? ` (${seek.connection})` : ''}
+          </span>
+          <button type="button" onClick={seek.cancel} disabled={seek.state.phase === 'cancelling'}>
+            {seek.state.phase === 'cancelling' ? 'Cancelling…' : 'Cancel'}
+          </button>
+        </div>
+      )}
+      <p className="hint">
+        Paired with someone near your rating. The acceptable gap widens the longer you wait.
+      </p>
+      {seek.error && <p className="error">{seek.error}</p>}
+
+      <h2>Challenge a player</h2>
       <form onSubmit={challenge} className="challenge">
         <input value={opponent} onChange={(e) => setOpponent(e.target.value)}
                placeholder="opponent username" />
@@ -259,6 +307,11 @@ function statusLine(snapshot: GameSnapshot, myTurn: boolean): string {
   if (snapshot.result === 'DRAW') return `Draw by ${how}`;
   const winner = snapshot.result === 'WHITE_WIN' ? 'White' : 'Black';
   return snapshot.termination === 'TIMEOUT' ? `${winner} wins on time` : `${winner} wins by ${how}`;
+}
+
+function elapsed(since: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 const SCORES: Record<string, string> = { WHITE_WIN: '1–0', BLACK_WIN: '0–1', DRAW: '½–½' };

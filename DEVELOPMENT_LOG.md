@@ -5,6 +5,31 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 4.1c: lobby UI — Milestone 4.1 complete
+
+**Built:** "Play online" buttons per preset; `useSeek` (lobby socket, seek, re-seek every 15 s
+and on every reconnect, elapsed time, Cancel with a 3 s fallback to closing the socket);
+`MATCH_FOUND` → the game view, reading the new game from `GET /api/games` (which carries
+usernames) rather than adding an endpoint.
+
+**Decided:** one socket class, not two. `GameSocket` takes an optional `gameId` — without one
+it authenticates and does not subscribe — and its game handlers are optional. A separate lobby
+socket would have been a second copy of reconnect, backoff, heartbeat and first-frame auth.
+
+**Verified in a real browser, for the first time in the project.** Headless Chromium via
+playwright-core, two isolated contexts as two users: register → click 5+3 → both on the same
+game with opposite colours 0.3–0.8 s after the second seek → White plays e4 by clicking squares
+→ Black sees it, "Your move", clock ticking 4:59 → 4:57 → third user seeks and cancels.
+
+**Found by looking:** the board was not square. With only `grid-template-columns`, rows were
+implicit and sized by content, so empty ranks were visibly shorter. Fixed with explicit
+`minmax(0, 1fr)` tracks on both axes. It had been like that since Phase 2; no test checks
+pixels, and nobody had opened the page in a normal browser window since.
+
+**Hours:** ~1. Milestone 4.1 total ~7.5 h (incl. ~1.5 h ArchUnit fix). Phase 4 at ~7.5 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 4.1b: matchmaking over WebSocket — and a test that checked nothing
 
 **Built:** `SEEK` / `CANCEL_SEEK` / `SEEK_STATUS` / `MATCH_FOUND`; `UserNotifier` (local and
