@@ -5,6 +5,69 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-29 — 5.1 migrated to Spring Cloud AWS (ADR-020)
+
+**Request:** use Spring Cloud AWS for SQS, e.g. `spring-cloud-aws-starter-sqs:3.4.0`. This
+reversed ADR-011, so it was checked before changing anything:
+
+- **3.4.0 is the Boot 3.5 line** (Spring Cloud Commons 4.3) — it would have resolved on Boot 4.1
+  and then failed or silently not configured. The Boot 4 line is 4.x; latest 4.1.1, built
+  against Boot 4.0.8.
+- The starter does not pull `spring-cloud-commons`, so Spring Cloud's Boot-version verifier
+  never runs. The SDK resolves to our 2.55.6 via BOM order. The AWS Netty client (4.1.138
+  requested) runs on Boot's Netty 4.2.17.
+
+**Changed:** hand-built `SqsConfig` deleted; `SqsAsyncClient` auto-configured from
+`spring.cloud.aws.*`; `SqsSetup` adds a timeout customizer and our own `SqsTemplate` with
+`QueueNotFoundStrategy.FAIL` — the default would create queues without a redrive policy; relay
+on `sendMany` with an `eventId` header to map per-message results.
+
+**Verified:** all outbox/relay tests pass on the new stack, plus a new test that the template
+never creates a queue; unit 82, integration 120; local stack end to end; startup time
+unchanged within noise (I misremembered a 3.5 s baseline — the logs say 7–8 s throughout).
+
+**New cost, found in the startup log:** a Java 25 warning that Netty's native loading will be
+blocked in a future release. `--enable-native-access=ALL-UNNAMED` added to `bootRun` and
+tests; the Phase 6 Dockerfile must carry it.
+
+**Hours:** ~1. Phase 5 at ~4 of ~12–15.
+
+---
+
+## 2026-09-28 — Milestone 5.1: outbox, relay, SQS
+
+**Checked before building:** LocalStack — the roadmap's plan — has required an account and auth
+token since March 2026. ElasticMQ instead (ADR-019), chosen with the project owner. The owner
+also chose to push rating changes to players (5.3), previously SKIP.
+
+**Built:** `V6__outbox.sql`; a `messaging` module (outbox API, relay, SQS client, queue
+bootstrap); the `GAME_FINISHED` contract and the listener that writes it.
+
+**Decisions worth remembering**
+
+- **One listener covers every ending.** Four code paths end games; all already publish
+  `GameEnded` in-transaction. A `MANDATORY` synchronous listener writes the outbox row — the
+  mirror image of the `AFTER_COMMIT` broadcaster, for the mirror-image reason.
+- **At-least-once by construction.** Claim, send and mark in one transaction; a crash
+  between send and commit resends. Duplicates are the consumer's job; losses are impossible.
+- **API instances never need SQS to start** — queue URLs resolve on first use.
+- **One HTTP client.** The SDK drags in Netty *and* Apache clients by default; both excluded
+  for the URL-connection client, which also avoids a second Netty beside Lettuce's.
+- **Alarm on age, not count** — `chess.outbox.oldest_age_seconds`.
+
+**Verified:** 11 new integration tests, including every ending path (the move-path flag, where
+the event must survive the move's rollback), two concurrent relays sending 30 events exactly
+once, and SQS down leaving the event in place. SDK 2.55.6's JSON protocol works against
+ElasticMQ 1.7.1 — the plan's main risk, retired in the first test. On the local stack:
+Postman's games → 3 events → 3 messages queued.
+
+**Corrected:** ARCHITECTURE §9 said producers write events *after* the game transaction
+commits — the opposite of an outbox.
+
+**Hours:** ~3. Phase 5 at ~3 of ~12–15.
+
+---
+
 ## 2026-09-28 — Phase 4 follow-up: the unexplained 4.8 s, traced and fixed
 
 **Method.** A diagnostic browser script recorded every WebSocket frame and poll for the first

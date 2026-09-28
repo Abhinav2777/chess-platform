@@ -64,6 +64,7 @@ is DOWN, the app is running but its dependencies are not — do not proceed.
 | API | http://localhost:8080 | — |
 | PostgreSQL | localhost:5432 | `chess` / `chess` / db `chess` |
 | Valkey | localhost:6379 | none |
+| ElasticMQ (SQS, Phase 5) | http://localhost:9324 (API), http://localhost:9325 (UI) | none (the app sends dummy credentials) |
 | Actuator | http://localhost:8080/actuator | — |
 | Prometheus scrape | http://localhost:8080/actuator/prometheus | — |
 

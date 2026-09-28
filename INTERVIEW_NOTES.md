@@ -315,6 +315,28 @@ Cost of the fix, also measured: up to 5 s of recovery lag after Valkey returns. 
 
 ---
 
+## Phase 5 — outbox and at-least-once
+
+### "How do you publish an event reliably when a game ends?"
+A transactional outbox. The event row is written in the same database transaction as the
+game's final state — so either both commit or neither does. A relay then claims unpublished
+rows with FOR UPDATE SKIP LOCKED, sends them to SQS and marks them published. If it dies
+after sending but before marking, the event is sent again; consumers deduplicate on the event
+id. What it can never do is lose one. A direct SQS call after commit can: the process can die
+between the two.
+
+### "Why is the listener synchronous here, when your broadcaster is AFTER_COMMIT?"
+Same principle, opposite direction. A broadcast must not happen for a change that might roll
+back, so it waits for commit. The outbox row must commit with the change, so it's written
+before. MANDATORY propagation makes a caller without a transaction fail instead of writing an
+orphan event.
+
+### "What would you alert on?"
+Not the backlog size — the age of the oldest unpublished event. One event ten minutes old is
+an outage; fifty events a second old is a busy second.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,
