@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 3 Milestone 3.3 (Phase 3 complete)
+**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1a (matchmaking core)
 
 
 ---
@@ -74,18 +74,39 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 3 — Concurrency, Clock & Reliability — **complete** |
-| **Phase status** | **Milestone 3.3 green** (2026-09-28): unit 75, integration 82, Postman 132/132, all three "done when" checks measured (§12). |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 of 16–20 (all done) |
-| **Cumulative hours (estimated)** | ~55 of 135–175 |
+| **Current phase** | Phase 4 — Valkey + Matchmaking |
+| **Phase status** | **4.1a green** (matchmaking core): unit 75, integration 95. Phase 3 complete. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~3 of 12–16 |
+| **Cumulative hours (estimated)** | ~58 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 4 — Valkey + matchmaking (§10) |
+| **Next milestone** | 4.1b — WebSocket seek + `MATCH_FOUND` push (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 4 — Milestone 4.1a: matchmaking core (2026-09-28, green)
+
+- **ADR-016.** Valkey queue per preset time control (`mm:q:{tc}:rating` + `:since` ZSETs),
+  `mm:seek:{user}` liveness key (TTL 45 s), `mm:match:{user}` = `PENDING` | gameId.
+- **Every state change is a Lua script** (`resources/matchmaking/*.lua`): seek, cancel, pair,
+  compare-and-set, compare-and-delete. Queue time from Valkey `TIME`.
+- `pair.lua`: oldest first, window 100 + 10/s capped at 400, nearest live neighbour (5 each
+  side), evicts lapsed seekers, marks the pair PENDING. One pair per call.
+- `Matchmaker.tick()` on every instance, no leader: claim → `GameFacade.startGame` (commit
+  point) → record match → `MatchFound` event. `MatchmakerScheduler` 1 s, property-gated.
+- `MatchmakingFacade`: idempotent `seek` (heartbeat + repair), `cancel`, `unseenMatch`,
+  `acknowledge`. `503 MATCHMAKING_UNAVAILABLE` when Valkey is down (new
+  `DomainException.Unavailable`). New codes: `UNSUPPORTED_TIME_CONTROL`, `ALREADY_SEEKING`,
+  `ALREADY_IN_GAME`.
+- `GameFacade` gains `startGame` and `hasActiveGame` — the first mutation on a facade, and why.
+- Metrics: `chess.matchmaking.seeks`, `.matches`, `.pairing_failures`, `.wait` (histogram).
+- **Not built, by decision:** `game:{id}:state` read cache (ADR-016).
+- Tests: `MatchmakingIntegrationTest` (13), incl. **20 players × 2 seeks vs 4 concurrent
+  matchmakers → exactly 10 games, no duplicates, nothing left in Valkey.**
+
 
 ### Phase 3 — Milestone 3.3: closeout (2026-09-28, green) — **Phase 3 complete**
 
@@ -344,7 +365,8 @@ working on the development machine.
 
 ## 3. Not yet started
 
-- **Phase 4** — Valkey + matchmaking (§10).
+- **4.1b** WebSocket seek/`MATCH_FOUND`, **4.1c** lobby UI, **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
+- **Phases 5–10** per `ROADMAP.md`.
 - **Phases 4–10** per `ROADMAP.md`.
 
 ---
@@ -404,6 +426,8 @@ Full reasoning in `docs/adr/`. Summary:
 | 012 | JitPack accepted for chesslib, scoped via `exclusiveContent` to one group |
 | 013 | Refresh tokens rotate on every use; reuse of a spent token revokes the whole family |
 | 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
+| 015 | Threefold repetition: history from `moves.fen_after`, bounded by the halfmove clock; automatic draw |
+| 016 | Matchmaking: Valkey queue + Lua pairing on every instance, no lock; idempotent re-seek as heartbeat; push with pull recovery |
 
 ---
 
@@ -436,19 +460,22 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Phase 3 is complete.** Before starting Phase 4:
+**Milestone 4.1b — WebSocket seek + `MATCH_FOUND` push** (ADR-016 §Delivery):
 
-1. Commit Milestone 3.3.
-2. Optional, ~10 min: `npm run dev`, one game in two browsers — watch the clocks, and move
-   in both tabs at once to see a conflict resync silently (§4).
-3. Phase-boundary archive, if wanted: `git archive --format=tar.gz
-   -o ../chess-platform-M3.3-2026-09-28.tar.gz HEAD` after the commit.
+- Client messages `SEEK {initialSeconds, incrementSeconds}` and `CANCEL_SEEK`; server replies
+  `SEEK_STATUS`. Seek allowed on an authenticated socket with no game subscribed.
+- Close of a user's **last** socket cancels their seek (the TTL covers instance crashes).
+- `MatchFound` → Valkey channel `mm:matches` (every instance listens, delivers to local
+  sockets of the two players) → `MATCH_FOUND {gameId, yourSide, timeControl}`. Local fanout
+  mode delivers in-JVM.
+- After `AUTH_OK`, re-send an unseen match (`unseenMatch`); `SUBSCRIBE` to that game
+  acknowledges it.
+- Tests: two sockets seek and both receive `MATCH_FOUND` for the same game; cross-instance
+  delivery (extend `ValkeyFanoutIntegrationTest`); reconnect recovers a missed match; socket
+  close cancels.
 
-**Phase 4 — Valkey + matchmaking (12–16 h).** See `ROADMAP.md`. Start with the design
-before code: the matchmaking ZSET per time control and the Lua pairing script are the
-interview-critical parts; the "Valkey stopped" test extends the existing outage case in
-`ValkeyFanoutIntegrationTest`. Re-read ADR-004 first — Valkey must hold nothing
-unrecoverable, and that constrains what a queue entry may be.
+Then **4.1c** lobby UI (Play buttons per preset, seeking state, auto re-seek every 15 s,
+navigate on match), **4.2** rate limiting, **4.3** Valkey-down full game + client polling.
 
 ---
 

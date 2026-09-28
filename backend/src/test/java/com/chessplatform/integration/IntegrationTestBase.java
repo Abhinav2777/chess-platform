@@ -88,5 +88,8 @@ public abstract class IntegrationTestBase {
         // Side benefit: every IntegrationTestBase class now has identical configuration, so
         // they share one cached context instead of starting two.
         registry.add("chess.clock.sweeper-enabled", () -> "false");
+        // Same rule for the matchmaker — and there is no Valkey here, so a live one would
+        // log a failed tick every second. Matchmaking tests call Matchmaker.tick() directly.
+        registry.add("chess.matchmaking.scheduler-enabled", () -> "false");
     }
 }

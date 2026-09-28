@@ -63,6 +63,17 @@ public abstract class DomainException extends RuntimeException {
     }
 
     /**
+     * A dependency this request needs is down, and nothing about the request is wrong.
+     * Maps to HTTP 503, which tells a client that retrying later is the right response —
+     * unlike 500, which says the server itself is broken.
+     */
+    public static final class Unavailable extends DomainException {
+        public Unavailable(ErrorCode code, String message) {
+            super(code, message);
+        }
+    }
+
+    /**
      * Authentication failed. Maps to HTTP 401.
      *
      * <p>Callers must not distinguish "no such user" from "wrong password" in the

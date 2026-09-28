@@ -535,6 +535,11 @@ microseconds. Pub/Sub publish and SQS send happen **after commit** (via
 
 ## 8. Matchmaking
 
+> **As built (Phase 4): see ADR-016.** It refines the sketch below — two sorted sets per
+> queue (rating and join time), the seek key doubles as the heartbeat, pairing marks players
+> PENDING until the game row commits, and matches are pushed over WebSocket with a pull
+> fallback. The `game:{id}:state` read cache was deliberately not built.
+
 Valkey sorted set per time-control: `mm:{timeControl}` scored by rating. Pairing is a
 single **Lua script** — Valkey executes it atomically, so "find two compatible players
 and remove both" cannot interleave with another worker doing the same thing. That is

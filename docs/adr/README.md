@@ -22,3 +22,4 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 013 | Refresh token rotation with family-based reuse detection | Accepted |
 | 014 | Abort games nobody started, through the timeout machinery | Accepted |
 | 015 | Threefold repetition from the persisted move log, applied automatically | Accepted |
+| 016 | Matchmaking: Valkey queue, Lua pairing, push with pull recovery | Accepted |
