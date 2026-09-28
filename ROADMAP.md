@@ -170,7 +170,7 @@ skewing a pod's system clock by 5 seconds does not affect any game's timing.
 
 ---
 
-### Phase 4 — Valkey + Matchmaking · 12–16 h · Weeks 7–8 — **COMPLETE (~12 h)**
+### Phase 4 — Valkey + Matchmaking · 12–16 h · Weeks 7–8 — **COMPLETE (~13.5 h)**
 
 **Progress:** 4.1a matchmaking core ✅ (queue, Lua pairing, 20-player concurrency test) ·
 4.1b WebSocket seek + `MATCH_FOUND` push ✅ (plus the ArchUnit fix — see DEVELOPMENT_LOG) · 4.1c lobby UI ✅ · 4.2 rate limiting ✅ (Lua token bucket, ADR-017 — not Bucket4j) · 4.3 Valkey outage end to end ✅ · 4.3 full game
@@ -337,7 +337,7 @@ explaining one afterwards.
 | **Estimated remaining** | ~68–108 h of the 135–175 plan |
 | **Schedule status** | **On track.** Phase 4 inside its 12–16 h budget, including ~1.5 h of unplanned ArchUnit repair. |
 | **Scope status** | **On track, with recorded changes.** Dropped: `game:{id}:state` cache (no measured need). Changed: matches pushed over WebSocket (owner's choice, +~2 h, absorbed by the dropped cache); Lua token bucket instead of Bucket4j (ADR-017). Done-when met: 20 players paired with no duplicates; Valkey down mid-game loses no move and the client degrades to polling (browser-verified). |
-| **Recommended adjustment** | Before Phase 5, consider ~30 min to circuit-break the fanout publisher like the rate limiter: during an outage every broadcast blocks its socket thread for the 1 s Redis timeout, and the first degraded move took 4.8 s to show — unattributed, this is the leading suspect. Measure first. |
+| **Recommended adjustment** | Done in a ~1.5 h follow-up (ADR-018): the 4.8 s was traced to a 2 s local timeout override plus four uncircuited Valkey callers; now 1.9 s. Phase 4 total ~13.5 h. Start Phase 5. |
 
 ## Time checkpoint — end of Phase 3 (Milestone 3.3)
 

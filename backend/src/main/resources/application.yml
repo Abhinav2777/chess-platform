@@ -156,6 +156,12 @@ chess:
       - http://localhost:5173
       - http://localhost:3000
 
+  # One circuit for every degradable Valkey call on this instance (ValkeyGuard): after a
+  # failure, nothing asks Valkey for this long, so an outage costs one timeout per window
+  # rather than one per request.
+  valkey:
+    circuit-open-for: 5s
+
   # Matchmaking (ADR-016). The queue lives in Valkey; pairing is a Lua script.
   matchmaking:
     # Rating difference accepted at once, growth per second waited, and the cap. At these
@@ -178,7 +184,6 @@ chess:
   # at once, refilling at `capacity` per `period`. Fail open when Valkey is unreachable.
   ratelimit:
     enabled: true
-    circuit-open-for: 5s
     policies:
       login-ip:    { capacity: 10, period: 1m }
       login-user:  { capacity: 5,  period: 1m }

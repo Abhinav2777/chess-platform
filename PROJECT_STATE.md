@@ -87,6 +87,22 @@ left half-migrated because a sub-milestone ended.
 
 ## 2. Completed
 
+### Phase 4 follow-up: the 4.8 s explained — ValkeyGuard (2026-09-28, green)
+
+- **Traced, not guessed:** browser frames + polls aligned with server logs. Two causes:
+  `application-local.yml` set a 2 s Redis timeout since the first commit (doubling the 1 s
+  fail-fast), and only the rate limiter had a circuit — the move path paid two sequential
+  Valkey timeouts on the socket thread.
+- **Fix (ADR-018):** override removed; `common.resilience.ValkeyGuard`, one 5 s circuit per
+  instance, used by rate limiter, fanout publisher, user notifier, presence, matchmaking.
+- **Measured:** mover's first degraded move 4.8 → 1.9 s; steady state 0.9–2.0 s. **Cost:**
+  recovery waits up to the 5 s window — caught by a failing recovery assertion first.
+- Also fixed: the WS flood test was timing-dependent (20/s refills during the burst; on a
+  cold JVM all 25 got through). Its context now uses a 5-per-10 s bucket: exactly 5 / 20.
+- Tests: `ValkeyGuardTest` (5). Unit 82, integration 108. `e2e:outage` now waits out the
+  window and fails unless both boards return to "Live".
+
+
 ### Phase 4 — Milestone 4.3: Valkey outage end to end (2026-09-28, green) — **Phase 4 complete**
 
 - **Server:** `ValkeyOutageIntegrationTest` (fanout=valkey, Valkey **paused** so it hangs and
@@ -100,8 +116,7 @@ left half-migrated because a sub-milestone ended.
 - **Browser-verified** (`npm run e2e:outage`): play continues through a Valkey pause; latency
   table in §12; recovery < 100 ms.
 - `frontend/e2e/` — both browser checks committed (`e2e:lobby`, `e2e:outage`) with a README.
-- **Unattributed:** first degraded move took 4.8 s for the mover (expected ~1.5–2.5 s). Leading
-  suspect: fanout publish blocking the socket thread for the 1 s Redis timeout (no circuit).
+- First degraded move took 4.8 s — **attributed and fixed in the follow-up below (ADR-018).**
 
 
 ### Phase 4 — Milestone 4.2: rate limiting (2026-09-28, green)
@@ -499,7 +514,8 @@ Full reasoning in `docs/adr/`. Summary:
 | 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
 | 015 | Threefold repetition: history from `moves.fen_after`, bounded by the halfmove clock; automatic draw |
 | 016 | Matchmaking: Valkey queue + Lua pairing on every instance, no lock; idempotent re-seek as heartbeat; push with pull recovery |
-| 017 | Rate limiting: Lua token bucket in Valkey (not Bucket4j); fail open behind a 5 s circuit |
+| 017 | Rate limiting: Lua token bucket in Valkey (not Bucket4j); fail open |
+| 018 | One instance-wide circuit (`ValkeyGuard`) for every degradable Valkey call; 5 s window |
 
 ---
 
@@ -537,9 +553,7 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 1. Commit Milestone 4.3.
 2. Phase-boundary archive (per §0):
    `git archive --format=tar.gz -o ../chess-platform-M4.3-2026-09-28.tar.gz HEAD`.
-3. **Optional, ~30 min, recommended:** circuit-break `ValkeyGameEventPublisher.publish` the
-   way `RateLimiter` is, then rerun `npm run e2e:outage` and see whether the 4.8 s first
-   degraded move drops toward ~1.5 s. Measure before and after; record in §12.
+3. ~~Circuit-break the publisher~~ — done, more broadly (ADR-018).
 
 **Phase 5 — async processing (10–14 h), per ROADMAP.md:** transactional outbox + relay,
 SQS Standard + DLQ (LocalStack in tests), `GameFinished` event, Elo consumer with a
@@ -571,7 +585,8 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
 | Matchmaking pairing latency (browser) | Both players on the board 0.3–0.8 s after the second seek | Headless Chromium, local, 2026-09-28 | `npm run e2e:lobby` |
-| Degraded play, Valkey paused (browser) | Healthy ~0.13 s; first outage move 4.8 s (mover) / 10.6 s (waiting opponent); steady state 0.8–3.9 s; after unpause < 0.1 s | Headless Chromium, local, fanout=valkey, 2026-09-28 | `npm run e2e:outage` |
+| Degraded play, Valkey paused (browser) — before ADR-018 | Healthy ~0.13 s; first outage move 4.8 s (mover) / 10.6 s (waiting opponent); steady state 0.8–3.9 s; after unpause < 0.1 s | Headless Chromium, local, fanout=valkey, 2026-09-28 | `npm run e2e:outage` (M4.3 commit) |
+| Degraded play, Valkey paused (browser) — after ADR-018 | Healthy ~0.13 s; first outage move 1.9 s (mover) / 10.3 s (waiting opponent); steady state 0.9–2.0 s; recovery after the 5 s window, then ~0.13 s | Same | `npm run e2e:outage` |
 | Degraded move visible via REST (server) | Worst 1,039 ms per move with Valkey paused | Testcontainers, 2026-09-28 | `ValkeyOutageIntegrationTest` prints `MEASURED` |
 | Rate limiter cost during a Valkey outage | First move after Valkey stops: 1,037 ms (= 1 s Redis command timeout); later moves within 5 s skip Valkey (circuit) | Testcontainers, 2026-09-28 | `ValkeyFanoutIntegrationTest.survivesValkeyOutage` prints `MEASURED` |
 | Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |

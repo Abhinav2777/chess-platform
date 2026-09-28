@@ -24,3 +24,4 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 015 | Threefold repetition from the persisted move log, applied automatically | Accepted |
 | 016 | Matchmaking: Valkey queue, Lua pairing, push with pull recovery | Accepted |
 | 017 | Rate limiting: Lua token bucket in Valkey, fail open behind a circuit | Accepted |
+| 018 | One instance-wide circuit for every degradable Valkey call | Accepted |

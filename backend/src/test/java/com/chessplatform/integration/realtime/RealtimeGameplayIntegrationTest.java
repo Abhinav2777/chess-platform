@@ -70,6 +70,12 @@ class RealtimeGameplayIntegrationTest {
         registry.add("spring.data.redis.port", () -> VALKEY.getMappedPort(6379));
         // Shortened so the timeout test takes a second rather than five.
         registry.add("chess.realtime.auth-timeout", () -> "1s");
+        // A slow move bucket (5 per 10 s) so the flood test is deterministic: at the real
+        // 20/s a token refills every 50 ms, and how many frames get through then depends on
+        // how fast the server processes them — on a cold JVM, all 25 did. No other test in
+        // this class sends more than a handful of moves per player.
+        registry.add("chess.ratelimit.policies.move.capacity", () -> "5");
+        registry.add("chess.ratelimit.policies.move.period", () -> "10s");
     }
 
     @LocalServerPort
@@ -321,8 +327,8 @@ class RealtimeGameplayIntegrationTest {
 
         /**
          * The limiter runs before the move pipeline, so a flood is refused before it costs a
-         * database transaction. Twenty moves a second is the bucket; frames arrive in
-         * milliseconds, so at most one or two tokens refill during the burst.
+         * database transaction. This context's bucket is 5 per 10 s (see properties), so
+         * refill during the burst is negligible and the split is exact.
          */
         @Test
         @DisplayName("a flood of moves is cut off with RATE_LIMITED")
@@ -336,10 +342,10 @@ class RealtimeGameplayIntegrationTest {
                 for (int i = 0; i < 25; i++) {
                     codes.add(blackClient.payloadOf(blackClient.await("ERROR")).get("code"));
                 }
-                assertThat(codes).startsWith("NOT_YOUR_TURN").contains("RATE_LIMITED");
-                assertThat(codes.stream().filter("NOT_YOUR_TURN"::equals).count())
-                        .as("about one bucket's worth got through to the pipeline")
-                        .isBetween(20L, 22L);
+                assertThat(codes.subList(0, 5)).containsOnly("NOT_YOUR_TURN");
+                assertThat(codes.subList(5, 25))
+                        .as("everything past the bucket is refused before the pipeline")
+                        .containsOnly("RATE_LIMITED");
             }
         }
 

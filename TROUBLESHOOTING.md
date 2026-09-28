@@ -353,6 +353,18 @@ pass on nothing.
 **Fix:** upgrade ArchUnit (1.5.1 here). `importerSeesTheCodebase` now fails loudly if this
 recurs. Check with `javap -v <class> | grep major`.
 
+### Everything is twice as slow to degrade locally as in tests
+
+**Symptom:** with Valkey down, each Valkey call takes ~2 s to fail under `bootRun`, ~1 s in tests.
+**Cause (fixed in the 4.3 follow-up):** `application-local.yml` overrode
+`spring.data.redis.timeout` to 2000ms. **Fix:** removed; the profile no longer touches timeouts.
+
+### After Valkey comes back, the game still says "updates delayed" for a few seconds
+
+**Expected.** `ValkeyGuard` (ADR-018) keeps the circuit open for `chess.valkey.circuit-open-for`
+(5 s) after the last failure; until a call probes successfully, publishes are skipped and
+clients keep polling. The first live event after that clears the indicator.
+
 ### Integration tests pass in CI but fail locally with 429
 
 **Symptom:** login/refresh tests get `429 RATE_LIMITED` on a developer machine only.

@@ -5,6 +5,46 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Phase 4 follow-up: the unexplained 4.8 s, traced and fixed
+
+**Method.** A diagnostic browser script recorded every WebSocket frame and poll for the first
+move after pausing Valkey, with wall-clock times, aligned against the server log. Hypotheses
+tested, in order:
+
+1. *A PING queued ahead of the MOVE on the session* — **rejected**: no PING in the window.
+2. *The fanout publisher blocking* — **half right.**
+3. The trace showed the move **not committed** at the first poll (1.6 s), and the server log
+   showed the rate limiter failing open **1.99 s** after the MOVE and the publish failing 2 s
+   after that. Every Valkey call took 2 s. Tests measured 1 s. The difference was
+   `application-local.yml`: `spring.data.redis.timeout: 2000ms`, there since the first
+   commit, silently overriding the fail-fast 1 s.
+
+**Fix (ADR-018).** Override removed. `ValkeyGuard`: one circuit per instance, used by every
+degradable Valkey caller; the rate limiter's private circuit folded in.
+
+**Result:** mover's first degraded move 4.8 → 1.9 s; steady state 0.9–2.0 s.
+
+**What the fix cost — found by a failing test.** The outage test's recovery step broke: the
+first move after unpause was not broadcast. The circuit, still open, did not yet know Valkey
+was back. Recovery now lags up to one window (5 s). That is the trade, documented rather than
+tuned away; the test and the browser check wait out the window and then require live events.
+
+**And a flaky test, caught.** The WS flood test asserted <= 22 of 25 moves reach the
+pipeline, then failed at 23, then at 25. At 20/s a token refills every 50 ms, so the count
+depends on processing speed; on a cold JVM nobody exceeded the rate at all. I first suspected
+the new circuit (a spurious trip) — the logs showed no trip, so that was wrong. The test's
+context now uses 5 per 10 s, where refill during the burst is nil: exactly 5 through, 20
+refused.
+
+**Lessons**
+- A development profile must not change failure timing (checklist item added).
+- "Unexplained" was the right thing to write down; the trace found a cause I had not guessed.
+- A resilience mechanism has a recovery cost. Measure both directions.
+
+**Hours:** ~1.5. Phase 4 total ~13.5 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 4.3: Valkey outage end to end — Phase 4 complete
 
 **Design question first:** in the `local` profile (in-JVM fanout) Valkey carries no moves, so

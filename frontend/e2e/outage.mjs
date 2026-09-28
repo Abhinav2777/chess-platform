@@ -42,9 +42,16 @@ try {
   await play(bl, w, 'b8', 'c6', 'Nc6', 'outage');
   await w.screenshot({ path: `${SHOTS}/4-degraded.png` });
   docker('unpause'); console.log('--- Valkey unpaused ---');
+  // The server's circuit (ValkeyGuard, 5 s) does not know Valkey is back until its window
+  // lapses and a call probes. Moves inside the window still go by polling — measured, and
+  // the price of not paying a timeout per call during the outage. Wait it out, then live
+  // events must be back.
+  await w.waitForTimeout(6000);
   await play(w, bl, 'f1', 'b5', 'Bb5', 'recovered');
   await play(bl, w, 'a7', 'a6', 'a6', 'recovered');
-  console.log('final labels:', await label(w), '/', await label(bl));
+  const finalLabels = [await label(w), await label(bl)];
+  console.log('final labels:', finalLabels.join(' / '));
+  if (finalLabels.some((l) => l !== 'Live')) throw new Error('did not recover to live events');
 } finally {
   try { docker('unpause'); } catch { /* already running */ }
   await browser.close();

@@ -12,7 +12,10 @@ spring:
     redis:
       host: localhost
       port: 6379
-      timeout: 2000ms
+      # No timeout override here. From the first commit until the 4.3 follow-up this file
+      # set 2000ms, silently doubling application.yml's fail-fast 1s — found by tracing a
+      # degraded move in a browser: every Valkey call took 2 s to fail, tests (no profile)
+      # took 1 s. A dev profile that changes failure timing makes local measurements lie.
   jpa:
     show-sql: false            # use the SQL logger below instead; show-sql bypasses logging config
 

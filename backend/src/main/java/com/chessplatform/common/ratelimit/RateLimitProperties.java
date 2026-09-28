@@ -11,13 +11,13 @@ import java.util.Map;
  * @param policies        a {@link Policy} for every {@link RateLimit}, keyed by
  *                        {@link RateLimit#key()}; checked at startup so a missing one fails
  *                        the boot rather than the first request
- * @param circuitOpenFor  after a Valkey failure, how long to allow requests without asking
- *                        Valkey at all (see {@link RateLimiter})
+ *
+ * <p>The failure circuit is not here: it is instance-wide, {@code chess.valkey.circuit-open-for}
+ * ({@code ValkeyGuard}).
  */
 @ConfigurationProperties(prefix = "chess.ratelimit")
 public record RateLimitProperties(boolean enabled,
-                                  Map<String, Policy> policies,
-                                  Duration circuitOpenFor) {
+                                  Map<String, Policy> policies) {
 
     public RateLimitProperties {
         if (policies == null) {
@@ -28,9 +28,6 @@ public record RateLimitProperties(boolean enabled,
                 throw new IllegalArgumentException(
                         "chess.ratelimit.policies." + limit.key() + " is missing");
             }
-        }
-        if (circuitOpenFor == null || circuitOpenFor.isNegative()) {
-            throw new IllegalArgumentException("chess.ratelimit.circuit-open-for must be >= 0");
         }
         policies = Map.copyOf(policies);
     }

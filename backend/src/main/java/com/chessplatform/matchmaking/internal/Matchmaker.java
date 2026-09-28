@@ -1,5 +1,6 @@
 package com.chessplatform.matchmaking.internal;
 
+import com.chessplatform.common.resilience.ValkeyGuard;
 import com.chessplatform.game.GameFacade;
 import com.chessplatform.game.GameView;
 import com.chessplatform.game.TimeControl;
@@ -45,6 +46,7 @@ public class Matchmaker {
     private static final Logger log = LoggerFactory.getLogger(Matchmaker.class);
 
     private final MatchQueue queue;
+    private final ValkeyGuard guard;
     private final GameFacade games;
     private final ApplicationEventPublisher events;
     private final MatchmakingProperties properties;
@@ -53,9 +55,11 @@ public class Matchmaker {
     private final Counter pairingFailures;
     private final Timer waitTime;
 
-    public Matchmaker(MatchQueue queue, GameFacade games, ApplicationEventPublisher events,
-                      MatchmakingProperties properties, MeterRegistry metrics) {
+    public Matchmaker(MatchQueue queue, ValkeyGuard guard, GameFacade games,
+                      ApplicationEventPublisher events, MatchmakingProperties properties,
+                      MeterRegistry metrics) {
         this.queue = queue;
+        this.guard = guard;
         this.games = games;
         this.events = events;
         this.properties = properties;
@@ -84,7 +88,10 @@ public class Matchmaker {
         for (TimeControl timeControl : QueueTimeControls.SUPPORTED) {
             String name = QueueTimeControls.nameOf(timeControl);
             for (int i = 0; i < properties.pairsPerTick(); i++) {
-                Optional<MatchQueue.Pairing> pairing = queue.pairOne(name);
+                // Through the circuit: in an outage a tick is skipped outright instead of
+                // paying one Redis timeout per queue, every second.
+                Optional<MatchQueue.Pairing> pairing =
+                        guard.call(() -> queue.pairOne(name), Optional::empty);
                 if (pairing.isEmpty()) {
                     break;
                 }
@@ -119,13 +126,10 @@ public class Matchmaker {
         // From here the game exists. Failing to record or announce it must not undo that:
         // both players can still find it in their game list, and a reconnect re-announces
         // anything still recorded (see MatchmakingFacade#unseenMatch).
-        try {
+        guard.run(() -> {
             queue.recordMatch(white, game.id());
             queue.recordMatch(black, game.id());
-        } catch (RuntimeException valkeyUnavailable) {
-            log.warn("Game {} created but its match could not be recorded: {}",
-                    game.id(), valkeyUnavailable.toString());
-        }
+        });
 
         matches.increment();
         waitTime.record(Duration.ofMillis(pairing.firstWaitedMs()));
@@ -138,10 +142,7 @@ public class Matchmaker {
     }
 
     private void releaseQuietly(MatchQueue.Pairing pairing) {
-        try {
-            queue.releasePending(pairing.first(), pairing.second());
-        } catch (RuntimeException ignored) {
-            // Valkey is down too. The markers expire on their own (pending-ttl).
-        }
+        // If Valkey is down too, the markers expire on their own (pending-ttl).
+        guard.run(() -> queue.releasePending(pairing.first(), pairing.second()));
     }
 }
