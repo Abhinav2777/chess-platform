@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestReporter;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
@@ -127,6 +128,31 @@ class GameplayIntegrationTest extends IntegrationTestBase {
             assertThat(finished.result()).isEqualTo(GameResult.WHITE_WIN);
             assertThat(finished.finishedAt()).isNotNull();
             assertThat(moves.findByGameIdOrderByPlyAsc(game.id())).hasSize(7);
+        }
+
+        /**
+         * The history comes from the persisted log, and the first occurrence is the
+         * starting position — which is not a row in {@code moves}. Missing it would need a
+         * fourth shuffle before the draw fired.
+         */
+        @Test
+        @DisplayName("draws automatically on the third occurrence of a position, counting the start")
+        void drawsByRepetition() {
+            String[][] shuffle = {{"g1", "f3"}, {"g8", "f6"}, {"f3", "g1"}, {"f6", "g8"}};
+            for (int ply = 0; ply < 7; ply++) {
+                String[] move = shuffle[ply % 4];
+                GameService.MoveAccepted accepted =
+                        play(ply % 2 == 0 ? white : black, ply, move[0], move[1]);
+                assertThat(accepted.gameOver()).as("after ply %d", ply + 1).isFalse();
+            }
+
+            GameService.MoveAccepted third = play(black, 7, "f6", "g8");
+
+            assertThat(third.gameOver()).isTrue();
+            Game drawn = games.findById(game.id()).orElseThrow();
+            assertThat(drawn.status()).isEqualTo(GameStatus.FINISHED);
+            assertThat(drawn.result()).isEqualTo(GameResult.DRAW);
+            assertThat(drawn.termination()).isEqualTo(Termination.DRAW_REPETITION);
         }
 
         @Test
@@ -266,13 +292,38 @@ class GameplayIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("exactly one of many concurrent moves is committed")
         void onlyOneConcurrentMoveWins() throws Exception {
+            assertRaceHasOneWinner(game);
+        }
+
+        /**
+         * The same race, many times, on fresh games in one context. A race test that
+         * passes once has shown the interleaving it happened to get; repeated rounds are
+         * what give the losing interleavings a chance to occur.
+         *
+         * <p>Ten rounds by default, so CI stays fast. Phase 3's "done when" asks for 100:
+         * {@code ./gradlew :backend:integrationTest --tests '*GameplayIntegrationTest*'
+         * -Pchess.concurrency.rounds=100}.
+         */
+        @Test
+        @DisplayName("exactly one move wins in every one of many independent races")
+        void oneWinnerInEveryRound(TestReporter reporter) throws Exception {
+            int rounds = Integer.getInteger("chess.concurrency.rounds", 10);
+            for (int round = 0; round < rounds; round++) {
+                Game fresh = gameService.createGame(white.id(), black.id(), TimeControl.BLITZ_5_3);
+                assertRaceHasOneWinner(fresh);
+            }
+            // Recorded in the test report, so "ran 100 rounds" is evidence, not recollection.
+            reporter.publishEntry("concurrency.rounds", String.valueOf(rounds));
+        }
+
+        private void assertRaceHasOneWinner(Game target) throws Exception {
             int contenders = 16;
             var startLine = new CountDownLatch(1);
 
             List<Callable<Integer>> attempts = IntStream.range(0, contenders)
                     .<Callable<Integer>>mapToObj(i -> () -> {
                         startLine.await();
-                        return gameService.submitMove(game.id(), white.id(),
+                        return gameService.submitMove(target.id(), white.id(),
                                 new SubmitMoveCommand(UUID.randomUUID(), 0,
                                         MoveIntent.of("e2", "e4"))).ply();
                     })
@@ -298,10 +349,10 @@ class GameplayIntegrationTest extends IntegrationTestBase {
             assertThat(succeeded)
                     .as("exactly one move may be committed at a given ply")
                     .isEqualTo(1);
-            assertThat(moves.findByGameIdOrderByPlyAsc(game.id()))
+            assertThat(moves.findByGameIdOrderByPlyAsc(target.id()))
                     .as("no duplicate move reached the table")
                     .hasSize(1);
-            assertThat(games.findById(game.id()).orElseThrow().ply())
+            assertThat(games.findById(target.id()).orElseThrow().ply())
                     .as("the game advanced exactly one ply")
                     .isEqualTo(1);
         }

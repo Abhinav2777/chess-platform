@@ -37,4 +37,23 @@ public interface ChessRules {
 
     /** Whether the side to move has no legal move — i.e. the game has ended by rule. */
     boolean isGameOver(Position position);
+
+    /**
+     * Whether {@code current} is at least the third occurrence of the same position.
+     *
+     * <p>"Same" in the FIDE sense (Article 9.2.3): same pieces on the same squares, same
+     * side to move, same castling rights, and the same en-passant possibilities. Move
+     * counters are ignored. An en-passant square counts only when a legal en-passant
+     * capture exists — a FEN written after every double pawn push would otherwise make
+     * identical positions look different and miss the draw.
+     *
+     * <p>History is a parameter rather than state, so implementations stay stateless. The
+     * caller decides how much history is relevant; everything before the last capture or
+     * pawn move is harmless to include and pointless to fetch (see
+     * {@link Position#halfmoveClock()}).
+     *
+     * @param earlier positions reached earlier in the same game, in any order, not
+     *                including {@code current}
+     */
+    boolean isThreefoldRepetition(Position current, List<Position> earlier);
 }

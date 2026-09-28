@@ -1,7 +1,9 @@
 package com.chessplatform.game.internal;
 
 import com.chessplatform.chess.ChessRules;
+import com.chessplatform.chess.GameOutcome;
 import com.chessplatform.chess.MoveResult;
+import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
@@ -23,8 +25,9 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -66,10 +69,16 @@ public class GameService {
 
     private static final Logger log = LoggerFactory.getLogger(GameService.class);
 
+    /**
+     * Returning to a position with the same side to move takes at least four plies
+     * (1.Nf3 Nf6 2.Ng1 Ng8), so a third occurrence needs at least eight reversible plies.
+     * Below that, repetition is impossible and the history is not read at all.
+     */
+    private static final int MIN_PLIES_FOR_THREEFOLD = 8;
+
     private final GameRepository games;
     private final MoveRepository moves;
     private final ChessRules rules;
-    private final Clock clock;
     private final ServerClock serverClock;
     private final GameTimeouts timeouts;
     private final ApplicationEventPublisher events;
@@ -82,12 +91,11 @@ public class GameService {
     private final Counter lateFirstMoves;
 
     public GameService(GameRepository games, MoveRepository moves, ChessRules rules,
-                       Clock clock, ServerClock serverClock, GameTimeouts timeouts,
+                       ServerClock serverClock, GameTimeouts timeouts,
                        ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.moves = moves;
         this.rules = rules;
-        this.clock = clock;
         this.serverClock = serverClock;
         this.timeouts = timeouts;
         this.events = events;
@@ -227,6 +235,13 @@ public class GameService {
         // 7. Legality. The only authority on whether this move is playable.
         MoveResult result = rules.apply(game.position(), command.intent());
 
+        // 8. Repetition — the one ending the rules engine cannot see, because it needs
+        //    history. Read inside this transaction and before this move's own row is
+        //    written; if another move lands concurrently, the version check below throws
+        //    this whole evaluation away, so the history read here always matches the ply
+        //    the move is committed at.
+        result = withRepetition(gameId, game.ply() + 1, result);
+
         moves.save(MoveRecord.of(gameId, game.ply() + 1, result, command.clientMoveId(), now));
         // Charges the mover, adds their increment, and recomputes the deadline for the
         // player who must now move.
@@ -280,6 +295,39 @@ public class GameService {
         }
 
         return MoveAccepted.of(result, game);
+    }
+
+    /**
+     * Upgrades an in-progress result to {@code DRAW_REPETITION} when the new position is
+     * its third occurrence (ADR-015). Automatic, not claimed: there is no draw-claim
+     * protocol, and the fifty-move rule is already applied automatically.
+     *
+     * <p>Only positions since the last capture or pawn move can match, so the query is
+     * bounded by the halfmove clock — at most 100 rows, one primary-key range scan — and
+     * skipped entirely below {@link #MIN_PLIES_FOR_THREEFOLD}.
+     */
+    private MoveResult withRepetition(UUID gameId, int newPly, MoveResult result) {
+        if (result.outcome().isTerminal()) {
+            return result;
+        }
+        int reversiblePlies = result.positionAfter().halfmoveClock();
+        if (reversiblePlies < MIN_PLIES_FOR_THREEFOLD) {
+            return result;
+        }
+        int fromPly = newPly - reversiblePlies;
+
+        List<Position> earlier = new ArrayList<>();
+        // Ply 0 — the starting position — is not a row in `moves`. It still counts: after
+        // 1.Nf3 Nf6 2.Ng1 Ng8 the initial position has occurred twice.
+        if (fromPly <= 0) {
+            earlier.add(rules.startingPosition());
+        }
+        moves.findFensBetween(gameId, Math.max(fromPly, 1), newPly)
+                .forEach(fen -> earlier.add(new Position(fen)));
+
+        return rules.isThreefoldRepetition(result.positionAfter(), earlier)
+                ? result.withOutcome(GameOutcome.DRAW_REPETITION)
+                : result;
     }
 
     private void publishGameEnded(Game game) {

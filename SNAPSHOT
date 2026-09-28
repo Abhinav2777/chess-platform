@@ -1,11 +1,11 @@
-snapshot:  M3.2
+snapshot:  M3.3
 date:      2026-09-28
-contains:  Phase 1 + Phase 2 complete + M3.1 clock (green) + M3.2 clock UI and first-move abort
+contains:  Phase 1 + Phase 2 + Phase 3 complete (clock, aborts, repetition, resync, done-when proofs)
 migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock, V5 first_move_abort_deadline
-clock:     ADR-006 - never ticks, server or client. Server derives from stored ms + last_move_at
-           + PostgreSQL now(); client re-anchors on every message against performance.now().
-aborts:    ADR-014 - until both players have moved, any expiry or resignation aborts
-           (ABORTED / ABANDONED / no result). Same turn_deadline, index and sweeper as timeouts.
-verified:  2026-09-28 on the dev machine - test 67/67, integrationTest 78/78, Flyway V1-V5,
-           npm run build, Postman 44 req / 110 assertions, live sweeper abort over WebSocket.
-next:      3.3 - Phase 3 closeout (PROJECT_STATE §10)
+clock:     ADR-006 - never ticks, server or client. PostgreSQL now() decides and displays every
+           game clock (REST included since 3.3). Verified: +10 min JVM skew, kill -9 mid-game.
+aborts:    ADR-014 - until both players have moved, any expiry or resignation aborts.
+repetition: ADR-015 - automatic threefold from moves.fen_after, bounded by the halfmove clock.
+verified:  2026-09-28 - test 75/75, integrationTest 82/82, npm run build, Postman 54 req / 132
+           assertions, 100-round concurrency soak.
+next:      Phase 4 - Valkey + matchmaking (PROJECT_STATE §10)

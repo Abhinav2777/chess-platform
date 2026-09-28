@@ -25,15 +25,9 @@ public enum GameOutcome {
     /**
      * The same position has occurred three times.
      *
-     * <p><strong>Not currently detected.</strong> Positions are reconstructed from FEN,
-     * which carries no history, so the engine cannot know a position has occurred before.
-     * The value exists because the outcome is real and the schema must accommodate it.
-     *
-     * <p>The fix is cheap when we want it, and does not require statefulness: every
-     * move's {@code fen_after} is already persisted, so repetition is a count query over
-     * {@code moves} for that game, keyed on the position fields of the FEN (see
-     * {@link Position#repetitionKey()}). Recorded as technical debt rather than
-     * half-implemented.
+     * <p>Never produced by {@link ChessRules#apply}, which sees one position and no
+     * history. The game module decides it after the move, from the persisted log, via
+     * {@link ChessRules#isThreefoldRepetition} (ADR-015).
      */
     DRAW_REPETITION;
 

@@ -14,4 +14,12 @@ public record MoveResult(String uci,
                          Position positionAfter,
                          Side sideToMove,
                          GameOutcome outcome) {
+
+    /**
+     * The same move with a different outcome. Exists for the one ending the rules engine
+     * cannot see from a single position — repetition, which needs the game's history.
+     */
+    public MoveResult withOutcome(GameOutcome newOutcome) {
+        return new MoveResult(uci, san, positionAfter, sideToMove, newOutcome);
+    }
 }

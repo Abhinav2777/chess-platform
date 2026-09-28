@@ -326,6 +326,23 @@ dev server never type-checks, so this can go unnoticed for as long as nobody bui
 production — two milestones, here.
 **Fix:** `src/vite-env.d.ts` containing `/// <reference types="vite/client" />`. Added in 3.2.
 
+### `pkill -f ChessPlatformApplication` kills your own shell (exit 144)
+
+**Symptom:** the command that was meant to stop `bootRun` terminates the terminal command
+running it.
+**Cause:** `-f` matches the full command line — including the shell whose command line
+contains the pattern.
+**Fix:** anchor on the JVM: `pkill -f '^/usr/lib/jvm/.*ChessPlatformApplication'` (adjust
+the path to your JDK), or `pgrep` first and kill the PID.
+
+### Local log is a wall of `SELECT id FROM games ... FOR UPDATE SKIP LOCKED`
+
+**Symptom:** (before 3.3) the `local` profile log grows by thousands of lines a minute.
+**Cause:** SQL logging was on by default and the timeout sweeper queries once a second.
+**Fix:** since 3.3 it is opt-in — see the command in `application-local.yml`. Bind logging
+(`org.hibernate.orm.jdbc.bind=TRACE`) prints parameter values, including password and
+refresh-token hashes; turn it on for a session, not by default.
+
 ---
 
 ## Anticipated issues

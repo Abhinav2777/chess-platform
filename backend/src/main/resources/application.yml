@@ -2,6 +2,14 @@ spring:
   application:
     name: chess-platform
 
+  # Authentication is JWT-only (SecurityConfig: stateless, httpBasic and formLogin off),
+  # so Boot's default in-memory user — one account, random password printed at startup —
+  # has no route in. Excluded anyway: an unused credential store is attack surface and a
+  # startup warning that trains people to ignore startup warnings. A misspelt class name
+  # here fails startup, so this cannot silently stop applying.
+  autoconfigure:
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
   # Virtual threads. Tomcat serves each request on a virtual thread, so blocking JDBC
   # costs a platform thread only while it is actually executing. This is what makes
   # thread-per-request viable at high connection counts and why we do not need WebFlux

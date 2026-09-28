@@ -7,11 +7,11 @@
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M3.2 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M3.3 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 3 Milestone 3.2
+**Last updated:** 2026-09-28 · **Updated at:** Phase 3 Milestone 3.3 (Phase 3 complete)
 
 
 ---
@@ -74,18 +74,41 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 3 — Concurrency, Clock & Reliability |
-| **Phase status** | **Milestone 3.2 green** (verified 2026-09-28). 3.3 closeout next. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18 (done). Phase 3: ~14 of 16–20 |
-| **Cumulative hours (estimated)** | ~51 of 135–175 |
-| **Schedule status** | On track; Phase 3 at the high edge of its budget |
-| **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — Milestone 3.2) |
-| **Next milestone** | 3.3 — Phase 3 closeout (§10) |
+| **Current phase** | Phase 3 — Concurrency, Clock & Reliability — **complete** |
+| **Phase status** | **Milestone 3.3 green** (2026-09-28): unit 75, integration 82, Postman 132/132, all three "done when" checks measured (§12). |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 of 16–20 (all done) |
+| **Cumulative hours (estimated)** | ~55 of 135–175 |
+| **Schedule status** | On track; Phase 3 finished inside budget, near the top |
+| **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
+| **Next milestone** | Phase 4 — Valkey + matchmaking (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 3 — Milestone 3.3: closeout (2026-09-28, green) — **Phase 3 complete**
+
+- **Threefold repetition (ADR-015).** `ChessRules.isThreefoldRepetition(current, earlier)`;
+  history from `moves.fen_after`, bounded by the FEN halfmove clock (≤100 rows, PK range
+  scan, projection), skipped below 8 reversible plies. FIDE sameness incl. en-passant
+  *possibility* — chesslib writes the square after every double push (verified). Automatic
+  draw. Dead `isDraw() → DRAW_REPETITION` branch removed; naive `Position.repetitionKey()`
+  replaced by `halfmoveClock()`.
+- **REST clocks from `ServerClock`.** `GameSummary.from/withNames` take `now` as a parameter.
+  ADR-006 gains "Scope of the time authority".
+- **`GAME_SNAPSHOT.moves`** (SAN list, additive) — closes the "move list empty after
+  reconnect" gap, which auto-resync would otherwise have made worse.
+- **Client resync on `CONFLICT`:** re-`SUBSCRIBE` on the same socket, adopt the snapshot, do
+  **not** resubmit the move.
+- **Phase 3 "done when", measured:** 100-round concurrency soak; `ClockSkewIntegrationTest`
+  (JVM `Clock` 10 min fast); `kill -9` mid-game → clocks correct after restart (§12).
+- Cleanups: Boot's in-memory `UserDetailsService` excluded; local SQL/bind logging opt-in
+  (bind TRACE printed credential hashes); unused `Clock` removed from `GameService`.
+- Tests: `ChessRulesTest$Repetition` (8), repetition through the pipeline, conflict → resync
+  on one socket, snapshot `moves` after reconnect, skew test, rounds test.
+- Postman folder 6 (repetition) — 54 requests, 132 assertions.
+
 
 ### Phase 3 — Milestone 3.2: games nobody started, and the clock in the browser (2026-09-28, green)
 
@@ -321,7 +344,7 @@ working on the development machine.
 
 ## 3. Not yet started
 
-- **Milestone 3.3** — Phase 3 closeout (§10).
+- **Phase 4** — Valkey + matchmaking (§10).
 - **Phases 4–10** per `ROADMAP.md`.
 
 ---
@@ -334,14 +357,9 @@ all verified green through Milestone 3.1. The history is in `DEVELOPMENT_LOG.md`
 
 | Item | State | How to check |
 |---|---|---|
-| Client clock rendering not seen in a browser | M3.2 otherwise verified (`DEVELOPMENT_LOG.md` 2026-09-28): tests 67 + 78, Flyway V5, `npm run build`, Postman 110/110, live sweeper abort over WebSocket | Play one game in two browsers |
+| Client behaviour not seen in a browser | Clock rendering (3.2) and conflict auto-resync (3.3). Both compile (`tsc -b`), and the server half of each is covered by integration tests; the React half has no test and has not been watched | Play one game in two browsers; to see a resync, move in both tabs at once |
 | V5 backfill never exercised on real data | No ACTIVE games existed when it ran locally; correct by inspection | Only matters for a deployed database with games in flight |
-| `local` profile SQL DEBUG logging drowns the log | The 1 s sweeper query is logged every tick | 3.3 — lower `org.hibernate.SQL` to INFO, or exclude the sweep |
-| Unused in-memory `UserDetailsService` auto-configured | "Using generated security password" at startup; appears unused by the stateless JWT chain (not yet confirmed), but it is noise and an interview question | 3.3 — exclude `UserDetailsServiceAutoConfiguration` |
-| Move list empty after reconnect | Known gap since 2.3 — snapshot carries position, not the log | Small follow-up; `GET /api/games/{id}` has the log |
 | No automatic access-token refresh in the client | A session lasts 15 min, then socket auth fails until sign-in | Phase 4 or 10 |
-| REST clock values use the JVM clock | `GameSummary.withNames` calls `Instant.now()`; everything else uses PostgreSQL `now()`. Display-only, but contradicts ADR-006's "one time authority". | Fix in 3.3 |
-| Stale-ply rejection is not auto-resynced by the client | Server rejects with 409 correctly; the client shows the error rather than re-subscribing | 3.3 |
 
 ---
 
@@ -360,7 +378,7 @@ Recorded now so they are not discovered later and mistaken for oversights.
 | JitPack is a build-time availability and mutability dependency | Accepted, scoped to one group (ADR-012). Dependency locking not yet applied. | Phase 6, with Renovate/Dependabot |
 | Spring Boot 4.1 is a recent major; third-party lag is possible | Accepted. AWS SDK used directly to remove the highest-risk coupling. Falling back to 3.5 is **not** an option — it is EOL. | If a dependency blocks progress, replace the dependency, not the framework |
 | No lag/anti-cheat detection | Out of scope | Never |
-| **Threefold repetition is not detected** | Positions are reconstructed from FEN, which carries no history. `GameOutcome.DRAW_REPETITION` exists but never fires. | Milestone 3.3. Cheap fix that keeps statelessness: every move's `fen_after` is already persisted, so repetition is a count query over `moves` keyed on `Position.repetitionKey()`. |
+| Threefold repetition and fifty-move are automatic, not claimed | Simpler than FIDE's claim rule; no draw-claim protocol exists (ADR-015) | If draw offers/claims are ever built |
 | First-move window is a constant (30 s), mirrored as a literal in V5 | No second value has been wanted (ADR-014) | When one is |
 | No live countdown of the abort window in the UI | The server does not send the window's end; the hint text states the rule | Only if players miss it in practice |
 
@@ -393,7 +411,7 @@ Full reasoning in `docs/adr/`. Summary:
 
 | Environment | Status | Notes |
 |---|---|---|
-| Local | Running on the dev machine, verified through 3.1 | `ops/docker/docker-compose.yml`: Postgres 16, Valkey 8. V5 applies on next `bootRun`. |
+| Local | Running on the dev machine, verified through 3.3 | `ops/docker/docker-compose.yml`: Postgres 16, Valkey 8. Schema at V5; 3.3 added no migration. |
 | AWS — Path A (always-on demo) | Not provisioned | t3.small, planned Phase 7 |
 | AWS — Path B (ECS reference) | Not provisioned | Terraform, planned Phase 7, **apply/destroy cycle only** |
 | Kubernetes — `kind` | Not provisioned | Planned Phase 8 |
@@ -418,19 +436,19 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 3.2 verification — done 2026-09-28** (details in `DEVELOPMENT_LOG.md`). One
-manual item remains: `npm run dev`, one game in two browsers, to eyeball the clock
-rendering (countdown, low time turns red, "Game aborted" banner).
+**Phase 3 is complete.** Before starting Phase 4:
 
-**Next: Milestone 3.3 — Phase 3 closeout (budget ~2–6 h):**
+1. Commit Milestone 3.3.
+2. Optional, ~10 min: `npm run dev`, one game in two browsers — watch the clocks, and move
+   in both tabs at once to see a conflict resync silently (§4).
+3. Phase-boundary archive, if wanted: `git archive --format=tar.gz
+   -o ../chess-platform-M3.3-2026-09-28.tar.gz HEAD` after the commit.
 
-- Threefold repetition via a count over `moves.fen_after` keyed on `Position.repetitionKey()`.
-- Client auto-resync on `CONFLICT` (re-subscribe → fresh snapshot) instead of showing the error.
-- `GameSummary` clock values from `ServerClock`, not `Instant.now()`.
-- Phase 3 "done when": concurrency test 100× (`--rerun-tasks` loop or `@RepeatedTest`);
-  `docker kill` mid-game then reconnect with correct clocks; a 5 s skew of the JVM clock has
-  no effect on game timing (inject a skewed `java.time.Clock`, assert identical results).
-- Phase-boundary archive and summary.
+**Phase 4 — Valkey + matchmaking (12–16 h).** See `ROADMAP.md`. Start with the design
+before code: the matchmaking ZSET per time control and the Lua pairing script are the
+interview-critical parts; the "Valkey stopped" test extends the existing outage case in
+`ValkeyFanoutIntegrationTest`. Re-read ADR-004 first — Valkey must hold nothing
+unrecoverable, and that constrains what a queue entry may be.
 
 ---
 
@@ -452,7 +470,9 @@ If it is not in this table, it is an estimate and must be labelled as one.
 
 | Claim | Value | Measured on | Evidence |
 |---|---|---|---|
-| *(none yet)* | | | |
+| Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
+| JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
+| Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |
 
 Estimates currently in the repository, all clearly labelled as such: AWS monthly costs
 (`ARCHITECTURE.md` §12.1, ADR-010), phase hour budgets (`ROADMAP.md`), the 1,000-connection

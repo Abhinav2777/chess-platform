@@ -8,6 +8,7 @@ import com.chessplatform.chess.MoveResult;
 import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.github.bhlangonijr.chesslib.Board;
+import com.github.bhlangonijr.chesslib.PieceType;
 import com.github.bhlangonijr.chesslib.move.Move;
 import com.github.bhlangonijr.chesslib.move.MoveList;
 import org.springframework.stereotype.Component;
@@ -83,6 +84,49 @@ public class ChesslibRules implements ChessRules {
         return board.isMated() || board.isStaleMate() || board.isDraw();
     }
 
+    @Override
+    public boolean isThreefoldRepetition(Position current, List<Position> earlier) {
+        String key = repetitionKey(current);
+        long previousOccurrences = earlier.stream()
+                .filter(position -> key.equals(repetitionKey(position)))
+                .limit(2)
+                .count();
+        return previousOccurrences >= 2;
+    }
+
+    /**
+     * What makes two positions "the same" for repetition: placement, side to move,
+     * castling rights, and the en-passant square only if a legal en-passant capture
+     * exists. Move counters are dropped — they differ every move.
+     *
+     * <p>The en-passant normalisation is not pedantry. chesslib writes the square after
+     * <em>every</em> double pawn push ({@code e3} after 1.e4, with no black pawn anywhere
+     * near), so without it the position straight after a double push never matches the
+     * same position reached later, and a genuine threefold goes undetected.
+     *
+     * <p>Cheap in practice: only a position whose FEN has an en-passant square needs a
+     * board and move generation, and that is at most the first position of any
+     * repetition window (a pawn move resets the window).
+     */
+    private static String repetitionKey(Position position) {
+        String[] fields = position.fen().split(" ");
+        if (fields.length < 4) {
+            throw new IllegalStateException("malformed FEN: " + position.fen());
+        }
+        String enPassant = fields[3];
+        if (!"-".equals(enPassant) && !hasLegalEnPassantCapture(position, enPassant)) {
+            enPassant = "-";
+        }
+        return String.join(" ", fields[0], fields[1], fields[2], enPassant);
+    }
+
+    private static boolean hasLegalEnPassantCapture(Position position, String target) {
+        Board board = boardFrom(position);
+        return board.legalMoves().stream()
+                .anyMatch(move -> move.getTo().name().equalsIgnoreCase(target)
+                                  && board.getPiece(move.getFrom()).getPieceType() == PieceType.PAWN);
+    }
+
     private static Board boardFrom(Position position) {
         Board board = new Board();
         // No event listeners are registered, so publishing them is pure overhead. The
@@ -107,9 +151,11 @@ public class ChesslibRules implements ChessRules {
      * <em>why</em> a game was drawn — a game history that says only "draw" is a worse
      * artifact.
      *
-     * <p>Repetition is inferred as the remaining case rather than tested directly, and is
-     * <strong>not reliably detected</strong>: a board loaded from FEN has no move history.
-     * See {@link GameOutcome#DRAW_REPETITION}.
+     * <p>Repetition is deliberately absent. A board loaded from FEN has no history, so
+     * {@code isRepetition()} is always false here; the game module decides repetition
+     * from the move log via {@link #isThreefoldRepetition}. An earlier version mapped any
+     * leftover {@code isDraw()} to {@code DRAW_REPETITION} — unreachable, since every
+     * other draw is tested above, but a label that would have been wrong the day it fired.
      */
     private static GameOutcome outcomeOf(Board board) {
         if (board.isMated()) {
@@ -123,9 +169,6 @@ public class ChesslibRules implements ChessRules {
         }
         if (board.getHalfMoveCounter() >= FIFTY_MOVE_PLIES) {
             return GameOutcome.DRAW_FIFTY_MOVE;
-        }
-        if (board.isDraw()) {
-            return GameOutcome.DRAW_REPETITION;
         }
         return GameOutcome.IN_PROGRESS;
     }

@@ -141,13 +141,12 @@ position.
 
 ---
 
-### Phase 3 — Concurrency, Clock & Reliability · 16–20 h · Weeks 5–7 — **IN PROGRESS (~14 h)**
+### Phase 3 — Concurrency, Clock & Reliability · 16–20 h · Weeks 5–7 — **COMPLETE (~18 h)**
 
 **Progress:** 3.1 server-authoritative clock + sweeper ✅ · 3.2 clock UI + first-move
-abort ✅ (pending integration run on the dev machine) · **3.3 closeout** remaining:
-threefold repetition, automatic resync on a stale-ply rejection, the three "done when"
-verifications below, and the one place a JVM clock still reaches a player
-(`GameSummary.withNames` uses `Instant.now()` for REST clock values).
+abort ✅ · 3.3 closeout ✅ — threefold repetition (ADR-015), resync on a stale-ply
+rejection, move list in the snapshot, REST clocks from `ServerClock`, and all three "done
+when" checks measured (PROJECT_STATE §12).
 
 **Target:** the backend becomes technically robust rather than merely functional. Per
 the spec, this phase outranks new features.
@@ -323,6 +322,16 @@ explaining one afterwards.
 | **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
 | **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
 | **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
+
+## Time checkpoint — end of Phase 3 (Milestone 3.3)
+
+| | |
+|---|---|
+| **Estimated time used** | ~55 h (Phases 0–2 ~37, Phase 3 ~18) |
+| **Estimated remaining** | ~80–120 h of the 135–175 plan |
+| **Schedule status** | **On track.** Phase 3 finished inside its 16–20 h budget, near the top. |
+| **Scope status** | **On track.** 3.3 stayed closeout-only. Two small additions, both justified by 3.3's own items: the move list in `GAME_SNAPSHOT` (auto-resync would otherwise wipe it on every conflict) and removing Boot's unused default user. No P2 feature built. |
+| **Recommended adjustment** | None. Phase 4 (Valkey + matchmaking, 12–16 h) next. Its riskiest item is the Lua pairing script; the "Valkey stopped" test is partly done already (`ValkeyFanoutIntegrationTest` outage case) and should be extended, not rewritten. |
 
 ## Cumulative schedule
 
