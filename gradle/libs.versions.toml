@@ -36,7 +36,7 @@ chesslib             = "1.3.7"    # verified 2026-09-06 against the project READ
 logstashEncoder      = "8.0"      # CONFIRM Boot 4 / Logback compatibility
 awsSdk               = "2.31.0"   # BOM. Not needed until Phase 5.
 
-archunit             = "1.3.0"
+archunit             = "1.5.1"
 testcontainers       = "1.20.4"   # BOM
 assertj              = "3.26.3"
 

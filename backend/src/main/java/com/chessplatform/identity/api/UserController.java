@@ -3,7 +3,7 @@ package com.chessplatform.identity.api;
 import com.chessplatform.identity.IdentityFacade;
 import com.chessplatform.identity.UserSummary;
 import com.chessplatform.identity.api.dto.AuthResponses;
-import com.chessplatform.platform.security.AuthenticatedUser;
+import com.chessplatform.identity.AuthenticatedUser;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

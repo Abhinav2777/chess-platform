@@ -316,6 +316,47 @@ class ValkeyFanoutIntegrationTest {
     }
 
     /**
+     * Matchmaking across instances (ADR-016). Alice seeks on instance one, Bob on instance
+     * two; both instances run their scheduled matchmaker against the one Valkey queue, so
+     * this is also two concurrent matchmakers in miniature. Whichever pairs them, the
+     * MATCH_FOUND for the player on the OTHER instance can only arrive through the Valkey
+     * user channel.
+     */
+    @Test
+    @Order(6)
+    @DisplayName("players seeking on different instances are matched and both told")
+    void matchCrossesInstances() throws Exception {
+        User alice = registrar.register("a" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID() + "@example.com", "correct-horse-battery");
+        User bob = registrar.register("b" + UUID.randomUUID().toString().substring(0, 8),
+                UUID.randomUUID() + "@example.com", "correct-horse-battery");
+
+        try (TestWebSocketClient onFirst = authenticatedOn(firstPort, jwt.issueAccessToken(alice.id(), alice.username()));
+             TestWebSocketClient onSecond = authenticatedOn(secondPort, jwt.issueAccessToken(bob.id(), bob.username()))) {
+            onFirst.send(ClientMessage.SEEK, new Payloads.Seek(300, 3));
+            onSecond.send(ClientMessage.SEEK, new Payloads.Seek(300, 3));
+            onFirst.await("SEEK_STATUS");
+            onSecond.await("SEEK_STATUS");
+
+            Object first = onFirst.payloadOf(onFirst.await("MATCH_FOUND")).get("gameId");
+            Object second = onSecond.payloadOf(onSecond.await("MATCH_FOUND")).get("gameId");
+
+            assertThat(first).isEqualTo(second);
+            assertThat(games.findAll().stream()
+                    .filter(g -> g.whitePlayerId().equals(alice.id()) || g.blackPlayerId().equals(alice.id())))
+                    .as("exactly one game, though two matchmakers were running")
+                    .hasSize(1);
+        }
+    }
+
+    private TestWebSocketClient authenticatedOn(int port, String token) throws Exception {
+        TestWebSocketClient client = new TestWebSocketClient(json).connect(port);
+        client.send(ClientMessage.AUTH, new Payloads.Auth(token));
+        client.await("AUTH_OK");
+        return client;
+    }
+
+    /**
      * Graceful degradation, per ARCHITECTURE.md §13.
      *
      * <p>Valkey is a cache and a transport, never the source of truth (ADR-004). Losing it

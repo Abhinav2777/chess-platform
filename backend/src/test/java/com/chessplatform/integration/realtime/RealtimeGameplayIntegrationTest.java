@@ -91,6 +91,8 @@ class RealtimeGameplayIntegrationTest {
     private UserRepository users;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate valkey;
 
     private User white;
     private User black;
@@ -119,7 +121,7 @@ class RealtimeGameplayIntegrationTest {
     /** Plays a move through the service, bypassing the socket, to set up a position. */
     private void playDirectly(User player, int expectedPly, String from, String to) {
         gameService.submitMove(game.id(), player.id(),
-                new com.chessplatform.game.internal.SubmitMoveCommand(UUID.randomUUID(),
+                new com.chessplatform.game.SubmitMoveCommand(UUID.randomUUID(),
                         expectedPly, com.chessplatform.chess.MoveIntent.of(from, to)));
     }
 
@@ -286,7 +288,7 @@ class RealtimeGameplayIntegrationTest {
                 for (String[] move : new String[][]{{"f2", "f3"}, {"e7", "e5"}, {"g2", "g4"}}) {
                     gameService.submitMove(game.id(),
                             move[0].equals("e7") ? black.id() : white.id(),
-                            new com.chessplatform.game.internal.SubmitMoveCommand(
+                            new com.chessplatform.game.SubmitMoveCommand(
                                     UUID.randomUUID(),
                                     games.findById(game.id()).orElseThrow().ply(),
                                     com.chessplatform.chess.MoveIntent.of(move[0], move[1])));
@@ -294,7 +296,7 @@ class RealtimeGameplayIntegrationTest {
                 whiteClient.await("MOVE_MADE");
 
                 gameService.submitMove(game.id(), black.id(),
-                        new com.chessplatform.game.internal.SubmitMoveCommand(
+                        new com.chessplatform.game.SubmitMoveCommand(
                                 UUID.randomUUID(), 3,
                                 com.chessplatform.chess.MoveIntent.of("d8", "h4")));
 
@@ -390,6 +392,153 @@ class RealtimeGameplayIntegrationTest {
             try (TestWebSocketClient client = connectedAndSubscribed(whiteToken)) {
                 client.send(ClientMessage.PING, null);
                 assertThat(client.await("PONG")).isNotNull();
+            }
+        }
+    }
+
+    /**
+     * Matchmaking over the socket (ADR-016). The scheduled matchmaker is live in this
+     * context, so a MATCH_FOUND here is the real path: seek -> Valkey queue -> scheduled
+     * pairing -> game committed -> MatchFound event -> notifier -> socket.
+     */
+    @Nested
+    @DisplayName("matchmaking")
+    class Matchmaking {
+
+        private User alice;
+        private User bob;
+        private String aliceToken;
+        private String bobToken;
+
+        @BeforeEach
+        void freshPlayers() {
+            // Not the outer white/black: they already have an active game, and one game at
+            // a time is a rule.
+            alice = registrar.register("alice" + UUID.randomUUID().toString().substring(0, 8),
+                    UUID.randomUUID() + "@example.com", "correct-horse-battery");
+            bob = registrar.register("bob" + UUID.randomUUID().toString().substring(0, 8),
+                    UUID.randomUUID() + "@example.com", "correct-horse-battery");
+            aliceToken = jwt.issueAccessToken(alice.id(), alice.username());
+            bobToken = jwt.issueAccessToken(bob.id(), bob.username());
+        }
+
+        @AfterEach
+        void clearQueue() {
+            java.util.Set<String> keys = valkey.keys("mm:*");
+            if (keys != null && !keys.isEmpty()) {
+                valkey.delete(keys);
+            }
+        }
+
+        private TestWebSocketClient authenticated(String token) throws Exception {
+            TestWebSocketClient client = new TestWebSocketClient(json).connect(port);
+            client.send(ClientMessage.AUTH, new Payloads.Auth(token));
+            client.await("AUTH_OK");
+            return client;
+        }
+
+        private Map<String, Object> seek(TestWebSocketClient client) {
+            client.send(ClientMessage.SEEK, new Payloads.Seek(300, 3));
+            return client.payloadOf(client.await("SEEK_STATUS"));
+        }
+
+        @Test
+        @DisplayName("two seeking sockets are both told the same game, with opposite colours")
+        void pairsOverTheSocket() throws Exception {
+            try (TestWebSocketClient a = authenticated(aliceToken);
+                 TestWebSocketClient b = authenticated(bobToken)) {
+                assertThat(seek(a).get("status")).isEqualTo("QUEUED");
+                assertThat(seek(b).get("status")).isEqualTo("QUEUED");
+
+                Map<String, Object> toAlice = a.payloadOf(a.await("MATCH_FOUND"));
+                Map<String, Object> toBob = b.payloadOf(b.await("MATCH_FOUND"));
+
+                assertThat(toAlice.get("gameId")).isEqualTo(toBob.get("gameId"));
+                assertThat(java.util.Set.of(toAlice.get("yourSide"), toBob.get("yourSide")))
+                        .containsExactlyInAnyOrder("WHITE", "BLACK");
+                assertThat(toAlice.get("initialSeconds")).isEqualTo(300);
+
+                // And the game is real: subscribing gets a snapshot of it.
+                a.send(ClientMessage.SUBSCRIBE, new Payloads.Subscribe(
+                        UUID.fromString((String) toAlice.get("gameId"))));
+                assertThat(a.payloadOf(a.await("GAME_SNAPSHOT")).get("ply")).isEqualTo(0);
+            }
+        }
+
+        @Test
+        @DisplayName("a repeated SEEK is a heartbeat; CANCEL_SEEK leaves; a second cancel has nothing to do")
+        void seekAndCancel() throws Exception {
+            try (TestWebSocketClient a = authenticated(aliceToken)) {
+                assertThat(seek(a).get("status")).isEqualTo("QUEUED");
+                assertThat(seek(a).get("status")).isEqualTo("QUEUED");
+
+                a.send(ClientMessage.CANCEL_SEEK, null);
+                assertThat(a.payloadOf(a.await("SEEK_STATUS")).get("status")).isEqualTo("CANCELLED");
+                a.send(ClientMessage.CANCEL_SEEK, null);
+                assertThat(a.payloadOf(a.await("SEEK_STATUS")).get("status")).isEqualTo("NOT_SEEKING");
+            }
+        }
+
+        @Test
+        @DisplayName("closing the seeking socket leaves the queue at once, not when the TTL lapses")
+        void closeCancels() throws Exception {
+            TestWebSocketClient a = authenticated(aliceToken);
+            seek(a);
+            assertThat(valkey.hasKey("mm:seek:" + alice.id())).isTrue();
+
+            a.close();
+
+            long deadline = System.currentTimeMillis() + 3_000;
+            while (Boolean.TRUE.equals(valkey.hasKey("mm:seek:" + alice.id()))
+                   && System.currentTimeMillis() < deadline) {
+                Thread.sleep(50);
+            }
+            assertThat(valkey.hasKey("mm:seek:" + alice.id()))
+                    .as("the seek must be cancelled by the close, well inside its 45 s TTL")
+                    .isFalse();
+        }
+
+        /**
+         * The pull half of delivery. A socket that was not connected when MATCH_FOUND was
+         * pushed is told on its next AUTH_OK — until it opens the game, which acknowledges
+         * the match so that later connections are not sent back to it.
+         */
+        @Test
+        @DisplayName("a missed match is re-sent after AUTH_OK, until the game is opened")
+        void reconnectRecoversMatch() throws Exception {
+            Object gameId;
+            try (TestWebSocketClient a = authenticated(aliceToken);
+                 TestWebSocketClient b = authenticated(bobToken)) {
+                seek(a);
+                seek(b);
+                gameId = a.payloadOf(a.await("MATCH_FOUND")).get("gameId");
+                b.await("MATCH_FOUND");
+            }
+
+            try (TestWebSocketClient again = authenticated(aliceToken)) {
+                Map<String, Object> recovered = again.payloadOf(again.await("MATCH_FOUND"));
+                assertThat(recovered.get("gameId")).isEqualTo(gameId);
+
+                again.send(ClientMessage.SUBSCRIBE, new Payloads.Subscribe(UUID.fromString((String) gameId)));
+                again.await("GAME_SNAPSHOT");
+            }
+
+            try (TestWebSocketClient later = authenticated(aliceToken)) {
+                assertThat(later.typesUntilPong())
+                        .as("opening the game acknowledged it")
+                        .doesNotContain("MATCH_FOUND");
+            }
+        }
+
+        @Test
+        @DisplayName("a time control without a queue is refused with the REST error vocabulary")
+        void unsupportedTimeControl() throws Exception {
+            try (TestWebSocketClient a = authenticated(aliceToken)) {
+                a.send(ClientMessage.SEEK, new Payloads.Seek(420, 7));
+                assertThat(a.payloadOf(a.await("ERROR")).get("code")).isEqualTo("UNSUPPORTED_TIME_CONTROL");
+
+                a.send(ClientMessage.SEEK, new Payloads.Seek(null, 3));
+                assertThat(a.payloadOf(a.await("ERROR")).get("code")).isEqualTo("VALIDATION_FAILED");
             }
         }
     }

@@ -13,6 +13,8 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -100,6 +102,33 @@ class TestWebSocketClient extends TextWebSocketHandler implements AutoCloseable 
             }
         }
         return fail("timed out waiting for " + type);
+    }
+
+    /**
+     * Every frame type received up to and including the next PONG — for asserting that
+     * something did <em>not</em> arrive. The server answers a socket's frames in order, so
+     * anything it sent in response to earlier frames is ahead of the PONG. No sleeping.
+     */
+    List<String> typesUntilPong() {
+        send(ClientMessage.PING, null);
+        List<String> types = new ArrayList<>();
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Envelope next = received.poll(500, TimeUnit.MILLISECONDS);
+                if (next == null) {
+                    continue;
+                }
+                types.add(next.type());
+                if (next.type().equals("PONG")) {
+                    return types;
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return fail("interrupted");
+            }
+        }
+        return fail("timed out waiting for PONG");
     }
 
     @SuppressWarnings("unchecked")

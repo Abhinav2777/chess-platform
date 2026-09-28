@@ -4,6 +4,7 @@ import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.identity.domain.User;
 import com.chessplatform.identity.domain.UserRepository;
+import com.chessplatform.identity.internal.JwtService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,9 +37,25 @@ import java.util.stream.Collectors;
 public class IdentityFacade {
 
     private final UserRepository users;
+    private final JwtService jwt;
 
-    public IdentityFacade(UserRepository users) {
+    public IdentityFacade(UserRepository users, JwtService jwt) {
         this.users = users;
+        this.jwt = jwt;
+    }
+
+    /**
+     * Who an access token belongs to, or empty if it is invalid, expired or forged.
+     *
+     * <p>The single entry point for "is this token good" outside identity — the HTTP filter
+     * and the WebSocket first-frame auth both come through here. Before Milestone 4.1b both
+     * reached into {@code identity.internal.JwtService} directly, which the module rules
+     * forbid; nobody noticed because the rule was not checking anything (DEVELOPMENT_LOG,
+     * 4.1b). Not transactional: verification is pure signature and claims checking, no
+     * database.
+     */
+    public Optional<AuthenticatedUser> verifyAccessToken(String token) {
+        return jwt.verify(token);
     }
 
     @Transactional(readOnly = true)

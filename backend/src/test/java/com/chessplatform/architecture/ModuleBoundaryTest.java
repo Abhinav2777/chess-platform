@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Enforces the module boundaries described in {@code docs/REPOSITORY_STRUCTURE.md}.
@@ -30,6 +31,33 @@ class ModuleBoundaryTest {
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
             .importPackagesOf(ChessPlatformApplication.class);
+
+    /**
+     * The rules below are only as good as the classes they are given — and until Milestone
+     * 4.1b they were given none.
+     *
+     * <p>ArchUnit 1.3.0 could not parse Java 25 bytecode (class file major version 69). It
+     * logged a warning per class, imported <em>zero</em>, and every rule — each carrying
+     * {@code allowEmptyShould(true)} so that Phase 0 could go green before any module
+     * existed — passed vacuously. Four module-boundary violations and a cycle accumulated
+     * behind a green build.
+     *
+     * <p>This check makes that failure loud. It asserts the importer sees a known class from
+     * every business module, so a future JDK upgrade that outruns ArchUnit fails here with a
+     * clear message instead of silently disabling the whole test class.
+     */
+    @Test
+    @DisplayName("the importer actually sees the codebase")
+    void importerSeesTheCodebase() {
+        assertThat(CLASSES.size())
+                .as("ArchUnit imported no classes — can it read this JDK's bytecode?")
+                .isGreaterThan(50);
+        assertThat(CLASSES.contain("com.chessplatform.identity.IdentityFacade")).isTrue();
+        assertThat(CLASSES.contain("com.chessplatform.game.GameFacade")).isTrue();
+        assertThat(CLASSES.contain("com.chessplatform.matchmaking.MatchmakingFacade")).isTrue();
+        assertThat(CLASSES.contain("com.chessplatform.realtime.internal.ChessWebSocketHandler")).isTrue();
+        assertThat(CLASSES.contain("com.chessplatform.chess.ChessRules")).isTrue();
+    }
 
     /**
      * The central rule. A module's {@code internal} package is private to that module;

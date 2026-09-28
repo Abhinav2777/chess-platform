@@ -42,6 +42,23 @@ extraction later would be a rewrite.
   already asynchronous, has no read dependency on game internals, and would be the
   first to need independent scaling under tournament load.
 
+## Correction, 2026-09-28 (Milestone 4.1b)
+
+**The boundaries were not enforced from Phase 1 until 4.1b.** ArchUnit 1.3.0 could not read
+Java 25 bytecode, imported zero classes, and every rule — each with
+`allowEmptyShould(true)` — passed vacuously. Behind the green test: `platform` and
+`realtime` used `identity.internal.JwtService`; `realtime` used `game.internal`
+(`GameService`, `ServerClock`, `SubmitMoveCommand`) and the `MoveRecord` entity; and a cycle
+game → identity → platform → realtime → game ran through `AuthProperties`,
+`AuthenticatedUser` and `WebSocketConfig` living in `platform`.
+
+Fixed: ArchUnit 1.5.1; token verification via `IdentityFacade.verifyAccessToken`;
+`AuthenticatedUser` → `identity`, `AuthProperties` → `identity.internal`, `WebSocketConfig`
+→ `realtime.internal`; `GameFacade` gains `state`, `submitMove`, `resign`, and
+`SubmitMoveCommand` becomes public. A new test asserts the importer sees every module, and
+the rule was mutation-checked (a planted violation fails it). The decision stands; the
+claim that it was enforced did not, until now.
+
 ## Interview angle
 
 **Q:** "Why isn't this microservices?"

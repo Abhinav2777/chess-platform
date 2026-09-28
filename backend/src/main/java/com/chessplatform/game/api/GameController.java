@@ -1,24 +1,22 @@
 package com.chessplatform.game.api;
 
-import com.chessplatform.chess.ChessRules;
 import com.chessplatform.chess.MoveIntent;
-import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.game.GameFacade;
+import com.chessplatform.game.GameState;
 import com.chessplatform.game.GameView;
 import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.api.dto.GameRequests;
 import com.chessplatform.game.api.dto.GameResponses;
 import com.chessplatform.game.domain.Game;
-import com.chessplatform.game.domain.MoveRepository;
 import com.chessplatform.game.internal.GameService;
 import com.chessplatform.game.internal.ServerClock;
-import com.chessplatform.game.internal.SubmitMoveCommand;
+import com.chessplatform.game.SubmitMoveCommand;
 import com.chessplatform.identity.IdentityFacade;
 import com.chessplatform.identity.UserSummary;
-import com.chessplatform.platform.security.AuthenticatedUser;
+import com.chessplatform.identity.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,19 +44,15 @@ public class GameController {
 
     private final GameService gameService;
     private final GameFacade gameFacade;
-    private final MoveRepository moves;
     private final IdentityFacade identity;
-    private final ChessRules rules;
     private final ServerClock serverClock;
     private final SecureRandom random = new SecureRandom();
 
-    public GameController(GameService gameService, GameFacade gameFacade, MoveRepository moves,
-                          IdentityFacade identity, ChessRules rules, ServerClock serverClock) {
+    public GameController(GameService gameService, GameFacade gameFacade,
+                          IdentityFacade identity, ServerClock serverClock) {
         this.gameService = gameService;
         this.gameFacade = gameFacade;
-        this.moves = moves;
         this.identity = identity;
-        this.rules = rules;
         this.serverClock = serverClock;
     }
 
@@ -98,21 +92,19 @@ public class GameController {
      */
     @GetMapping("/{gameId}")
     public GameResponses.GameDetail get(@PathVariable UUID gameId) {
-        GameView view = gameFacade.findById(gameId)
+        // The same consistent snapshot the WebSocket's GAME_SNAPSHOT is built from.
+        GameState state = gameFacade.state(gameId)
                 .orElseThrow(() -> new DomainException.NotFound(
                         ErrorCode.GAME_NOT_FOUND, "No such game."));
 
-        List<GameResponses.PlayedMove> played = moves.findByGameIdOrderByPlyAsc(gameId).stream()
+        List<GameResponses.PlayedMove> played = state.moves().stream()
                 .map(move -> new GameResponses.PlayedMove(
-                        move.ply(), move.uci(), move.san(), move.createdAt()))
+                        move.ply(), move.uci(), move.san(), move.playedAt()))
                 .toList();
 
-        List<String> legal = view.status().isTerminal()
-                ? List.of()
-                : rules.legalMoves(new Position(view.fen()));
-
         return new GameResponses.GameDetail(
-                GameResponses.GameSummary.from(view, serverClock.now()), played, legal);
+                GameResponses.GameSummary.from(state.game(), state.asOf()), played,
+                state.legalMoves());
     }
 
     /**

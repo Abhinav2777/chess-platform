@@ -14,6 +14,7 @@ import com.chessplatform.game.domain.MoveRecord;
 import com.chessplatform.game.GameEvents;
 import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.MoveRepository;
+import com.chessplatform.game.SubmitMoveCommand;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;

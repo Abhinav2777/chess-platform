@@ -1,7 +1,5 @@
-package com.chessplatform.platform;
+package com.chessplatform.realtime.internal;
 
-import com.chessplatform.realtime.internal.ChessWebSocketHandler;
-import com.chessplatform.realtime.internal.RealtimeProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.CloseStatus;

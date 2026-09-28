@@ -1,6 +1,5 @@
 package com.chessplatform.platform.security;
 
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -27,7 +26,6 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(AuthProperties.class)
 public class SecurityConfig {
 
     private static final String PROBLEM_TYPE_PREFIX = "https://chess-platform.dev/errors/";

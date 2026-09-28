@@ -288,6 +288,8 @@ each is recorded below the table rather than silently dropped.
 | `GAME_FINISHED` | `{gameId, status, result, termination}` — `status` FINISHED or ABORTED; `result` null when ABORTED | terminal, by any route |
 | `ERROR` | `{code, message}` | rejected command |
 | `PONG` | — | reply to `PING` |
+| `SEEK_STATUS` | `{status, initialSeconds?, incrementSeconds?}` — QUEUED \| PAIRING \| CANCELLED \| NOT_SEEKING | reply to `SEEK` / `CANCEL_SEEK` (4.1b) |
+| `MATCH_FOUND` | `{gameId, yourSide, initialSeconds, incrementSeconds}` | pushed on pairing; in reply to a seek that finds a match; after `AUTH_OK` if unseen (4.1b, ADR-016) |
 
 Revisions from the Phase 0 design:
 
@@ -298,7 +300,7 @@ Revisions from the Phase 0 design:
   client extrapolates between them (§6.6). A periodic resync would be traffic proportional
   to games × time for a value both ends can already compute.
 - **`PLAYER_DISCONNECTED` / `PLAYER_RECONNECTED` → `PLAYER_PRESENCE {online}`** (2.2).
-- **`GAME_STARTED` → Phase 4**, with matchmaking. Direct challenges return the game from REST.
+- **`GAME_STARTED` → `MATCH_FOUND`** (4.1b). Addressed to a player, not a game; direct challenges still return the game from REST.
 - **`ratingDelta` → Phase 5**, when ratings exist.
 
 **Client → server types**
@@ -309,6 +311,8 @@ Revisions from the Phase 0 design:
 | `SUBSCRIBE` | `{gameId}` |
 | `MOVE` | `{gameId, clientMoveId, expectedPly, from, to, promotion?}` |
 | `RESIGN` | `{gameId}` |
+| `SEEK` | `{initialSeconds, incrementSeconds}` — idempotent; the client repeats it every 15 s as the seek's heartbeat |
+| `CANCEL_SEEK` | `{}` |
 | `PING` | `{}` |
 
 The `MOVE` command carries three fields the naive `"move e2e4"` string cannot:

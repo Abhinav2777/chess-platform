@@ -31,6 +31,17 @@ public enum ServerMessage {
 
     PONG,
 
+    /** Where the player stands after {@code SEEK} / {@code CANCEL_SEEK}. */
+    SEEK_STATUS,
+
+    /**
+     * A game has been created for this player. The one matchmaking message a client acts
+     * on, whichever way it arrives: pushed when the pairing happens, returned in reply to a
+     * seek that finds an existing match, or re-sent after {@code AUTH_OK} to a socket that
+     * missed the push (ADR-016).
+     */
+    MATCH_FOUND,
+
     /** A command was rejected. Carries the same {@code code} vocabulary as the REST API. */
     ERROR
 }

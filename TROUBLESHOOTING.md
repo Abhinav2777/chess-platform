@@ -343,6 +343,16 @@ the path to your JDK), or `pgrep` first and kill the PID.
 (`org.hibernate.orm.jdbc.bind=TRACE`) prints parameter values, including password and
 refresh-token hashes; turn it on for a session, not by default.
 
+### ArchUnit tests pass but check nothing
+
+**Symptom:** `ModuleBoundaryTest` green while code plainly imports another module's
+`internal` package. The test log has `WARN ... ClassFileProcessor -- Couldn't import class`.
+**Cause:** the ArchUnit version cannot parse the JDK's class-file version (Java 25 = major
+69 needs ArchUnit ≥ 1.4). It imports zero classes, and rules with `allowEmptyShould(true)`
+pass on nothing.
+**Fix:** upgrade ArchUnit (1.5.1 here). `importerSeesTheCodebase` now fails loudly if this
+recurs. Check with `javap -v <class> | grep major`.
+
 ---
 
 ## Anticipated issues

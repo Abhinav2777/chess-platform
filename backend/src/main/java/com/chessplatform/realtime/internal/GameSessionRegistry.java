@@ -41,6 +41,13 @@ public class GameSessionRegistry {
     private final Map<UUID, Set<WebSocketSession>> watchers = new ConcurrentHashMap<>();
     private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
 
+    /**
+     * Authenticated sockets by user, for messages addressed to a person rather than a game
+     * — {@code MATCH_FOUND}, sent before either player has subscribed to anything. A user
+     * may have several (two tabs); all of them are told.
+     */
+    private final Map<UUID, Set<WebSocketSession>> byUser = new ConcurrentHashMap<>();
+
     public void register(WebSocketSession session) {
         sessions.put(session.getId(), new SessionState());
     }
@@ -94,6 +101,37 @@ public class GameSessionRegistry {
         if (state != null && state.subscribedGame != null) {
             unsubscribe(state.subscribedGame, session);
         }
+        if (state != null && state.userId != null) {
+            // Same leak rule as `watchers`: an empty set is removed, not kept.
+            byUser.computeIfPresent(state.userId, (id, existing) -> {
+                existing.remove(session);
+                return existing.isEmpty() ? null : existing;
+            });
+        }
+    }
+
+    /** Marks the socket authenticated and indexes it under its user. */
+    public void authenticate(WebSocketSession session, UUID userId, String username) {
+        SessionState state = sessions.get(session.getId());
+        if (state == null) {
+            return;
+        }
+        state.authenticate(userId, username);
+        byUser.computeIfAbsent(userId, id -> ConcurrentHashMap.newKeySet()).add(session);
+    }
+
+    public void forEachSessionOf(UUID userId, Consumer<WebSocketSession> action) {
+        Set<WebSocketSession> local = byUser.get(userId);
+        if (local == null) {
+            return;
+        }
+        for (WebSocketSession session : local) {
+            try {
+                action.accept(session);
+            } catch (RuntimeException failed) {
+                log.debug("Delivery to session {} failed: {}", session.getId(), failed.toString());
+            }
+        }
     }
 
     public void forEachWatcher(UUID gameId, Consumer<WebSocketSession> action) {
@@ -129,6 +167,13 @@ public class GameSessionRegistry {
         volatile UUID userId;
         volatile String username;
         volatile UUID subscribedGame;
+        /** This socket sent a SEEK that is still open. Its close cancels the seek. */
+        volatile boolean seeking;
+        /**
+         * The game this socket was last told about in MATCH_FOUND. Subscribing to it
+         * acknowledges the match, so a plain SUBSCRIBE never needs to touch Valkey.
+         */
+        volatile UUID announcedMatch;
 
         public UUID userId() {
             return userId;
@@ -140,6 +185,22 @@ public class GameSessionRegistry {
 
         public UUID subscribedGame() {
             return subscribedGame;
+        }
+
+        public boolean seeking() {
+            return seeking;
+        }
+
+        public UUID announcedMatch() {
+            return announcedMatch;
+        }
+
+        void seeking(boolean value) {
+            this.seeking = value;
+        }
+
+        void announcedMatch(UUID gameId) {
+            this.announcedMatch = gameId;
         }
 
         public boolean isAuthenticated() {

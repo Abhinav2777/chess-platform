@@ -5,7 +5,7 @@ import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.identity.api.dto.AuthRequests;
 import com.chessplatform.identity.api.dto.AuthResponses;
 import com.chessplatform.identity.internal.AuthenticationService;
-import com.chessplatform.platform.security.AuthProperties;
+import com.chessplatform.identity.internal.AuthProperties;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;

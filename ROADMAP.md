@@ -170,10 +170,10 @@ skewing a pod's system clock by 5 seconds does not affect any game's timing.
 
 ---
 
-### Phase 4 — Valkey + Matchmaking · 12–16 h · Weeks 7–8 — **IN PROGRESS (~3 h)**
+### Phase 4 — Valkey + Matchmaking · 12–16 h · Weeks 7–8 — **IN PROGRESS (~6.5 h)**
 
 **Progress:** 4.1a matchmaking core ✅ (queue, Lua pairing, 20-player concurrency test) ·
-4.1b WebSocket seek + `MATCH_FOUND` push · 4.1c lobby UI · 4.2 rate limiting · 4.3 full game
+4.1b WebSocket seek + `MATCH_FOUND` push ✅ (plus the ArchUnit fix — see DEVELOPMENT_LOG) · 4.1c lobby UI · 4.2 rate limiting · 4.3 full game
 with Valkey stopped + client polling fallback. **Changed from the plan (ADR-016):** the
 `game:{id}:state` read cache is dropped (no measured need); matches are pushed over
 WebSocket rather than polled (owner's choice, ~2–3 h).

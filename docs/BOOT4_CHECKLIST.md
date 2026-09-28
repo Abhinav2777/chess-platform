@@ -103,6 +103,16 @@ edit — or make the edit fail loudly when its anchor is absent.
       a property in one test class does nothing about another class's context that is still
       alive and pointed at the same database. Disable it in the shared base class.
 
+## JDK upgrades and bytecode readers
+
+- [ ] **Anything that parses class files lags the JDK**: ArchUnit, JaCoCo, ASM-based
+      plugins. On an unsupported class-file version they may *warn and skip*, not fail.
+      ArchUnit 1.3.0 imported zero Java 25 classes and every rule passed for three phases.
+- [ ] **A rule that can pass on an empty input needs a guard that the input is not empty.**
+      `allowEmptyShould(true)` is exactly that trap; `importerSeesTheCodebase` is the guard.
+- [ ] **Mutation-check a new architecture or security rule once**: plant a violation, watch
+      it go red, remove it. A test never seen failing has not been shown to test anything.
+
 ## Debugging
 
 - [ ] Many tests failing at once with `DefaultCacheAwareContextLoaderDelegate` is **one**
