@@ -2,6 +2,14 @@ spring:
   application:
     name: chess-platform
 
+  # Spring Cloud AWS (ADR-020). In AWS the region and credentials come from the task's
+  # environment and role; nothing secret is configured here. The static region only stops
+  # the client from probing instance metadata on a developer machine.
+  cloud:
+    aws:
+      region:
+        static: us-east-1
+
   # Authentication is JWT-only (SecurityConfig: stateless, httpBasic and formLogin off),
   # so Boot's default in-memory user — one account, random password printed at startup —
   # has no route in. Excluded anyway: an unused credential store is attack surface and a
@@ -155,6 +163,16 @@ chess:
     allowed-origins:
       - http://localhost:5173
       - http://localhost:3000
+
+  # Asynchronous events (Phase 5, ADR-008). The outbox is written in the game transaction;
+  # the relay moves it to SQS. The relay runs only in the worker role (ADR-001).
+  messaging:
+    relay-enabled: false
+    queue: game-events
+    dead-letter-queue: game-events-dlq
+    max-receive-count: 3
+    create-queues: false
+    relay-batch-size: 50
 
   # One circuit for every degradable Valkey call on this instance (ValkeyGuard): after a
   # failure, nothing asks Valkey for this long, so an outage costs one timeout per window

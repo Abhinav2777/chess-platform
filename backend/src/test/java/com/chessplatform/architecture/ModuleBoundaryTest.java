@@ -153,7 +153,7 @@ class ModuleBoundaryTest {
 
     private static final class Modules {
         static final String[] ALL = {
-                "identity", "chess", "game", "realtime", "matchmaking", "rating"
+                "identity", "chess", "game", "realtime", "matchmaking", "rating", "messaging"
         };
 
         static String[] businessPackages() {

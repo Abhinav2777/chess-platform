@@ -107,6 +107,17 @@ edit — or make the edit fail loudly when its anchor is absent.
       context passes in CI and fails locally (or the reverse). Switch it off or point it at
       a container; never leave it to whatever is running.
 
+## Spring Cloud projects (added 2026-09-29, ADR-020)
+
+- [ ] **Match the Spring Cloud line to the Boot major.** Spring Cloud AWS **3.x = Boot 3**,
+      **4.x = Boot 4**. A 3.x starter resolves on Boot 4 and then fails or silently skips its
+      auto-configuration. Check the `spring-cloud-build` parent's `spring-boot.version`.
+- [ ] **Before a Boot upgrade**, check each Spring Cloud dependency's supported Boot range
+      (Spring Cloud AWS 4.1.1 targets Boot 4.0.x; this project runs 4.1 on the strength of
+      its test suite).
+- [ ] **Audit framework defaults that act on infrastructure.** `SqsTemplate` creates missing
+      queues by default — without a redrive policy. Set `QueueNotFoundStrategy.FAIL`.
+
 ## Profiles
 
 - [ ] **A development profile must not change failure timing.** `application-local.yml`

@@ -1,6 +1,6 @@
 # ADR-011: Java 25 LTS + Spring Boot 4.1.x + Gradle
 
-**Status:** Accepted · **Date:** 2026-09-06
+**Status:** Accepted · **Date:** 2026-09-06 · **SQS client amended by ADR-020** (Spring Cloud AWS 4.1.1, 2026-09-29)
 **Supersedes:** two earlier drafts of this ADR, both wrong. Draft 1 said Java 21 +
 Spring Boot 3.5.x + Maven, written from memory. Draft 2 corrected to Boot 4.0.x after
 checking. Draft 3 (this one) corrects again to **4.1.x** and switches to Gradle.
@@ -106,6 +106,11 @@ diagnose, in exactly this project's connection-heavy shape. Choosing the LTS wit
 that failure mode is free.
 
 ## Rationale — no Spring Cloud AWS
+
+> **Superseded for SQS by ADR-020.** The lag risk below was real — the version first proposed
+> (3.4.0) is the Boot 3 line and would not have worked — and is now managed by testing the
+> 4.x line against Boot 4.1 and a checklist item for future upgrades.
+
 
 Removes the dependency most likely to lag a Spring major. It is also the better call on
 merit: writing the SQS polling loop directly means dealing with visibility timeouts,

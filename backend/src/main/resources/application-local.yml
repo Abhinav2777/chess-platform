@@ -8,6 +8,14 @@ spring:
     url: jdbc:postgresql://localhost:5432/chess
     username: chess
     password: chess
+  # ElasticMQ from docker-compose (ADR-019). It ignores credentials; the SDK insists on some.
+  cloud:
+    aws:
+      sqs:
+        endpoint: http://localhost:9324
+      credentials:
+        access-key: local
+        secret-key: local
   data:
     redis:
       host: localhost
@@ -33,6 +41,11 @@ logging:
 # from 127.0.0.1 many times a minute. The production-shaped values in application.yml are
 # exercised by RateLimitIntegrationTest instead.
 chess:
+  # Local development runs the worker role in the same process, against ElasticMQ from
+  # ops/docker/docker-compose.yml (Phase 5; LocalStack now needs an account — see ADR-019).
+  messaging:
+    relay-enabled: true
+    create-queues: true
   ratelimit:
     policies:
       login-ip:    { capacity: 200, period: 1m }

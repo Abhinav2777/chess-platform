@@ -34,7 +34,8 @@ java                 = "25"
 # Licence is Apache 2.0 (an earlier note in this repo said MIT — that was also wrong).
 chesslib             = "1.3.7"    # verified 2026-09-06 against the project README
 logstashEncoder      = "8.0"      # CONFIRM Boot 4 / Logback compatibility
-awsSdk               = "2.31.0"   # BOM. Not needed until Phase 5.
+springCloudAws       = "4.1.1"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x is Boot 3.5). Tested upstream on Boot 4.0.8.
+awsSdk               = "2.55.6"   # BOM. SQS since Phase 5 (ADR-008); SDK direct, not Spring Cloud AWS (ADR-011).
 
 archunit             = "1.5.1"
 testcontainers       = "1.20.4"   # BOM
@@ -112,6 +113,9 @@ chesslib             = { module = "com.github.bhlangonijr:chesslib", version.ref
 archunit             = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 assertj              = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 testcontainers-bom       = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+aws-bom                  = { module = "software.amazon.awssdk:bom", version.ref = "awsSdk" }
+spring-cloud-aws-bom     = { module = "io.awspring.cloud:spring-cloud-aws-dependencies", version.ref = "springCloudAws" }
+spring-cloud-aws-sqs     = { module = "io.awspring.cloud:spring-cloud-aws-starter-sqs" }
 testcontainers-junit     = { module = "org.testcontainers:junit-jupiter" }
 testcontainers-postgres  = { module = "org.testcontainers:postgresql" }
 

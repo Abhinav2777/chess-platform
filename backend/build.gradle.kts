@@ -62,6 +62,12 @@ dependencies {
     implementation(libs.bundles.observability)
     implementation(libs.chesslib)
 
+    // Phase 5: SQS via Spring Cloud AWS 4.x (ADR-020, amending ADR-011). The AWS SDK BOM is
+    // imported after it, so the SDK version is ours (2.55.6), not the one it was built on.
+    implementation(platform(libs.spring.cloud.aws.bom))
+    implementation(platform(libs.aws.bom))
+    implementation(libs.spring.cloud.aws.sqs)
+
     testImplementation(libs.spring.test)
     testImplementation(libs.spring.webmvc.test)
     testImplementation(libs.spring.security.test)
@@ -116,7 +122,18 @@ tasks.check {
     dependsOn(integrationTest)
 }
 
+// Netty loads native code (the AWS SDK's async client, via Spring Cloud AWS — ADR-020).
+// Java 25 warns that such calls will be blocked in a future release unless native access is
+// granted; granting it explicitly keeps the warning out of the logs and the app working when
+// the default flips. The Phase 6 Dockerfile must pass the same flag.
+val nativeAccess = "--enable-native-access=ALL-UNNAMED"
+
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    jvmArgs(nativeAccess)
+}
+
 tasks.withType<Test>().configureEach {
+    jvmArgs(nativeAccess)
     useJUnitPlatform()
     testLogging {
         events("passed", "skipped", "failed")

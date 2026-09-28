@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.3 — **Phase 4 complete**
+**Last updated:** 2026-09-28 · **Updated at:** Phase 5 Milestone 5.1 (outbox + relay)
 
 
 ---
@@ -74,18 +74,44 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 4 — Valkey + Matchmaking — **complete** |
-| **Phase status** | **Phase 4 complete**: unit 77, integration 108, Postman 132/132, browser checks `e2e:lobby` + `e2e:outage` green. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~12 of 12–16 (done) |
+| **Current phase** | Phase 5 — Async processing |
+| **Phase status** | **5.1 green, on Spring Cloud AWS 4.1.1** (ADR-020): unit 82, integration 120, Postman 132/132; events flow to ElasticMQ locally. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~3 of ~12–15 |
 | **Cumulative hours (estimated)** | ~67 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 5 — async processing: outbox, SQS, Elo (§10) |
+| **Next milestone** | 5.2 — Elo consumer (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 5 — Milestone 5.1: outbox, relay, SQS (2026-09-28, green)
+
+- **Decided with the owner:** ElasticMQ instead of LocalStack (ADR-019 — LocalStack needs an
+  account since March 2026); ratings will be pushed (`RATING_UPDATED`, 5.3).
+- `V6__outbox.sql`: `outbox` (UUIDv7 id = event id, jsonb payload, `published_at`,
+  `attempts`, `last_error`), partial index on unpublished, `UNIQUE(event_type, aggregate_id)`.
+- **Migrated to Spring Cloud AWS 4.1.1 at the owner's request (ADR-020)** — 3.4.0, as first
+  proposed, is the Boot 3.5 line; 4.1.1 verified on Boot 4.1 + Netty 4.2 by the suite. Our
+  `SqsTemplate` uses `QueueNotFoundStrategy.FAIL` (tested); `--enable-native-access` for Netty.
+- New **`messaging` module**: `Outbox.append` (`MANDATORY`), `OutboxRelay` (SKIP LOCKED claim
+  → `SqsTemplate.sendMany` with per-message results → mark, one transaction; 20-attempt cap),
+  `OutboxRelayScheduler` (worker role, `chess.messaging.relay-enabled`), `SqsSetup` (timeout
+  customizer, template bean),
+  `SqsQueues` (lazy URLs — API instances never need SQS to start; creates queue + DLQ +
+  redrive on ElasticMQ). Metrics: backlog, oldest age, stuck, published, send failures.
+- `game.GameFinished` (the message contract, `schemaVersion` 1) and
+  `GameFinishedOutboxWriter` — one `MANDATORY` listener on `GameEnded` covers every ending;
+  aborts produce nothing.
+- Compose: `elasticmq` (9324 API, 9325 UI). Local profile runs the relay in-process.
+- Tests: `OutboxIntegrationTest` (7 — every ending path incl. move-path flag under rollback;
+  aborts; MANDATORY; uniqueness), `OutboxRelayIntegrationTest` (4 — envelope, redrive policy,
+  two concurrent relays × 30 events exactly once, SQS down keeps the event).
+- **Verified locally:** V6 applied; Postman's games → 3 events (checkmate, resignation,
+  repetition; the abort none) → all published → 3 messages on `game-events`.
+
 
 ### Phase 4 follow-up: the 4.8 s explained — ValkeyGuard (2026-09-28, green)
 
@@ -508,7 +534,7 @@ Full reasoning in `docs/adr/`. Summary:
 | 008 | SQS Standard + outbox + `processed_events` dedupe; **not** Kafka, **not** FIFO |
 | 009 | JWT access + rotating refresh; WebSocket auth in the first message, not the URL |
 | 010 | ECS Fargate as the production path; EKS time-boxed; **no NAT Gateway** |
-| 011 | Java 25 LTS + Spring Boot 4.1.1 + **Gradle 9.7.1**; virtual threads, no WebFlux; AWS SDK v2 direct, not Spring Cloud AWS |
+| 011 | Java 25 LTS + Spring Boot 4.1.1 + **Gradle 9.7.1**; virtual threads, no WebFlux (SQS client amended by 020) |
 | 012 | JitPack accepted for chesslib, scoped via `exclusiveContent` to one group |
 | 013 | Refresh tokens rotate on every use; reuse of a spent token revokes the whole family |
 | 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
@@ -516,6 +542,8 @@ Full reasoning in `docs/adr/`. Summary:
 | 016 | Matchmaking: Valkey queue + Lua pairing on every instance, no lock; idempotent re-seek as heartbeat; push with pull recovery |
 | 017 | Rate limiting: Lua token bucket in Valkey (not Bucket4j); fail open |
 | 018 | One instance-wide circuit (`ValkeyGuard`) for every degradable Valkey call; 5 s window |
+| 019 | ElasticMQ, not LocalStack (now account-gated), as the SQS stand-in |
+| 020 | Spring Cloud AWS 4.1.1 for SQS (amends 011's SDK-direct); template never creates queues |
 
 ---
 
@@ -548,19 +576,25 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Phase 4 is complete.** Before Phase 5:
+**Milestone 5.2 — the Elo consumer** (~4–5 h). Roadmap done-when: the same `GAME_FINISHED`
+delivered twice moves a rating once; a consumer that throws three times lands in the DLQ;
+ratings survive a worker crash mid-processing.
 
-1. Commit Milestone 4.3.
-2. Phase-boundary archive (per §0):
-   `git archive --format=tar.gz -o ../chess-platform-M4.3-2026-09-28.tar.gz HEAD`.
-3. ~~Circuit-break the publisher~~ — done, more broadly (ADR-018).
+- `V7`: `processed_events (consumer, event_id)` PK; `rating_history (game_id, user_id)` PK
+  with before/after/delta — the structural backstop behind the dedupe table.
+- `rating` module: Elo (K = 32, expected score from both current ratings), `RatingConsumer`
+  (`@SqsListener` with **manual acknowledgement** — ADR-020 — one transaction per message: dedupe insert → lock both users `FOR
+  UPDATE` in id order → compute → update via `IdentityFacade` → history; delete message only
+  after commit), worker-role scheduling like the relay.
+- `IdentityFacade.applyRatingChanges(...)` — identity owns `users.rating`; rating never writes
+  it directly.
+- Tests with ElasticMQ: duplicate delivery (send the same envelope twice), poison message →
+  DLQ after 3 receives (short visibility timeout), crash between commit and delete →
+  redelivery ignored, two games of one player concurrently → no lost update.
+- Metrics: consumed, duplicates skipped, failures, DLQ depth.
 
-**Phase 5 — async processing (10–14 h), per ROADMAP.md:** transactional outbox + relay,
-SQS Standard + DLQ (LocalStack in tests), `GameFinished` event, Elo consumer with a
-`processed_events` dedupe table, worker profile. Start with the design discussion: what the
-outbox row holds, relay polling vs `LISTEN/NOTIFY`, and why `rating += delta` is not
-idempotent. Note an interaction with ADR-014: aborted games must never produce a rating
-event.
+Then **5.3** — `RATING_UPDATED` over the Valkey user channel; the finished-game screen shows
+the change.
 
 ---
 

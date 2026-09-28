@@ -571,8 +571,18 @@ in-memory index and a durable log. We build the first, discuss the rest.
 
 **SQS Standard + idempotent consumers. Not Kafka. Not SQS FIFO.** See ADR-008.
 
-Events: `GameFinished` → rating update; `GameFinished` → notification. That's it
-initially. Producers write the event **after** the game transaction commits.
+Events: `GAME_FINISHED` → rating update (Phase 5). Aborted games produce no event (ADR-014).
+
+**As built (5.1): transactional outbox.** The event is written to `outbox` **inside** the
+game's transaction — by one listener on `GameEvents.GameEnded`, `MANDATORY` propagation, so
+every ending path is covered and a game without its event cannot commit. A relay (worker
+role) claims unpublished rows with `FOR UPDATE SKIP LOCKED`, sends them with
+`SendMessageBatch`, and marks them published in the same transaction: at-least-once, never
+lost. `UNIQUE(event_type, aggregate_id)` makes a second event for one game unstorable. The
+message body is a self-describing envelope (`eventId`, `eventType`, `aggregateId`,
+`occurredAt`, `payload`). Metrics: `chess.outbox.backlog`, **`chess.outbox.oldest_age_seconds`**
+(the one to alarm on), `chess.outbox.stuck`. Module: `messaging`, on **Spring Cloud AWS 4.1** (`SqsTemplate`, `QueueNotFoundStrategy.FAIL`;
+ADR-020). Locally and in tests the queue is ElasticMQ (ADR-019).
 
 We deliberately choose *at-least-once* Standard delivery over FIFO's exactly-once
 semantics, because handling duplicate delivery correctly is the skill worth
@@ -585,7 +595,8 @@ duplicate hits the PK constraint and is acknowledged without re-applying. Rating
 updates are not naturally idempotent (`rating += delta` applied twice is wrong), which
 is precisely why this table exists.
 
-Retries and DLQ: SQS redrive policy, `maxReceiveCount: 3`, then DLQ. A CloudWatch alarm
+Retries and DLQ: SQS redrive policy, `maxReceiveCount: 3`, then DLQ (created with the
+queue by `SqsQueues` locally; by Terraform in AWS). A CloudWatch alarm
 on DLQ depth > 0. Poison messages must be visible, not silently dropped.
 
 Kafka would be justified by: event replay for rebuilding read models, many independent

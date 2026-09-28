@@ -25,3 +25,5 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 016 | Matchmaking: Valkey queue, Lua pairing, push with pull recovery | Accepted |
 | 017 | Rate limiting: Lua token bucket in Valkey, fail open behind a circuit | Accepted |
 | 018 | One instance-wide circuit for every degradable Valkey call | Accepted |
+| 019 | ElasticMQ, not LocalStack, as the SQS stand-in | Accepted |
+| 020 | Spring Cloud AWS 4.x for SQS (amends 011) | Accepted |

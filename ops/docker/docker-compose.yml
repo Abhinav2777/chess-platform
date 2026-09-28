@@ -43,5 +43,15 @@ services:
       timeout: 3s
       retries: 10
 
+  # SQS stand-in for local development (Phase 5). ElasticMQ rather than LocalStack: since
+  # March 2026 the LocalStack image needs an account and auth token, and SQS is the only AWS
+  # service this project emulates before Phase 7. Queues are created by the app on first use.
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.7.1
+    container_name: chess-elasticmq
+    ports:
+      - "9324:9324"   # SQS API
+      - "9325:9325"   # web UI: queue depths, including the dead-letter queue
+
 volumes:
   postgres-data:
