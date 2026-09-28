@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1b (WebSocket matchmaking + ArchUnit fix)
+**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1c (lobby UI) — Milestone 4.1 complete
 
 
 ---
@@ -75,17 +75,32 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 4 — Valkey + Matchmaking |
-| **Phase status** | **4.1b green**: unit 76, integration 101; module boundaries now genuinely enforced. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~6.5 of 12–16 |
-| **Cumulative hours (estimated)** | ~61.5 of 135–175 |
+| **Phase status** | **4.1 complete** (matchmaking end to end, verified in a real browser). Unit 76, integration 101. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~7.5 of 12–16 |
+| **Cumulative hours (estimated)** | ~62.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 4.1c — lobby UI (§10) |
+| **Next milestone** | 4.2 — rate limiting (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 4 — Milestone 4.1c: lobby UI (2026-09-28, verified in a browser)
+
+- **Play online**: a button per preset → `useSeek` opens a lobby socket, seeks, re-seeks every
+  15 s (and on every reconnect), shows elapsed wait and Cancel. `MATCH_FOUND` → the game view.
+  A cancel that races a match loses to the match.
+- `GameSocket` generalised rather than duplicated: `gameId` optional (lobby = no SUBSCRIBE),
+  game handlers optional, `seek` / `cancelSeek`.
+- **Board layout bug fixed**: ranks without pieces rendered shorter (implicit grid rows sized
+  by content). Found the first time the board was looked at in a real browser.
+- **Verified with headless Chromium** (playwright-core, two isolated users): both land in the
+  same game with opposite colours ~0.3–0.8 s after the second seek; White's e4 reaches Black;
+  Black's clock ticks (4:59 → 4:57); Cancel returns to idle. Script:
+  scratchpad `lobby-e2e.mjs` — not yet in the repo (see §10).
+
 
 ### Phase 4 — Milestone 4.1b: matchmaking over WebSocket, and the ArchUnit fix (2026-09-28, green)
 
@@ -387,7 +402,7 @@ working on the development machine.
 
 ## 3. Not yet started
 
-- **4.1c** lobby UI, **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
+- **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
 - **Phases 5–10** per `ROADMAP.md`.
 - **Phases 4–10** per `ROADMAP.md`.
 
@@ -403,7 +418,7 @@ imported zero Java 25 classes; fixed and guarded (ADR-001 correction). The histo
 
 | Item | State | How to check |
 |---|---|---|
-| Client behaviour not seen in a browser | Clock rendering (3.2) and conflict auto-resync (3.3). Both compile (`tsc -b`), and the server half of each is covered by integration tests; the React half has no test and has not been watched | Play one game in two browsers; to see a resync, move in both tabs at once |
+| Conflict auto-resync not seen in a browser | The server half is integration-tested; the React half compiles but has not been watched (clock rendering was verified in 4.1c) | Hard to trigger from the UI; a browser test that injects a stale-ply MOVE would do it |
 | V5 backfill never exercised on real data | No ACTIVE games existed when it ran locally; correct by inspection | Only matters for a deployed database with games in flight |
 | No automatic access-token refresh in the client | A session lasts 15 min, then socket auth fails until sign-in | Phase 4 or 10 |
 
@@ -484,20 +499,25 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 4.1c — lobby UI** (~1–1.5 h):
+**Milestone 4.2 — rate limiting** (~2–3 h). ARCHITECTURE.md §11 specifies 5/min on login and
+20/s on moves per user, backed by Valkey so the limit holds across instances.
 
-- Lobby: a Play button per preset → open an authenticated socket (no game) and `SEEK`;
-  "Looking for an opponent…" with elapsed time and Cancel; re-send `SEEK` every 15 s.
-- `MATCH_FOUND` → navigate to the game (subscribing acknowledges it). Handle it on the lobby
-  socket *and* after `AUTH_OK` on any socket. `SEEK_STATUS` errors (`ALREADY_IN_GAME`,
-  `MATCHMAKING_UNAVAILABLE`) shown inline, direct challenge still offered.
-- `GameSocket` currently requires a gameId; either make it optional or add a small
-  `LobbySocket` sharing the reconnect/backoff code — decide by which duplicates less.
-- Verify in two browsers: both players land in the same game with opposite colours.
+- **Decide first:** Bucket4j with its Lettuce/Redis integration vs a small Lua token bucket.
+  Check Bucket4j's current artifact coordinates and Lettuce compatibility against Boot 4.1
+  before choosing (BOOT4_CHECKLIST). Bucket4j is the industry answer; a Lua bucket is
+  ~20 lines on top of machinery already in the codebase.
+- What to limit: login and register by IP *and* username (credential stuffing vs one
+  account); moves per user on both REST and WebSocket (one limiter, both transports);
+  `SEEK` per user. Return `429` with `Retry-After`; on the socket, an `ERROR` with
+  `RATE_LIMITED`.
+- Failure mode: **fail open** when Valkey is down for moves (never block chess on a cache),
+  and decide explicitly for login (fail open is kinder; fail closed is safer).
 
-Then **4.2** rate limiting (Bucket4j over Valkey vs a Lua token bucket — check Bucket4j's
-Lettuce integration against Boot 4 first), **4.3** full game with Valkey stopped + client
-polling fallback.
+**Worth doing while it is fresh:** move `lobby-e2e.mjs` into the repo (e.g. `frontend/e2e/`)
+as a documented manual check, so the browser verification is reproducible rather than a
+claim in this file.
+
+Then **4.3** — full game with Valkey stopped + client polling fallback.
 
 ---
 
