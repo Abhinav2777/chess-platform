@@ -25,6 +25,12 @@ public enum ErrorCode {
     NOT_YOUR_TURN,
     GAME_NOT_ACTIVE,
     OUT_OF_TIME,
+    /**
+     * The game was aborted because a player never made their first move. Distinct from
+     * GAME_NOT_ACTIVE so a client can say "aborted" rather than "already over" — the
+     * player whose move was refused may not know the game ever ended.
+     */
+    GAME_ABORTED,
     GAME_NOT_FOUND,
     NOT_A_PLAYER,
 

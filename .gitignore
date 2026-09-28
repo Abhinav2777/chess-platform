@@ -24,6 +24,7 @@ replay_pid*
 # ---------------------------------------------------------------------------
 node_modules/
 dist/
+*.tsbuildinfo
 .vite/
 
 # ---------------------------------------------------------------------------
@@ -63,3 +64,5 @@ crash.log
 .vscode/
 .DS_Store
 *.log
+CLAUDE.md
+docs/CLAUDE_MASTER_PROMPT.md

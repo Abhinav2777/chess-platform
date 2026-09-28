@@ -69,6 +69,11 @@ in the codebase.
 **The reconnect-to-another-instance case required no code at all.** That is the result the
 design was chosen for: there was nothing to restore, because nothing was ever held.
 
+**The one thing that went wrong was not the clock.** Every timeout write — from the move path
+and from the sweeper — was initially lost: one to a rollback, one to self-invocation. The
+arithmetic was right from the first run. Both writes now go through `GameTimeouts`, with
+deliberately different transaction shapes; see DEVELOPMENT_LOG and TROUBLESHOOTING.
+
 ## Interview angle
 
 **Q:** "How does your chess clock work?"
@@ -105,3 +110,11 @@ under NTP. If move 1 is timestamped by pod A and move 2 by pod B, the elapsed ti
 move 2 is measured against a different clock and the error accumulates — it can even go
 negative and hand a player free time. Taking `now()` from Postgres makes one machine the
 sole time authority for every game in the system.
+
+---
+
+**Addendum (2026-09-28, Milestone 3.2):** `turn_deadline` now means "the next instant this
+game needs the server's attention" — the mover's flag-fall, or, until both players have
+moved, the end of the 30-second first-move window if that is sooner. Expiry before both
+players have moved aborts the game instead of flagging it. The computed-clock decision is
+unchanged; see ADR-014.

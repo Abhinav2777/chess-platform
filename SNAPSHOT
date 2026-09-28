@@ -1,9 +1,11 @@
-snapshot:  M3.1
-date:      2026-09-14
-contains:  Phase 1 + Phase 2 complete (played end-to-end) + M3.1 server-authoritative clock
-migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock
-clock:     ADR-006 - never ticks. Derived from white_ms_left/black_ms_left/last_move_at
-           and PostgreSQL now(). turn_deadline stored + partial index for the sweeper.
-sweeper:   @Scheduled(fixedDelay=1s), FOR UPDATE SKIP LOCKED, batch 100.
-           Disable with chess.clock.sweeper-enabled=false
-next:      3.2 - clock in the UI, abandonment abort for pre-move games
+snapshot:  M3.2
+date:      2026-09-28
+contains:  Phase 1 + Phase 2 complete + M3.1 clock (green) + M3.2 clock UI and first-move abort
+migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock, V5 first_move_abort_deadline
+clock:     ADR-006 - never ticks, server or client. Server derives from stored ms + last_move_at
+           + PostgreSQL now(); client re-anchors on every message against performance.now().
+aborts:    ADR-014 - until both players have moved, any expiry or resignation aborts
+           (ABORTED / ABANDONED / no result). Same turn_deadline, index and sweeper as timeouts.
+verified:  2026-09-28 on the dev machine - test 67/67, integrationTest 78/78, Flyway V1-V5,
+           npm run build, Postman 44 req / 110 assertions, live sweeper abort over WebSocket.
+next:      3.3 - Phase 3 closeout (PROJECT_STATE §10)

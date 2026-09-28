@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "88c318f8-f916-4ae1-baa1-cb3b9f60efe9",
-    "name": "Chess Platform \u2014 Phase 1",
-    "description": "REST API for the chess platform, through Phase 1 (auth + gameplay).\n\n## Run order\nFolders are numbered. Run 1 before 2, and 3 or 4 after 1. Or hit **Run collection** to execute everything with assertions.\n\n## Usernames are randomised\n`whiteUsername` and `blackUsername` are seeded with a random suffix in the collection pre-request script, so re-running does not collide with accounts from the previous run. No teardown needed.\n\n## The refresh cookie\nIt is set `HttpOnly; Secure; SameSite=Strict`. Postman's cookie jar will not reliably replay a `Secure` cookie over plain HTTP, so the auth requests parse it out of `Set-Cookie` into a collection variable and send it back as an explicit `Cookie` header. A browser does this for you; Postman needs the help.\n\n## Requires\n`docker compose -f ops/docker/docker-compose.yml up -d` and the app running on `{{baseUrl}}`.",
+    "name": "Chess Platform — through Milestone 3.2",
+    "description": "REST API for the chess platform, through Milestone 3.2 (auth, gameplay, clock, aborts).\n\n## Run order\nFolders are numbered. Run 1 before 2, and 3, 4 or 5 after 1. Or hit **Run collection** to execute everything with assertions.\n\n## Usernames are randomised\n`whiteUsername` and `blackUsername` are seeded with a random suffix in the collection pre-request script, so re-running does not collide with accounts from the previous run. No teardown needed.\n\n## The refresh cookie\nIt is set `HttpOnly; Secure; SameSite=Strict`. Postman's cookie jar will not reliably replay a `Secure` cookie over plain HTTP, so the auth requests parse it out of `Set-Cookie` into a collection variable and send it back as an explicit `Cookie` header. A browser does this for you; Postman needs the help.\n\n## Requires\n`docker compose -f ops/docker/docker-compose.yml up -d` and the app running on `{{baseUrl}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -101,11 +101,16 @@
       "key": "wrongPasswordMessage",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "clockGameId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "0 \u00b7 Health",
+      "name": "0 · Health",
       "item": [
         {
           "name": "Actuator health",
@@ -122,7 +127,7 @@
                 "health"
               ]
             },
-            "description": "Should report db and redis UP. A green health check proves connectivity, NOT that migrations ran \u2014 see the Flyway note in TROUBLESHOOTING.md."
+            "description": "Should report db and redis UP. A green health check proves connectivity, NOT that migrations ran — see the Flyway note in TROUBLESHOOTING.md."
           },
           "response": [],
           "event": [
@@ -142,7 +147,7 @@
       ]
     },
     {
-      "name": "1 \u00b7 Auth (happy path)",
+      "name": "1 · Auth (happy path)",
       "item": [
         {
           "name": "Register white",
@@ -269,7 +274,7 @@
                 "login"
               ]
             },
-            "description": "Username lookup is case-insensitive \u2014 try MAGNUS.",
+            "description": "Username lookup is case-insensitive — try MAGNUS.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"{{whiteUsername}}\",\n  \"password\": \"correct-horse-battery\"\n}"
@@ -382,10 +387,10 @@
       ]
     },
     {
-      "name": "2 \u00b7 Auth (negative + security)",
+      "name": "2 · Auth (negative + security)",
       "item": [
         {
-          "name": "Duplicate username \u2192 409",
+          "name": "Duplicate username → 409",
           "request": {
             "method": "POST",
             "header": [
@@ -426,7 +431,7 @@
           ]
         },
         {
-          "name": "Short password \u2192 400",
+          "name": "Short password → 400",
           "request": {
             "method": "POST",
             "header": [
@@ -507,7 +512,7 @@
           ]
         },
         {
-          "name": "Wrong password \u2192 401",
+          "name": "Wrong password → 401",
           "request": {
             "method": "POST",
             "header": [
@@ -548,7 +553,7 @@
           ]
         },
         {
-          "name": "Unknown user \u2192 identical 401",
+          "name": "Unknown user → identical 401",
           "request": {
             "method": "POST",
             "header": [
@@ -568,7 +573,7 @@
                 "login"
               ]
             },
-            "description": "Must be byte-identical to the wrong-password response, or login becomes a user-enumeration oracle. The server also hashes a dummy value so the TIMING matches \u2014 compare the two response times in Postman.",
+            "description": "Must be byte-identical to the wrong-password response, or login becomes a user-enumeration oracle. The server also hashes a dummy value so the TIMING matches — compare the two response times in Postman.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"nobody-at-all\",\n  \"password\": \"definitely-wrong-password\"\n}"
@@ -590,7 +595,7 @@
           ]
         },
         {
-          "name": "No token \u2192 401",
+          "name": "No token → 401",
           "request": {
             "method": "GET",
             "header": [],
@@ -622,7 +627,7 @@
           ]
         },
         {
-          "name": "Forged token \u2192 401",
+          "name": "Forged token → 401",
           "request": {
             "method": "GET",
             "header": [
@@ -658,7 +663,7 @@
           ]
         },
         {
-          "name": "Refresh token REUSE \u2192 401 (theft detection)",
+          "name": "Refresh token REUSE → 401 (theft detection)",
           "request": {
             "method": "POST",
             "header": [
@@ -678,7 +683,7 @@
                 "refresh"
               ]
             },
-            "description": "Presenting an already-rotated token cannot happen legitimately, so it is proof the lineage leaked. The WHOLE family is revoked \u2014 run the next request to confirm the current token died too. See ADR-013."
+            "description": "Presenting an already-rotated token cannot happen legitimately, so it is proof the lineage leaked. The WHOLE family is revoked — run the next request to confirm the current token died too. See ADR-013."
           },
           "response": [],
           "event": [
@@ -694,7 +699,7 @@
           ]
         },
         {
-          "name": "\u2026and the current token is dead too \u2192 401",
+          "name": "…and the current token is dead too → 401",
           "request": {
             "method": "POST",
             "header": [
@@ -725,7 +730,7 @@
                 "exec": [
                   "pm.test('status is 401', () => pm.response.to.have.status(401));",
                   "pm.test('family revoked, not just the reused token', () => pm.response.to.have.status(401));",
-                  "// Re-run '1 \u00b7 Auth \u2192 Login (white)' to get a working session again."
+                  "// Re-run '1 · Auth → Login (white)' to get a working session again."
                 ]
               }
             }
@@ -734,7 +739,7 @@
       ]
     },
     {
-      "name": "3 \u00b7 Play a game (scholar's mate)",
+      "name": "3 · Play a game (scholar's mate)",
       "item": [
         {
           "name": "Login white (fresh session)",
@@ -842,7 +847,7 @@
                 "games"
               ]
             },
-            "description": "playAs is pinned to WHITE for a deterministic run. Omit it in real use and colours are drawn at random \u2014 White scores ~54%, so always letting the challenger pick would be a way to farm rating.",
+            "description": "playAs is pinned to WHITE for a deterministic run. Omit it in real use and colours are drawn at random — White scores ~54%, so always letting the challenger pick would be a way to farm rating.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"opponentUsername\": \"{{blackUsername}}\",\n  \"playAs\": \"WHITE\"\n}"
@@ -1216,7 +1221,7 @@
                 "moves"
               ]
             },
-            "description": "Scholar's mate. White delivered it, so White wins \u2014 the mover is whoever was to move BEFORE the move, not after.",
+            "description": "Scholar's mate. White delivered it, so White wins — the mover is whoever was to move BEFORE the move, not after.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 6,\n  \"from\": \"h5\",\n  \"to\": \"f7\"\n}"
@@ -1284,7 +1289,7 @@
       "description": "Run this folder top to bottom. It plays a complete game and verifies the result is attributed correctly."
     },
     {
-      "name": "4 \u00b7 Game (negative + idempotency)",
+      "name": "4 · Game (negative + idempotency)",
       "item": [
         {
           "name": "Create a fresh game",
@@ -1331,7 +1336,7 @@
           ]
         },
         {
-          "name": "Illegal move \u2192 422",
+          "name": "Illegal move → 422",
           "request": {
             "method": "POST",
             "header": [
@@ -1377,7 +1382,7 @@
           ]
         },
         {
-          "name": "Out of turn \u2192 422",
+          "name": "Out of turn → 422",
           "request": {
             "method": "POST",
             "header": [
@@ -1423,7 +1428,7 @@
           ]
         },
         {
-          "name": "Idempotent move \u2014 first attempt",
+          "name": "Idempotent move — first attempt",
           "request": {
             "method": "POST",
             "header": [
@@ -1470,7 +1475,7 @@
           ]
         },
         {
-          "name": "Idempotent move \u2014 retry returns the SAME result",
+          "name": "Idempotent move — retry returns the SAME result",
           "request": {
             "method": "POST",
             "header": [
@@ -1495,7 +1500,7 @@
                 "moves"
               ]
             },
-            "description": "Same key, same answer \u2014 and the move is applied once. Note expectedPly is still 0 and it succeeds anyway: the idempotency check runs BEFORE the stale check, because a retry is not a stale client.",
+            "description": "Same key, same answer — and the move is applied once. Note expectedPly is still 0 and it succeeds anyway: the idempotency check runs BEFORE the stale check, because a retry is not a stale client.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"clientMoveId\": \"{{fixedMoveId}}\",\n  \"expectedPly\": 0,\n  \"from\": \"e2\",\n  \"to\": \"e4\"\n}"
@@ -1519,7 +1524,7 @@
           ]
         },
         {
-          "name": "Stale ply \u2192 409",
+          "name": "Stale ply → 409",
           "request": {
             "method": "POST",
             "header": [
@@ -1564,7 +1569,7 @@
           ]
         },
         {
-          "name": "Correct ply \u2192 200",
+          "name": "Correct ply → 200",
           "request": {
             "method": "POST",
             "header": [
@@ -1610,7 +1615,7 @@
           ]
         },
         {
-          "name": "Unknown game \u2192 404",
+          "name": "Unknown game → 404",
           "request": {
             "method": "GET",
             "header": [
@@ -1646,7 +1651,7 @@
           ]
         },
         {
-          "name": "Resign \u2192 opponent wins",
+          "name": "Resign → opponent wins",
           "request": {
             "method": "POST",
             "header": [
@@ -1686,7 +1691,7 @@
           ]
         },
         {
-          "name": "Move after the game ended \u2192 422",
+          "name": "Move after the game ended → 422",
           "request": {
             "method": "POST",
             "header": [
@@ -1772,6 +1777,301 @@
                 "exec": [
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('returns a list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 · Clock + abort (Phase 3)",
+      "item": [
+        {
+          "name": "Create a 1+1 game (custom time control)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opponentUsername\": \"{{blackUsername}}\",\n  \"playAs\": \"WHITE\",\n  \"initialSeconds\": 60,\n  \"incrementSeconds\": 1\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const g = pm.response.json();",
+                  "pm.collectionVariables.set('clockGameId', g.id);",
+                  "pm.test('increment is 1s', () => pm.expect(g.incrementMs).to.eql(1000));",
+                  "pm.test('black is frozen at the full minute', () => pm.expect(g.blackMsLeft).to.eql(60000));",
+                  "// White is already on the clock, so a few ms may have gone. Never more than the start.",
+                  "pm.test('white is on the clock', () => pm.expect(g.whiteMsLeft).to.be.within(55000, 60000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Time control below the minimum → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opponentUsername\": \"{{blackUsername}}\",\n  \"initialSeconds\": 5,\n  \"incrementSeconds\": 0\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('code is VALIDATION_FAILED', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_FAILED'));",
+                  "pm.test('names the field', () => pm.expect(pm.response.json().errors).to.have.property('initialSeconds'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1. e4 — charges white, adds the increment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{clockGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{clockGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 0,\n  \"from\": \"e2\",\n  \"to\": \"e4\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const m = pm.response.json();",
+                  "// Spent well under a second, gained one: close to 61s, never more.",
+                  "pm.test('white charged and incremented', () => pm.expect(m.whiteMsLeft).to.be.within(55000, 61000));",
+                  "pm.test('black untouched', () => pm.expect(m.blackMsLeft).to.eql(60000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Black resigns before moving → ABORTED, unrated",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{clockGameId}}/resign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{clockGameId}}",
+                "resign"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const g = pm.response.json();",
+                  "// Black never moved, so this is not a game anyone won. A rated win here is the",
+                  "// classic rating-farming route: two accounts, one challenge, instant resignation.",
+                  "pm.test('status is ABORTED', () => pm.expect(g.status).to.eql('ABORTED'));",
+                  "pm.test('no result', () => pm.expect(g.result).to.be.null);",
+                  "pm.test('termination is ABANDONED', () => pm.expect(g.termination).to.eql('ABANDONED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Move on the aborted game → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{clockGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{clockGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 1,\n  \"from\": \"e7\",\n  \"to\": \"e5\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('code is GAME_NOT_ACTIVE', () => pm.expect(pm.response.json().code).to.eql('GAME_NOT_ACTIVE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My games shows the abort",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const aborted = pm.response.json().find(g => g.id === pm.collectionVariables.get('clockGameId'));",
+                  "pm.test('listed as ABORTED with no result', () => {",
+                  "    pm.expect(aborted.status).to.eql('ABORTED');",
+                  "    pm.expect(aborted.result).to.be.null;",
+                  "});"
                 ]
               }
             }

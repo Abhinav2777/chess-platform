@@ -1,4 +1,4 @@
-import type { Side } from './protocol';
+import type { GameStatus, Side } from './protocol';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
@@ -35,12 +35,21 @@ export interface GameSummary {
   /** Present on the list endpoint, absent when a game is created. */
   whiteUsername?: string | null;
   blackUsername?: string | null;
-  status: string;
+  status: GameStatus;
   result: string | null;
   termination: string | null;
   fen: string;
   ply: number;
   sideToMove: Side;
+  incrementMs: number;
+  whiteMsLeft: number;
+  blackMsLeft: number;
+}
+
+/** A time control, as the server's create endpoint takes it. */
+export interface TimeControl {
+  initialSeconds: number;
+  incrementSeconds: number;
 }
 
 export class ApiError extends Error {
@@ -109,10 +118,10 @@ export const api = {
     accessToken = null;
   },
 
-  createGame: (opponentUsername: string, playAs?: Side) =>
+  createGame: (opponentUsername: string, timeControl: TimeControl, playAs?: Side) =>
     request<GameSummary>('/api/games', {
       method: 'POST',
-      body: JSON.stringify({ opponentUsername, playAs }),
+      body: JSON.stringify({ opponentUsername, playAs, ...timeControl }),
     }),
 
   myGames: () => request<GameSummary[]>('/api/games?page=0&size=20'),

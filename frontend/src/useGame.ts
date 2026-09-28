@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { currentToken } from './api';
+import { anchor, freeze, type ClockAnchor } from './clock';
 import { GameSocket, type ConnectionState, type MoveRequest } from './GameSocket';
 import type { Failure, GameSnapshot } from './protocol';
 
@@ -14,10 +15,15 @@ export interface PlayedMove {
  * <p>The server's snapshot is the state. Nothing here derives a position, validates a
  * move, or decides whose turn it is — the client has no rules engine, by design
  * (ARCHITECTURE.md §10). Every legal move comes from the server in `legalMoves`.
+ *
+ * <p>The clock follows the same rule. Every server message re-anchors it (see
+ * `clock.ts`); between messages it is extrapolated for display only. The client never
+ * decides that anyone has run out of time.
  */
 export function useGame(gameId: string) {
   const [connection, setConnection] = useState<ConnectionState>('connecting');
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [clock, setClock] = useState<ClockAnchor | null>(null);
   const [moves, setMoves] = useState<PlayedMove[]>([]);
   const [failure, setFailure] = useState<Failure | null>(null);
   const socketRef = useRef<GameSocket | null>(null);
@@ -32,6 +38,12 @@ export function useGame(gameId: string) {
         // becomes a display gap, never divergence, so there is no replay buffer and no
         // per-client cursor anywhere in this codebase (ADR-007).
         setSnapshot(incoming);
+        // The snapshot's clocks are "as of now" on the server, so anchoring them at our
+        // "now" is correct to within one-way latency. This is also what repairs the
+        // clock after a reconnect or a backgrounded tab: nothing to reconcile, just
+        // replace.
+        setClock(anchor(incoming.whiteMsLeft, incoming.blackMsLeft,
+          incoming.status === 'ACTIVE' ? incoming.sideToMove : null));
         setFailure(null);
         // The move list is not in the snapshot, so a reconnect mid-game starts it empty
         // rather than showing a list that contradicts the board. Known gap — the REST
@@ -54,14 +66,26 @@ export function useGame(gameId: string) {
           // them on the event is the fix: the client never holds a board it cannot play
           // on, and never has to guess.
           legalMoves: move.legalMoves ?? [],
+          whiteMsLeft: move.whiteMsLeft,
+          blackMsLeft: move.blackMsLeft,
         });
+        // A mating move arrives with no legal replies and is followed by GAME_FINISHED,
+        // which freezes the clock. Until then the loser's clock runs for a few ms, which
+        // is what the server believes too.
+        setClock(anchor(move.whiteMsLeft, move.blackMsLeft, move.sideToMove));
         setMoves((previous) => [...previous, { ply: move.ply, san: move.san }]);
       },
 
       onFinished: (finished) => {
+        const now = performance.now();
+        // On a timeout the loser is whoever's clock was running — which the anchor
+        // already records, so there is no need to read it from the snapshot (and no
+        // setState inside another setState's updater, which React may run twice).
+        setClock((current) => current
+          && freeze(current, now, finished.termination === 'TIMEOUT' ? current.running : null));
         setSnapshot((previous) => previous && {
           ...previous,
-          status: 'FINISHED',
+          status: finished.status,
           result: finished.result,
           termination: finished.termination,
           legalMoves: [],
@@ -110,7 +134,7 @@ export function useGame(gameId: string) {
     [snapshot],
   );
 
-  return { connection, snapshot, moves, failure, myTurn, submitMove, resign };
+  return { connection, snapshot, clock, moves, failure, myTurn, submitMove, resign };
 }
 
 function meIn(snapshot: GameSnapshot): string {

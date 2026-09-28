@@ -75,5 +75,18 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // The scheduled sweeper is off for EVERY context built on this base class, not just
+        // the clock tests' — because every one of them shares this database.
+        //
+        // Milestone 3.1 disabled it only in ClockIntegrationTest. But Spring caches test
+        // contexts, and a cached context's @Scheduled tasks keep running: the context built
+        // for GameplayIntegrationTest stayed alive, sweeping this same database every second,
+        // while ClockIntegrationTest pushed clocks into the past and asserted on who
+        // finalised them. A latent race that passed only because the window was a few
+        // milliseconds wide. Tests that need a sweep drive GameTimeouts directly.
+        //
+        // Side benefit: every IntegrationTestBase class now has identical configuration, so
+        // they share one cached context instead of starting two.
+        registry.add("chess.clock.sweeper-enabled", () -> "false");
     }
 }

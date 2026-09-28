@@ -5,6 +5,7 @@ React + TypeScript + Vite. **No chess library and no chess rules.**
 ```bash
 npm install
 npm run dev          # http://localhost:5173
+npm run build        # type-checks (tsc -b) then bundles — dev alone never type-checks
 ```
 
 Requires the backend on `localhost:8080` with Docker Compose up. Port 5173 is one of the
@@ -15,10 +16,18 @@ origins the backend permits for CORS and the WebSocket handshake
 
 Deliberately thin. The roadmap caps the frontend at ~6 hours across the whole project,
 because this is a backend portfolio piece and an elaborate UI would consume time that
-belongs to Phase 3's clock work. What exists: sign in, challenge by username, play, resign,
-a move list, and a connection indicator.
+belongs to Phase 3's clock work. What exists: sign in, challenge by username with a time-control
+preset, play, clocks, resign/abort, a move list, and a connection indicator.
 
-## The four things worth reading
+## The five things worth reading
+
+**`clock.ts`** — a clock that does not tick, the client-side twin of the server's
+`ClockCalculator`. Every server message *anchors* it (two values plus the local
+`performance.now()` when they arrived); the display is recomputed from the anchor on each
+render. A `setInterval` that subtracts 100 ms every 100 ms drifts slow (timers fire late,
+never early), freezes in background tabs, and accumulates both errors; this cannot, because
+the timer only decides how often to *look*. The display is advisory — only the server
+decides that anyone has run out of time (ARCHITECTURE.md §6.6).
 
 **`GameSocket.ts`** — the protocol client. First-frame auth, application heartbeat, and
 reconnection with **exponential backoff plus full jitter**. The jitter is the part that

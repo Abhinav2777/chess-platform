@@ -225,16 +225,20 @@ class ValkeyFanoutIntegrationTest {
 
     @Test
     @Order(3)
-    @DisplayName("game end reaches the opposite instance")
+    @DisplayName("game end reaches the opposite instance, including an abort with no result")
     void gameEndCrossesInstances() throws Exception {
         try (TestWebSocketClient onFirst = subscribedOn(firstPort, whiteToken);
              TestWebSocketClient onSecond = subscribedOn(secondPort, blackToken)) {
 
+            // Nobody has moved, so since 3.2 this resignation is an abort. Deliberately the
+            // harder case for fanout: the frame carries a null result, and it has to survive
+            // serialisation into Valkey and back out on the other instance intact.
             onSecond.send(ClientMessage.RESIGN, new Payloads.Resign(game.id()));
 
             Map<String, Object> finished = onFirst.payloadOf(onFirst.await("GAME_FINISHED"));
-            assertThat(finished.get("result")).isEqualTo("WHITE_WIN");
-            assertThat(finished.get("termination")).isEqualTo("RESIGNATION");
+            assertThat(finished.get("status")).isEqualTo("ABORTED");
+            assertThat(finished.get("result")).isNull();
+            assertThat(finished.get("termination")).isEqualTo("ABANDONED");
         }
     }
 
