@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "88c318f8-f916-4ae1-baa1-cb3b9f60efe9",
-    "name": "Chess Platform — through Milestone 3.2",
-    "description": "REST API for the chess platform, through Milestone 3.2 (auth, gameplay, clock, aborts).\n\n## Run order\nFolders are numbered. Run 1 before 2, and 3, 4 or 5 after 1. Or hit **Run collection** to execute everything with assertions.\n\n## Usernames are randomised\n`whiteUsername` and `blackUsername` are seeded with a random suffix in the collection pre-request script, so re-running does not collide with accounts from the previous run. No teardown needed.\n\n## The refresh cookie\nIt is set `HttpOnly; Secure; SameSite=Strict`. Postman's cookie jar will not reliably replay a `Secure` cookie over plain HTTP, so the auth requests parse it out of `Set-Cookie` into a collection variable and send it back as an explicit `Cookie` header. A browser does this for you; Postman needs the help.\n\n## Requires\n`docker compose -f ops/docker/docker-compose.yml up -d` and the app running on `{{baseUrl}}`.",
+    "name": "Chess Platform — through Milestone 3.3",
+    "description": "REST API for the chess platform, through Milestone 3.3 (auth, gameplay, clock, aborts, repetition).\n\n## Run order\nFolders are numbered. Run 1 before 2, and 3, 4, 5 or 6 after 1. Or hit **Run collection** to execute everything with assertions.\n\n## Usernames are randomised\n`whiteUsername` and `blackUsername` are seeded with a random suffix in the collection pre-request script, so re-running does not collide with accounts from the previous run. No teardown needed.\n\n## The refresh cookie\nIt is set `HttpOnly; Secure; SameSite=Strict`. Postman's cookie jar will not reliably replay a `Secure` cookie over plain HTTP, so the auth requests parse it out of `Set-Cookie` into a collection variable and send it back as an explicit `Cookie` header. A browser does this for you; Postman needs the help.\n\n## Requires\n`docker compose -f ops/docker/docker-compose.yml up -d` and the app running on `{{baseUrl}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -104,6 +104,11 @@
     },
     {
       "key": "clockGameId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "repGameId",
       "value": "",
       "type": "string"
     }
@@ -2072,6 +2077,469 @@
                   "    pm.expect(aborted.status).to.eql('ABORTED');",
                   "    pm.expect(aborted.result).to.be.null;",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 · Threefold repetition (Phase 3.3)",
+      "item": [
+        {
+          "name": "Create a game for the repetition test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opponentUsername\": \"{{blackUsername}}\",\n  \"playAs\": \"WHITE\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('repGameId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 1: g1f3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 0,\n  \"from\": \"g1\",\n  \"to\": \"f3\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 2: g8f6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 1,\n  \"from\": \"g8\",\n  \"to\": \"f6\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 3: f3g1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 2,\n  \"from\": \"f3\",\n  \"to\": \"g1\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 4: f6g8 — start position, second time",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 3,\n  \"from\": \"f6\",\n  \"to\": \"g8\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 5: g1f3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 4,\n  \"from\": \"g1\",\n  \"to\": \"f3\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 6: g8f6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 5,\n  \"from\": \"g8\",\n  \"to\": \"f6\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 7: f3g1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 6,\n  \"from\": \"f3\",\n  \"to\": \"g1\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('game continues', () => pm.expect(pm.response.json().gameOver).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ply 8: f6g8 — start position, third time → draw",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{blackToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}/moves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}",
+                "moves"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientMoveId\": \"{{$guid}}\",\n  \"expectedPly\": 7,\n  \"from\": \"f6\",\n  \"to\": \"g8\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "// Third occurrence of the starting position: ply 0 (not a row in `moves`), 4 and 8.",
+                  "pm.test('game over on the third occurrence', () => pm.expect(pm.response.json().gameOver).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Game shows a draw by threefold repetition",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whiteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/games/{{repGameId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "games",
+                "{{repGameId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('FINISHED as a draw', () => { pm.expect(d.game.status).to.eql('FINISHED'); pm.expect(d.game.result).to.eql('DRAW'); });",
+                  "pm.test('termination is DRAW_REPETITION', () => pm.expect(d.game.termination).to.eql('DRAW_REPETITION'));",
+                  "pm.test('all eight moves recorded', () => pm.expect(d.moves).to.have.length(8));",
+                  "pm.test('no legal moves once finished', () => pm.expect(d.legalMoves).to.have.length(0));"
                 ]
               }
             }

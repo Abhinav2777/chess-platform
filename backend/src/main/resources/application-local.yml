@@ -16,7 +16,12 @@ spring:
   jpa:
     show-sql: false            # use the SQL logger below instead; show-sql bypasses logging config
 
+# SQL logging is opt-in. It used to be on by default, and the timeout sweeper's
+# once-a-second query buried everything else (~100k tokens of log in a few minutes).
+# Bind logging also printed parameter values — password and refresh-token hashes
+# included — which is not something to have on by habit, even locally. When you need it:
+#   ./gradlew :backend:bootRun --args='--spring.profiles.active=local \
+#       --logging.level.org.hibernate.SQL=DEBUG --logging.level.org.hibernate.orm.jdbc.bind=TRACE'
 logging:
   level:
-    org.hibernate.SQL: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE   # shows bound parameters, not just '?'
+    org.hibernate.SQL: INFO

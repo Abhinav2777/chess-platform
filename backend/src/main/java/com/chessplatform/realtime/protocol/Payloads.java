@@ -45,6 +45,10 @@ public final class Payloads {
      *
      * @param yourSide null when the subscriber is not a player. Spectators do not exist
      *                 yet, but the field means adding them later does not change the shape.
+     * @param moves    every move so far in SAN, in ply order. Added in Milestone 3.3 —
+     *                 additive, so older clients ignore it. Without it a snapshot restored
+     *                 the board but not the move list, which every reconnect and every
+     *                 conflict resync then wiped.
      */
     public record GameSnapshot(UUID gameId, String fen, int ply, Side sideToMove,
                                UUID whitePlayerId, UUID blackPlayerId,
@@ -52,7 +56,8 @@ public final class Payloads {
                                String status, String result,
                                String termination, List<String> legalMoves,
                                String lastMoveUci,
-                               long whiteMsLeft, long blackMsLeft, long incrementMs) {
+                               long whiteMsLeft, long blackMsLeft, long incrementMs,
+                               List<String> moves) {
     }
 
     /**

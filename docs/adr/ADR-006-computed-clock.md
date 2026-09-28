@@ -74,6 +74,32 @@ and from the sweeper — was initially lost: one to a rollback, one to self-invo
 arithmetic was right from the first run. Both writes now go through `GameTimeouts`, with
 deliberately different transaction shapes; see DEVELOPMENT_LOG and TROUBLESHOOTING.
 
+## Verified, 2026-09-28 (Milestone 3.3)
+
+Phase 3's "done when" checks, measured rather than argued (PROJECT_STATE §12):
+
+- **Skewed application clock has no effect.** `ClockSkewIntegrationTest` runs a context
+  whose `Clock` bean is ten minutes fast and plays a game: moves are charged
+  milliseconds, the sweeper expires nothing, and REST shows full clocks.
+- **Server killed mid-game.** `kill -9` on the application JVM with White on move, cold
+  restart, reconnect: White's clock had dropped by 31,769 ms over 31,798 ms of wall time;
+  Black's was unchanged to the millisecond. The clock ran while no server existed.
+
+### Scope of the time authority
+
+`ServerClock` (PostgreSQL `now()`) is required for every value that **decides or displays
+a game's clock**: charging moves, deadlines, expiry, and remaining time in REST responses
+and snapshots. Until 3.3, `GameSummary` computed REST remaining time from `Instant.now()`;
+it now takes `now` as a parameter, so the choice of clock is visible at every call site.
+
+The injected `Clock` bean remains correct for `created_at`, token expiry and metrics, where
+inter-instance skew is irrelevant. The remaining bare `Instant.now()` calls in main code are
+timestamps on error bodies and protocol envelopes — informational, never compared.
+
+A skewed `Clock` bean cannot catch a bare `Instant.now()`, which reads the OS clock. That
+class of leak is closed by construction (the parameter) and by review, not by the skew
+test.
+
 ## Interview angle
 
 **Q:** "How does your chess clock work?"

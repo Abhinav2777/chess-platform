@@ -369,7 +369,9 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                 // stood before they started thinking. Derived from the database clock, so
                 // every instance answers identically (ADR-006).
                 game.remainingMs(Side.WHITE, now), game.remainingMs(Side.BLACK, now),
-                game.incrementMs());
+                game.incrementMs(),
+                // Already loaded for lastMoveUci; sending it costs bytes, not a query.
+                played.stream().map(MoveRecord::san).toList());
     }
 
     @Override

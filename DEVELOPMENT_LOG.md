@@ -5,6 +5,63 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 3.3: Phase 3 closeout
+
+**Built**
+
+- **Threefold repetition (ADR-015).** The game module reads the positions since the last
+  capture or pawn move — the FEN halfmove clock says how many, never more than 100 — and
+  hands them to a stateless `ChessRules.isThreefoldRepetition`. The starting position (ply
+  0, not a row in `moves`) is added explicitly. Automatic draw on the third occurrence.
+- **REST clocks from `ServerClock`.** `GameSummary` takes `now` as a parameter.
+- **`GAME_SNAPSHOT.moves`** — the SAN log, from rows the snapshot was already loading.
+- **Client resync on `CONFLICT`** — re-`SUBSCRIBE` on the same socket; the move is not
+  resubmitted.
+- Cleanups: Boot's default in-memory user excluded; local SQL logging opt-in; unused `Clock`
+  removed from `GameService`.
+
+**Found while building**
+
+- **The planned repetition key was wrong.** Phase 1 recorded the fix as "count over
+  `fen_after` keyed on the first four FEN fields". Running chesslib showed it writes an
+  en-passant square after *every* double push (`...b KQkq e3 0 1` after 1.e4, no black pawn
+  in reach). The position right after a double push would never have matched its later
+  recurrences, silently missing real draws. The key now keeps the square only if a legal
+  en-passant capture exists (FIDE 9.2.3). **Lesson: a plan written down months earlier is a
+  hypothesis; check the library's actual output before building on it.**
+- **A dead branch with a wrong label.** `outcomeOf` mapped any unexplained `isDraw()` to
+  `DRAW_REPETITION`. Unreachable today; wrong the day it fired. Removed.
+- **Auto-resync would have made a known gap worse.** Every resync replaces client state
+  from the snapshot, and the snapshot had no move list — so each conflict would have wiped
+  the list. That is why `moves` joined the snapshot in this milestone rather than later.
+- **Bind-parameter TRACE logging printed credential hashes** in the local profile. Now
+  opt-in, with a warning.
+
+**Phase 3 "done when" — measured (PROJECT_STATE §12)**
+
+- *Concurrency test 100×:* a rounds test runs the 16-thread race on fresh games in one
+  context. 100 rounds, one winner each, 1.49 s. The round count is published into the test
+  report via `TestReporter`, because a 1.5 s runtime looked too fast to take on trust. CI
+  runs 10.
+- *Skewed JVM clock:* `ClockSkewIntegrationTest` runs with the `Clock` bean 10 min fast and
+  plays a game — charged milliseconds, nothing expired, REST clocks full. Honest limit,
+  recorded in the test and ADR-006: a skewed bean cannot catch a bare `Instant.now()`, which
+  is exactly how the REST leak hid. That class of bug is closed by the `now` parameter.
+- *Server killed mid-game:* `kill -9` on the application JVM with White on move, cold
+  restart, reconnect by WebSocket. White's clock dropped 31,769 ms over 31,798 ms of wall
+  time; Black's by 0 ms; board and move list intact. (Stand-in for the roadmap's `docker
+  kill`: the app is not containerised until Phase 6. Same property — no graceful shutdown,
+  no state carried over.)
+
+**Verified:** unit 75/75 (8 new), integration 82/82 (4 new), `npm run build`, Postman 54
+requests / 132 assertions (folder 6 new), Boot 4 checklist greps clean.
+**Not verified:** the React half of conflict-resync and the clock rendering in a real
+browser (PROJECT_STATE §4).
+
+**Hours:** ~4. Phase 3 complete at ~18 of 16–20.
+
+---
+
 ## 2026-09-28 — Milestone 3.2: games nobody started, and the clock in the browser
 
 **Built**

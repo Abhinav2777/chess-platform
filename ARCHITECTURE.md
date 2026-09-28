@@ -282,7 +282,7 @@ each is recorded below the table rather than silently dropped.
 | Type | Payload | When |
 |---|---|---|
 | `AUTH_OK` / `AUTH_FAILED` | `{userId, username}` / `{code, message}` | after first-message auth |
-| `GAME_SNAPSHOT` | full state: fen, ply, sideToMove, players, yourSide, opponentOnline, status, result, termination, legalMoves, lastMoveUci, whiteMsLeft, blackMsLeft, incrementMs | on subscribe/resume |
+| `GAME_SNAPSHOT` | full state: fen, ply, sideToMove, players, yourSide, opponentOnline, status, result, termination, legalMoves, lastMoveUci, whiteMsLeft, blackMsLeft, incrementMs, moves (SAN, since 3.3) | on subscribe/resume, and on re-`SUBSCRIBE` after a `CONFLICT` |
 | `MOVE_MADE` | `{gameId, ply, uci, san, fenAfter, sideToMove, legalMoves, whiteMsLeft, blackMsLeft}` | move committed |
 | `PLAYER_PRESENCE` | `{gameId, userId, online}` | presence change |
 | `GAME_FINISHED` | `{gameId, status, result, termination}` — `status` FINISHED or ABORTED; `result` null when ABORTED | terminal, by any route |

@@ -429,6 +429,9 @@ class RealtimeGameplayIntegrationTest {
                             .isEqualTo(2);
                     assertThat(snapshot.get("sideToMove")).isEqualTo("WHITE");
                     assertThat(snapshot.get("lastMoveUci")).isEqualTo("e7e5");
+                    assertThat(snapshot.get("moves"))
+                            .as("the move list is restored too, not only the board")
+                            .isEqualTo(List.of("e4", "e5"));
 
                     // And it can carry straight on playing.
                     reconnected.send(ClientMessage.MOVE, new Payloads.Move(
@@ -436,6 +439,37 @@ class RealtimeGameplayIntegrationTest {
                     assertThat(reconnected.payloadOf(reconnected.await("MOVE_MADE")).get("san"))
                             .isEqualTo("Nf3");
                 }
+            }
+        }
+
+        /**
+         * The server half of the client's conflict handling: a move against a stale ply is
+         * refused with CONFLICT, and re-subscribing on the SAME socket — no reconnect —
+         * returns a snapshot the client can adopt. The client relies on both.
+         */
+        @Test
+        @DisplayName("a stale move is refused with CONFLICT, and re-subscribing resyncs the same socket")
+        void resyncsAfterConflict() throws Exception {
+            try (TestWebSocketClient blackClient = connectedAndSubscribed(blackToken)) {
+                playDirectly(white, 0, "e2", "e4");
+                blackClient.await("MOVE_MADE");
+
+                // Black's client still believes the game is at ply 0.
+                blackClient.send(ClientMessage.MOVE, new Payloads.Move(
+                        game.id(), UUID.randomUUID(), 0, "e7", "e5", null));
+                assertThat(blackClient.payloadOf(blackClient.await("ERROR")).get("code"))
+                        .isEqualTo("CONFLICT");
+
+                blackClient.send(ClientMessage.SUBSCRIBE, new Payloads.Subscribe(game.id()));
+                Map<String, Object> snapshot = blackClient.payloadOf(blackClient.await("GAME_SNAPSHOT"));
+                assertThat(snapshot.get("ply")).isEqualTo(1);
+                assertThat(snapshot.get("moves")).isEqualTo(List.of("e4"));
+
+                // And the resynced client plays on normally.
+                blackClient.send(ClientMessage.MOVE, new Payloads.Move(
+                        game.id(), UUID.randomUUID(), 1, "e7", "e5", null));
+                assertThat(blackClient.payloadOf(blackClient.await("MOVE_MADE")).get("san"))
+                        .isEqualTo("e5");
             }
         }
 

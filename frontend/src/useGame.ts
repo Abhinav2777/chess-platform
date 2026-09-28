@@ -45,10 +45,8 @@ export function useGame(gameId: string) {
         setClock(anchor(incoming.whiteMsLeft, incoming.blackMsLeft,
           incoming.status === 'ACTIVE' ? incoming.sideToMove : null));
         setFailure(null);
-        // The move list is not in the snapshot, so a reconnect mid-game starts it empty
-        // rather than showing a list that contradicts the board. Known gap — the REST
-        // endpoint returns the full log and wiring it in is a small follow-up.
-        setMoves([]);
+        // Replaced, like everything else in the snapshot — never merged with what we had.
+        setMoves((incoming.moves ?? []).map((san, index) => ({ ply: index + 1, san })));
       },
 
       onMove: (move) => {
@@ -102,7 +100,20 @@ export function useGame(gameId: string) {
         });
       },
 
-      onError: setFailure,
+      onError: (incoming) => {
+        if (incoming.code === 'CONFLICT') {
+          // Our board was out of date — usually the opponent's move crossed ours in
+          // flight. The server is right, so fetch its view instead of showing an error
+          // the player can do nothing about.
+          //
+          // The rejected move is NOT resubmitted. It was chosen against a position the
+          // player is no longer looking at; replaying it on the new one could play a
+          // move they never intended. They see the fresh board and choose again.
+          socket.resync();
+          return;
+        }
+        setFailure(incoming);
+      },
     });
 
     socketRef.current = socket;

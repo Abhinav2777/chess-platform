@@ -29,8 +29,8 @@ public final class GameResponses {
                               long incrementMs, long whiteMsLeft, long blackMsLeft,
                               Instant createdAt, Instant finishedAt) {
 
-        public static GameSummary from(GameView view) {
-            return withNames(view, null, null);
+        public static GameSummary from(GameView view, Instant now) {
+            return withNames(view, null, null, now);
         }
 
         /**
@@ -38,9 +38,15 @@ public final class GameResponses {
          * move has been spending. The client ticks from there and resyncs on the next
          * server message — it never computes elapsed time from a timestamp of its own,
          * because its clock is not the authority (ADR-006).
+         *
+         * <p>{@code now} is a parameter, and must come from {@code ServerClock}. An earlier
+         * version called {@code Instant.now()} here: display-only, but it meant REST and
+         * WebSocket could show different clocks for the same game on a skewed host — the
+         * one thing ADR-006's single time authority exists to rule out. Taking it as an
+         * argument makes the choice of clock visible at every call site.
          */
-        public static GameSummary withNames(GameView view, String white, String black) {
-            Instant now = Instant.now();
+        public static GameSummary withNames(GameView view, String white, String black,
+                                            Instant now) {
             return new GameSummary(view.id(), view.whitePlayerId(), view.blackPlayerId(),
                     white, black,
                     view.status(), view.result(), view.termination(), view.fen(),

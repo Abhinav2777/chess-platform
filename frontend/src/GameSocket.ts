@@ -136,6 +136,16 @@ export class GameSocket {
     this.send('RESIGN', { gameId: this.gameId });
   }
 
+  /**
+   * Asks for a fresh snapshot. Re-subscribing to the game this socket already watches is
+   * harmless on the server — the watcher set and presence both ignore a repeat — and
+   * reuses the one path that already produces the full state, rather than adding a
+   * second message type that would have to stay in step with it.
+   */
+  resync(): void {
+    this.send('SUBSCRIBE', { gameId: this.gameId });
+  }
+
   private send(type: string, payload: unknown): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;

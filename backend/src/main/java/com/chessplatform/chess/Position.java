@@ -11,11 +11,10 @@ import java.util.Objects;
  * comparable — three properties a richer representation would cost us for no gain, since
  * nothing in this system reasons about the board except the rules engine.
  *
- * <p><strong>Known gap: threefold repetition.</strong> FEN carries no move history, so a
- * position reconstructed from FEN cannot know it has occurred before. Repetition draws
- * are therefore not detected. This is a deliberate consequence of statelessness, not an
- * oversight — see {@code GameOutcome} and the technical-debt register in
- * {@code PROJECT_STATE.md}.
+ * <p><strong>FEN carries no history.</strong> A position cannot know it has occurred
+ * before, so threefold repetition is decided by
+ * {@link ChessRules#isThreefoldRepetition}, which is handed the earlier positions
+ * explicitly. The rules engine stays stateless; the caller owns the history (ADR-015).
  */
 public record Position(String fen) {
 
@@ -43,15 +42,18 @@ public record Position(String fen) {
     }
 
     /**
-     * The piece placement and rights, without the move counters.
+     * Plies since the last capture or pawn move, read from the FEN's fifth field.
      *
-     * <p>This is the part that determines whether two positions are "the same" for
-     * repetition purposes — the halfmove and fullmove counters differ every move and
-     * would make every position unique. Unused today; it is the key a repetition check
-     * would count on (see the Position class comment).
+     * <p>Those two kinds of move are irreversible — a captured piece never returns, a pawn
+     * never moves backwards — so no position before the last one can ever recur. This
+     * number is therefore the exact length of the history a repetition check has to look
+     * at, which is what bounds that check to at most 100 earlier positions.
      */
-    public String repetitionKey() {
+    public int halfmoveClock() {
         String[] fields = fen.split(" ");
-        return String.join(" ", fields[0], fields[1], fields[2], fields[3]);
+        if (fields.length < 5) {
+            throw new IllegalStateException("FEN has no halfmove clock: " + fen);
+        }
+        return Integer.parseInt(fields[4]);
     }
 }

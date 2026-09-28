@@ -192,6 +192,42 @@ database, which also collapsed two cached contexts into one.
 
 ---
 
+## Milestone 3.3 — Phase 3 closeout
+
+### "Your rules engine is stateless. How do you detect threefold repetition?"
+The history is already in the database — each move's resulting FEN is persisted. The
+game service passes the relevant earlier positions into a stateless rules function. The
+window is bounded by the FEN halfmove clock: captures and pawn moves are irreversible, so
+nothing before the last one can recur — at most 100 rows, one primary-key range scan, and
+no query at all below 8 reversible plies. Full answer in ADR-015.
+
+### "What counts as the same position?" (the follow-up that separates people)
+FIDE: placement, side to move, castling rights, en-passant *possibilities*. chesslib
+writes an en-passant square after every double push even when no capture exists, so a
+FEN-prefix comparison misses genuine repetitions. I normalise it away unless a legal
+en-passant capture exists — found by running the library, not reading about it.
+
+### "How do you know your clock is really server-authoritative?"
+Two measurements, not an argument. A test context runs with the application `Clock` ten
+minutes fast and plays a game: moves are charged milliseconds, nothing expires. And I
+`kill -9`'d the server mid-game, restarted it, reconnected: the side to move had lost
+31,769 ms over 31,798 ms of wall time, the other side 0 ms. The clock ran while no server
+existed. Honest limit: a skewed bean can't catch a bare `Instant.now()` — which is how
+the one real leak (REST display values) hid until I made `now` a parameter.
+
+### "Your client gets a 409. What does it do?"
+Re-subscribes on the same socket and adopts the fresh snapshot. It does *not* resubmit
+the move: that move was chosen against a board the player no longer sees, and replaying
+it on the new position could play something they never intended. Automatic retry is only
+safe when the retried operation means the same thing in the new state — here it doesn't.
+
+### "How many times did you run the concurrency test?"
+100 rounds in one context — 1,600 contending submissions, exactly one winner per game,
+1.5 s — with the round count published into the test report so the number is evidence.
+CI runs 10 rounds; `-Pchess.concurrency.rounds=100` reproduces the soak.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

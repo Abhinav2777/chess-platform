@@ -106,6 +106,10 @@ val integrationTest by tasks.registering(Test::class) {
     // Testcontainers reuse cuts repeated container startup. Requires
     // `testcontainers.reuse.enable=true` in ~/.testcontainers.properties.
     systemProperty("testcontainers.reuse.enable", "true")
+    // Rounds for the repeated concurrency race (GameplayIntegrationTest). Small by default
+    // so CI stays fast; -Pchess.concurrency.rounds=100 for the Phase 3 soak.
+    systemProperty("chess.concurrency.rounds",
+        providers.gradleProperty("chess.concurrency.rounds").getOrElse("10"))
 }
 
 tasks.check {

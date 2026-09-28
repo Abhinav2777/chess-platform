@@ -14,6 +14,7 @@ import com.chessplatform.game.api.dto.GameResponses;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.MoveRepository;
 import com.chessplatform.game.internal.GameService;
+import com.chessplatform.game.internal.ServerClock;
 import com.chessplatform.game.internal.SubmitMoveCommand;
 import com.chessplatform.identity.IdentityFacade;
 import com.chessplatform.identity.UserSummary;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,15 +49,17 @@ public class GameController {
     private final MoveRepository moves;
     private final IdentityFacade identity;
     private final ChessRules rules;
+    private final ServerClock serverClock;
     private final SecureRandom random = new SecureRandom();
 
     public GameController(GameService gameService, GameFacade gameFacade, MoveRepository moves,
-                          IdentityFacade identity, ChessRules rules) {
+                          IdentityFacade identity, ChessRules rules, ServerClock serverClock) {
         this.gameService = gameService;
         this.gameFacade = gameFacade;
         this.moves = moves;
         this.identity = identity;
         this.rules = rules;
+        this.serverClock = serverClock;
     }
 
     @PostMapping
@@ -83,7 +87,7 @@ public class GameController {
                 : gameService.createGame(opponent.id(), caller.id(), timeControl);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(GameResponses.GameSummary.from(GameFacade.toView(game)));
+                .body(GameResponses.GameSummary.from(GameFacade.toView(game), serverClock.now()));
     }
 
     /**
@@ -108,7 +112,7 @@ public class GameController {
                 : rules.legalMoves(new Position(view.fen()));
 
         return new GameResponses.GameDetail(
-                GameResponses.GameSummary.from(view), played, legal);
+                GameResponses.GameSummary.from(view, serverClock.now()), played, legal);
     }
 
     /**
@@ -136,7 +140,7 @@ public class GameController {
     public GameResponses.GameSummary resign(@PathVariable UUID gameId,
                                             @AuthenticationPrincipal AuthenticatedUser caller) {
         return GameResponses.GameSummary.from(
-                GameFacade.toView(gameService.resign(gameId, caller.id())));
+                GameFacade.toView(gameService.resign(gameId, caller.id())), serverClock.now());
     }
 
     @GetMapping
@@ -157,10 +161,13 @@ public class GameController {
                 .collect(Collectors.toSet());
         Map<UUID, UserSummary> players = identity.findAllById(playerIds);
 
+        // One reading for the whole page, so every game in the list is shown as of the
+        // same instant.
+        Instant now = serverClock.now();
         return games.stream()
                 .map(game -> GameResponses.GameSummary.withNames(game,
                         nameOf(players, game.whitePlayerId()),
-                        nameOf(players, game.blackPlayerId())))
+                        nameOf(players, game.blackPlayerId()), now))
                 .toList();
     }
 

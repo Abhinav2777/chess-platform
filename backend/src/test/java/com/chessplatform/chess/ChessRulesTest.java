@@ -5,6 +5,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -182,6 +184,131 @@ class ChessRulesTest {
             MoveResult result = rules.apply(position, MoveIntent.of("a1", "a2"));
 
             assertThat(result.outcome()).isEqualTo(GameOutcome.DRAW_FIFTY_MOVE);
+        }
+    }
+
+    /**
+     * Repetition is the one ending that needs history, so these tests hand the rules the
+     * positions a game passed through — exactly what the game module does from its log.
+     */
+    @Nested
+    @DisplayName("threefold repetition")
+    class Repetition {
+
+        @Test
+        @DisplayName("the third occurrence of a position is a repetition; the second is not")
+        void knightShuffle() {
+            List<Position> positions = playFrom(rules.startingPosition(),
+                    "g1f3", "g8f6", "f3g1", "f6g8",    // start position, second time
+                    "g1f3", "g8f6", "f3g1", "f6g8");   // third time
+
+            assertThat(rules.isThreefoldRepetition(positions.get(4), positions.subList(0, 4)))
+                    .as("second occurrence").isFalse();
+            assertThat(rules.isThreefoldRepetition(positions.get(8), positions.subList(0, 8)))
+                    .as("third occurrence").isTrue();
+        }
+
+        /**
+         * FIDE 9.2.3: a position is not the same if castling rights differ. Here the kings
+         * step out and back, so the placement matches the start but nobody can castle.
+         */
+        @Test
+        @DisplayName("positions with different castling rights are different positions")
+        void castlingRightsDistinguish() {
+            List<Position> positions = playFrom(new Position("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"),
+                    "e1f1", "e8f8", "f1e1", "f8e8",    // same placement, rights gone
+                    "e1f1", "e8f8", "f1e1", "f8e8",
+                    "e1f1", "e8f8", "f1e1", "f8e8");
+
+            assertThat(rules.isThreefoldRepetition(positions.get(8), positions.subList(0, 8)))
+                    .as("start had castling rights, so this is only the second rightless one")
+                    .isFalse();
+            assertThat(rules.isThreefoldRepetition(positions.get(12), positions.subList(0, 12)))
+                    .isTrue();
+        }
+
+        /**
+         * The FEN after 1.e4 carries "e3" although no black pawn can capture — chesslib
+         * writes it after every double push. By FIDE the position is the same as the one
+         * reached later without it, and treating them as different misses the draw.
+         */
+        @Test
+        @DisplayName("an en-passant square nobody can capture on does not make a position different")
+        void uncapturableEnPassantIgnored() {
+            List<Position> positions = playFrom(rules.startingPosition(),
+                    "e2e4",                            // black to move, FEN says e3
+                    "g8f6", "g1f3", "f6g8", "f3g1",    // same, FEN says -
+                    "g8f6", "g1f3", "f6g8", "f3g1");
+
+            assertThat(positions.get(1).fen()).contains(" e3 ");
+            assertThat(rules.isThreefoldRepetition(positions.get(9), positions.subList(0, 9)))
+                    .isTrue();
+        }
+
+        /** And the converse: when the capture really was available, the positions differ. */
+        @Test
+        @DisplayName("a capturable en-passant square does make a position different")
+        void capturableEnPassantDistinguishes() {
+            List<Position> positions = playFrom(new Position("4k3/8/8/8/3p4/8/4P3/4K3 w - - 0 1"),
+                    "e2e4",                            // ...dxe3 e.p. is legal here
+                    "e8e7", "e1f1", "e7e8", "f1e1",    // same placement, capture gone
+                    "e8e7", "e1f1", "e7e8", "f1e1");
+
+            assertThat(rules.legalMoves(positions.get(1))).contains("d4e3");
+            assertThat(rules.isThreefoldRepetition(positions.get(9), positions.subList(0, 9)))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("the same placement with the other side to move is a different position")
+        void sideToMoveDistinguishes() {
+            Position whiteToMove = new Position("4k3/8/8/8/8/8/8/4K2R w - - 0 1");
+            Position blackToMove = new Position("4k3/8/8/8/8/8/8/4K2R b - - 1 1");
+
+            assertThat(rules.isThreefoldRepetition(whiteToMove, List.of(blackToMove, blackToMove)))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("move counters are ignored")
+        void countersIgnored() {
+            Position now = new Position("4k3/8/8/8/8/8/8/4K2R w - - 12 40");
+
+            assertThat(rules.isThreefoldRepetition(now, List.of(
+                    new Position("4k3/8/8/8/8/8/8/4K2R w - - 4 36"),
+                    new Position("4k3/8/8/8/8/8/8/4K2R w - - 8 38"))))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("apply() never reports repetition on its own — it has no history")
+        void applyIsHistoryless() {
+            List<Position> positions = playFrom(rules.startingPosition(),
+                    "g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1");
+
+            MoveResult third = rules.apply(positions.getLast(), uci("f6g8"));
+
+            assertThat(third.outcome()).isEqualTo(GameOutcome.IN_PROGRESS);
+        }
+
+        @Test
+        @DisplayName("halfmove clock counts plies since the last capture or pawn move")
+        void halfmoveClock() {
+            List<Position> positions = playFrom(rules.startingPosition(), "g1f3", "g8f6", "e2e4");
+
+            assertThat(positions.get(2).halfmoveClock()).isEqualTo(2);
+            assertThat(positions.get(3).halfmoveClock()).isZero();
+        }
+
+        private List<Position> playFrom(Position start, String... moves) {
+            List<Position> positions = new ArrayList<>();
+            positions.add(start);
+            Position current = start;
+            for (String move : moves) {
+                current = rules.apply(current, uci(move)).positionAfter();
+                positions.add(current);
+            }
+            return positions;
         }
     }
 

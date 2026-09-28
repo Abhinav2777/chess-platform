@@ -40,6 +40,8 @@ export interface GameSnapshot {
   whiteMsLeft: number;
   blackMsLeft: number;
   incrementMs: number;
+  /** Every move so far in SAN, in ply order. Optional: servers before 3.3 omit it. */
+  moves?: string[];
 }
 
 export interface MoveMade {
