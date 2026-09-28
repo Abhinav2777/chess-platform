@@ -708,7 +708,7 @@ pod memory.
 | Failure | Behaviour | Degradation |
 |---|---|---|
 | PostgreSQL down | Moves rejected with 503; existing sockets stay open; no data loss | Hard — game pauses. Clocks are wall-clock derived so they keep running; on recovery a player may have flagged. **Accepted, documented.** |
-| Valkey down | Moves still commit (DB path unaffected). Fanout stops. | Soft — clients fall back to polling `GET /games/{id}` on backoff. Matchmaking unavailable. Presence unavailable. Rate limiting fails open (ADR-017); the first request after the outage waits ~1 s (measured), then the circuit skips Valkey. |
+| Valkey down | Moves still commit (DB path unaffected). Fanout stops. | Soft, **verified in a browser (4.3)** — clients detect it by their own missing `MOVE_MADE` echo (1.5 s) or by a silent socket on the opponent's turn (10 s), then poll `GET /games/{id}` every 2 s until events resume; measured opponent latency ≤ ~2 s steady-state, ≤ ~11 s to first detection for the waiting player. Matchmaking returns `MATCHMAKING_UNAVAILABLE`. Presence unavailable. Rate limiting fails open (ADR-017); the first request after the outage waits ~1 s (measured), then the circuit skips Valkey. |
 | SQS down | Game plays and finishes normally; rating updates queue in an outbox table | Soft — ratings lag, then catch up |
 | API pod crashes | Sockets drop; clients reconnect to another pod; snapshot restores state | Near-zero — a reconnect blip |
 | Whole AZ fails | RDS Multi-AZ failover (~60–120s) if enabled; otherwise outage | Documented; Multi-AZ is Optional (cost) |
