@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -88,6 +89,8 @@ class RealtimeGameplayIntegrationTest {
     private MoveRepository moves;
     @Autowired
     private UserRepository users;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private User white;
     private User black;
@@ -111,6 +114,13 @@ class RealtimeGameplayIntegrationTest {
         moves.deleteAll();
         games.deleteAll();
         users.deleteAll();
+    }
+
+    /** Plays a move through the service, bypassing the socket, to set up a position. */
+    private void playDirectly(User player, int expectedPly, String from, String to) {
+        gameService.submitMove(game.id(), player.id(),
+                new com.chessplatform.game.internal.SubmitMoveCommand(UUID.randomUUID(),
+                        expectedPly, com.chessplatform.chess.MoveIntent.of(from, to)));
     }
 
     private TestWebSocketClient connectedAndSubscribed(String token) throws Exception {
@@ -322,14 +332,53 @@ class RealtimeGameplayIntegrationTest {
         @Test
         @DisplayName("announces the end of the game to both players")
         void broadcastsGameEnd() throws Exception {
+            // Both players move first: since 3.2 a resignation before that is an abort.
+            playDirectly(white, 0, "e2", "e4");
+            playDirectly(black, 1, "e7", "e5");
+
             try (TestWebSocketClient whiteClient = connectedAndSubscribed(whiteToken);
                  TestWebSocketClient blackClient = connectedAndSubscribed(blackToken)) {
 
                 blackClient.send(ClientMessage.RESIGN, new Payloads.Resign(game.id()));
 
                 Map<String, Object> toWhite = whiteClient.payloadOf(whiteClient.await("GAME_FINISHED"));
+                assertThat(toWhite.get("status")).isEqualTo("FINISHED");
                 assertThat(toWhite.get("result")).isEqualTo("WHITE_WIN");
                 assertThat(toWhite.get("termination")).isEqualTo("RESIGNATION");
+                assertThat(blackClient.payloadOf(blackClient.await("GAME_FINISHED")))
+                        .isEqualTo(toWhite);
+            }
+        }
+
+        /**
+         * The only test in the suite that relies on the <em>scheduled</em> sweeper rather
+         * than calling it: nobody sends anything, and the abort still reaches both players.
+         * That is the whole claim of the design — a game nobody touches is still ended, by
+         * a background job, and the ending is still pushed — so it is tested end to end.
+         *
+         * <p>Also guards the null result: the broadcaster used to call
+         * {@code result().name()} unconditionally, which for an abort would have thrown in
+         * the AFTER_COMMIT listener, after the abort had committed, with no client told.
+         */
+        @Test
+        @DisplayName("a game nobody starts is aborted by the sweeper, and both players are told")
+        void sweeperAbortReachesBothPlayers() throws Exception {
+            try (TestWebSocketClient whiteClient = connectedAndSubscribed(whiteToken);
+                 TestWebSocketClient blackClient = connectedAndSubscribed(blackToken)) {
+
+                // Push the game's start an hour into the past. The sweeper runs every
+                // second, so the frame arrives well inside await()'s five-second budget.
+                jdbc.update("""
+                        UPDATE games
+                           SET last_move_at  = now() - INTERVAL '1 hour',
+                               turn_deadline = now() - INTERVAL '1 minute'
+                         WHERE id = ?
+                        """, game.id());
+
+                Map<String, Object> toWhite = whiteClient.payloadOf(whiteClient.await("GAME_FINISHED"));
+                assertThat(toWhite.get("status")).isEqualTo("ABORTED");
+                assertThat(toWhite.get("result")).isNull();
+                assertThat(toWhite.get("termination")).isEqualTo("ABANDONED");
                 assertThat(blackClient.payloadOf(blackClient.await("GAME_FINISHED")))
                         .isEqualTo(toWhite);
             }

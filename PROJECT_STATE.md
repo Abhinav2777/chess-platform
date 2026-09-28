@@ -7,11 +7,11 @@
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M1.1 (2026-09-06)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M3.2 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-06 · **Updated at:** Phase 1 Milestone 1.1
+**Last updated:** 2026-09-28 · **Updated at:** Phase 3 Milestone 3.2
 
 
 ---
@@ -75,17 +75,54 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 3 — Concurrency, Clock & Reliability |
-| **Phase status** | Phase 2 COMPLETE (verified by playing a full game). **Milestone 3.1 written, unverified** — the clock |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18 (done). Phase 3: ~9 of 16–20 |
-| **Cumulative hours (estimated)** | ~46 of 135–175 |
-| **Schedule status** | On track |
-| **Scope status** | On track — three spec contradictions found and resolved (`ROADMAP.md` § Deviations) |
-| **Next milestone** | 3.2 — clock in the UI, abandonment abort, concurrency hardening |
+| **Phase status** | **Milestone 3.2 green** (verified 2026-09-28). 3.3 closeout next. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18 (done). Phase 3: ~14 of 16–20 |
+| **Cumulative hours (estimated)** | ~51 of 135–175 |
+| **Schedule status** | On track; Phase 3 at the high edge of its budget |
+| **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — Milestone 3.2) |
+| **Next milestone** | 3.3 — Phase 3 closeout (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 3 — Milestone 3.2: games nobody started, and the clock in the browser (2026-09-28, green)
+
+- **First-move abort (ADR-014).** 30 s per player to make a first move; until both have
+  moved, any expiry aborts (`ABORTED` / `ABANDONED` / no result). `Game.expiryAt(now)`
+  returns `NONE | ABORT | FLAG` for both the move pipeline and the sweeper.
+- `turn_deadline` = `min(flag-fall, window end)` while `ply < 2` — same index, query and
+  sweeper as timeouts. `V5__first_move_abort_deadline.sql` backfills active games.
+- A late first move is refused with **`422 GAME_ABORTED`** (new `ErrorCode`), the abort
+  persisted in `REQUIRES_NEW`.
+- **Resigning before both players have moved aborts** — closes instant-resignation rating
+  farming.
+- `GameEnded.status`; `GAME_FINISHED {gameId, status, result|null, termination}`. The
+  broadcaster's unconditional `result().name()` would have thrown on the first abort.
+- Metrics `chess.game.aborts`, `chess.move.late_first_moves`.
+- **Client:** `clock.ts` (anchor + compute, `performance.now()`), `Clock.tsx`, time-control
+  presets, readable endings, Abort/Resign label. `vite-env.d.ts` — `npm run build` had
+  never passed.
+- **Tests:** `GameExpiryTest` (13, pure); `ClockIntegrationTest` timeout tests now start
+  the game first + new `Abort` group (5); realtime end-to-end abort via the live
+  scheduler; fanout of a null result across Valkey. **Sweeper disabled for every
+  `IntegrationTestBase` context** (cached-context race).
+- Postman folder 5 — 44 requests, 110 assertions.
+
+### Phase 3 — Milestone 3.1 fixes (green, 2026-09-14)
+
+- `GameTimeouts` — the single place a timeout is written. `finaliseIfFlagged` runs
+  `REQUIRES_NEW` so the move path's timeout survives the `OUT_OF_TIME` exception;
+  `finaliseExpiredBatch` claims and finalises in **one** transaction, because
+  `REQUIRES_NEW` against a `FOR UPDATE` row hangs.
+- `TimeoutSweeper` reduced to scheduling only, calling `GameTimeouts` through the proxy.
+  **The previous version never finalised a game in production** (self-invocation).
+- `ClockIntegrationTest` disables the scheduler and drives sweeps explicitly, since a working
+  sweeper races the assertions.
+- `TimeControl` static-initialisation order fixed by the project owner.
+- Workspace reset mid-milestone; restored from the owner's upload. Four lost documentation
+  updates restored against the real files.
 
 ### Phase 3 (in progress) — Milestone 3.1: the server-authoritative clock
 
@@ -284,37 +321,27 @@ working on the development machine.
 
 ## 3. Not yet started
 
-Everything else. Phases 1–10 per `ROADMAP.md`.
-
-Phases 1–10 per `ROADMAP.md`. Phase 0's *files* exist but are unverified (§4).
-
-Immediate next actions are in §10.
+- **Milestone 3.3** — Phase 3 closeout (§10).
+- **Phases 4–10** per `ROADMAP.md`.
 
 ---
 
 ## 4. Known bugs / unverified state
 
-**The scaffolding has never been built or run.** It was written in an environment with
-no access to Maven Central or the Gradle distribution server, so nothing has been
-compiled, no dependency has been resolved, and the application has not started. Treat
-every file as a first draft that compiles in principle.
+The Phase 0 risk table that used to live here is resolved: the build, Boot 4.1 starter
+coordinates, the Java 25 toolchain, `-Werror`, ArchUnit, Flyway, Testcontainers and CI were
+all verified green through Milestone 3.1. The history is in `DEVELOPMENT_LOG.md`.
 
-Highest-risk items, in order:
-
-| Risk | Why | How to check |
+| Item | State | How to check |
 |---|---|---|
-| **Compilation has never succeeded** | Dependency resolution failed on chesslib, which happens *before* compilation — so the Java 25 toolchain, the ArchUnit rules, and every starter coordinate are still unproven. | `./gradlew :backend:test` |
-| Starter coordinates | **Resolved 2026-09-14** against the official Boot 4.0 migration guide, not by guessing: `flyway-core` → `spring-boot-starter-flyway`; `spring-boot-starter-web` → `-webmvc` (old name is a deprecated alias, which is why it compiled); added `spring-boot-starter-webmvc-test` and `spring-boot-starter-security-test`. | `data-redis` and `websocket` companions still unexercised — re-check at Phase 2 |
-| `@MockBean` / `@SpyBean` are removed in Boot 4 | Not used yet. Replacements are Spring Framework 7's `@MockitoBean` / `@MockitoSpyBean`. | Milestone 1.2, when mocking starts |
-| `verifyGradleVersion` task is untested | Written but never executed; the drift-matching logic was verified only by simulation | It runs first in CI, so a bug surfaces immediately rather than silently |
-| Version numbers stale | All pinned versions verified 2026-09-06 only | Re-check `docs.spring.io/spring-boot/system-requirements.html` |
-| `logstash-logback-encoder` compatibility | Boot 4 moved to Jackson 3; the encoder may need a Jackson-3-compatible release | Build; if it fails, Boot 4.1 has built-in structured JSON logging as a fallback (`logging.structured.format.console`) — arguably better, since it removes a dependency |
-| `-Werror` may fail the build | Strict by design, but a noisy dependency can make it unbuildable | If it blocks progress, narrow to specific `-Xlint` categories rather than dropping it |
-| ArchUnit `allowEmptyShould` | Rules match nothing until Phase 1; without this flag ArchUnit fails an empty rule | Should be handled; confirm the test passes on the empty codebase |
-
-**Do not start Phase 1 until `./gradlew :backend:check` and `bootRun` both succeed.**
-
-No application logic exists yet, so there are no logic bugs.
+| Client clock rendering not seen in a browser | M3.2 otherwise verified (`DEVELOPMENT_LOG.md` 2026-09-28): tests 67 + 78, Flyway V5, `npm run build`, Postman 110/110, live sweeper abort over WebSocket | Play one game in two browsers |
+| V5 backfill never exercised on real data | No ACTIVE games existed when it ran locally; correct by inspection | Only matters for a deployed database with games in flight |
+| `local` profile SQL DEBUG logging drowns the log | The 1 s sweeper query is logged every tick | 3.3 — lower `org.hibernate.SQL` to INFO, or exclude the sweep |
+| Unused in-memory `UserDetailsService` auto-configured | "Using generated security password" at startup; appears unused by the stateless JWT chain (not yet confirmed), but it is noise and an interview question | 3.3 — exclude `UserDetailsServiceAutoConfiguration` |
+| Move list empty after reconnect | Known gap since 2.3 — snapshot carries position, not the log | Small follow-up; `GET /api/games/{id}` has the log |
+| No automatic access-token refresh in the client | A session lasts 15 min, then socket auth fails until sign-in | Phase 4 or 10 |
+| REST clock values use the JVM clock | `GameSummary.withNames` calls `Instant.now()`; everything else uses PostgreSQL `now()`. Display-only, but contradicts ADR-006's "one time authority". | Fix in 3.3 |
+| Stale-ply rejection is not auto-resynced by the client | Server rejects with 409 correctly; the client shows the error rather than re-subscribing | 3.3 |
 
 ---
 
@@ -333,7 +360,9 @@ Recorded now so they are not discovered later and mistaken for oversights.
 | JitPack is a build-time availability and mutability dependency | Accepted, scoped to one group (ADR-012). Dependency locking not yet applied. | Phase 6, with Renovate/Dependabot |
 | Spring Boot 4.1 is a recent major; third-party lag is possible | Accepted. AWS SDK used directly to remove the highest-risk coupling. Falling back to 3.5 is **not** an option — it is EOL. | If a dependency blocks progress, replace the dependency, not the framework |
 | No lag/anti-cheat detection | Out of scope | Never |
-| **Threefold repetition is not detected** | Positions are reconstructed from FEN, which carries no history. `GameOutcome.DRAW_REPETITION` exists but never fires. | Phase 3. Cheap fix that keeps statelessness: every move's `fen_after` is already persisted, so repetition is a count query over `moves` keyed on `Position.repetitionKey()`. |
+| **Threefold repetition is not detected** | Positions are reconstructed from FEN, which carries no history. `GameOutcome.DRAW_REPETITION` exists but never fires. | Milestone 3.3. Cheap fix that keeps statelessness: every move's `fen_after` is already persisted, so repetition is a count query over `moves` keyed on `Position.repetitionKey()`. |
+| First-move window is a constant (30 s), mirrored as a literal in V5 | No second value has been wanted (ADR-014) | When one is |
+| No live countdown of the abort window in the UI | The server does not send the window's end; the hint text states the rule | Only if players miss it in practice |
 
 ---
 
@@ -355,6 +384,8 @@ Full reasoning in `docs/adr/`. Summary:
 | 010 | ECS Fargate as the production path; EKS time-boxed; **no NAT Gateway** |
 | 011 | Java 25 LTS + Spring Boot 4.1.1 + **Gradle 9.7.1**; virtual threads, no WebFlux; AWS SDK v2 direct, not Spring Cloud AWS |
 | 012 | JitPack accepted for chesslib, scoped via `exclusiveContent` to one group |
+| 013 | Refresh tokens rotate on every use; reuse of a spent token revokes the whole family |
+| 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
 
 ---
 
@@ -362,7 +393,7 @@ Full reasoning in `docs/adr/`. Summary:
 
 | Environment | Status | Notes |
 |---|---|---|
-| Local | Compose file written, **never started** | `ops/docker/docker-compose.yml`: Postgres 16, Valkey 8 |
+| Local | Running on the dev machine, verified through 3.1 | `ops/docker/docker-compose.yml`: Postgres 16, Valkey 8. V5 applies on next `bootRun`. |
 | AWS — Path A (always-on demo) | Not provisioned | t3.small, planned Phase 7 |
 | AWS — Path B (ECS reference) | Not provisioned | Terraform, planned Phase 7, **apply/destroy cycle only** |
 | Kubernetes — `kind` | Not provisioned | Planned Phase 8 |
@@ -373,7 +404,8 @@ Full reasoning in `docs/adr/`. Summary:
 
 ## 8. Setup requirements
 
-See `SETUP.md`. Summary: JDK 21, Docker + Compose, Node 20+ (frontend only from Phase 2),
+See `SETUP.md`. Summary: any JDK 17+ to run Gradle (the Java 25 toolchain is provisioned
+automatically), Docker + Compose, Node 20+ (frontend),
 `awscli` and `terraform` (Phase 7 only), `kubectl` and `kind` (Phase 8 only).
 
 ---
@@ -386,33 +418,19 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Phase 0 verification — in this order. Do not start Phase 1 until all pass.**
+**Milestone 3.2 verification — done 2026-09-28** (details in `DEVELOPMENT_LOG.md`). One
+manual item remains: `npm run dev`, one game in two browsers, to eyeball the clock
+rendering (countdown, low time turns red, "Game aborted" banner).
 
-Steps 1–3 are done.
+**Next: Milestone 3.3 — Phase 3 closeout (budget ~2–6 h):**
 
-1. ~~Bootstrap the wrapper~~ — done. `./gradlew --version` reports 9.7.1.
-2. ~~`./gradlew verifyGradleVersion`~~ — done, passing.
-3. ~~Commit `gradlew`, `gradlew.bat`, `gradle/wrapper/` including the jar~~ — done.
-4. **`./gradlew :backend:test`** — first real compile. Proves in one command: chesslib
-   resolves from JitPack, every Spring starter coordinate is valid on Boot 4.1, the
-   Java 25 toolchain resolves or downloads, `-Werror` doesn't reject our own code, and
-   ArchUnit passes on the empty codebase. Expect a slow first run (JDK and JitPack
-   downloads).
-5. **Diff against `start.spring.io`** — generate a reference project (Gradle Kotlin DSL,
-   Java 25, Boot 4.1, same starters) and compare its build file. Do this even if step 4
-   passed: it catches coordinates that resolve but are deprecated or superseded in Boot 4.
-6. **`docker compose -f ops/docker/docker-compose.yml up -d`** — then
-   `docker compose ps` and wait for both containers to report *healthy*, not just *up*.
-7. **`./gradlew :backend:bootRun --args='--spring.profiles.active=local'`**
-8. **`curl -s localhost:8080/actuator/health | jq`** — `db` and `redis` both UP.
-9. **Confirm Flyway applied V1:** `docker exec -it chess-postgres psql -U chess -d chess -c '\dt'`
-   should list `users`, `games`, `moves`, `flyway_schema_history`.
-10. **`./gradlew :backend:integrationTest`** — Testcontainers. Needs Docker; starts its
-    own containers independent of the compose stack.
-11. **Push; confirm CI is green.**
-12. **Log anything that broke in `TROUBLESHOOTING.md`.**
-
-Then **Phase 1 Milestone 1: `identity` module.**
+- Threefold repetition via a count over `moves.fen_after` keyed on `Position.repetitionKey()`.
+- Client auto-resync on `CONFLICT` (re-subscribe → fresh snapshot) instead of showing the error.
+- `GameSummary` clock values from `ServerClock`, not `Instant.now()`.
+- Phase 3 "done when": concurrency test 100× (`--rerun-tasks` loop or `@RepeatedTest`);
+  `docker kill` mid-game then reconnect with correct clocks; a 5 s skew of the JVM clock has
+  no effect on game timing (inject a skewed `java.time.Clock`, assert identical results).
+- Phase-boundary archive and summary.
 
 ---
 

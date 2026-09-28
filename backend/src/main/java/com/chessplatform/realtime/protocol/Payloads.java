@@ -70,6 +70,12 @@ public final class Payloads {
                            long whiteMsLeft, long blackMsLeft) {
     }
 
-    public record GameFinished(UUID gameId, String result, String termination) {
+    /**
+     * @param status FINISHED or ABORTED. Added in Milestone 3.2 — an additive field, so
+     *               protocol version 1 still holds: an older client ignores it and reads a
+     *               null {@code result} as "no winner".
+     * @param result null when {@code status} is ABORTED
+     */
+    public record GameFinished(UUID gameId, String status, String result, String termination) {
     }
 }

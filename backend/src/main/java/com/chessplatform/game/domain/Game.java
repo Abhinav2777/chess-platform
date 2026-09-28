@@ -19,6 +19,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -46,6 +47,35 @@ import java.util.UUID;
 @Entity
 @Table(name = "games")
 public class Game {
+
+    /**
+     * How long each player has to make their <em>first</em> move before the game is
+     * aborted rather than played.
+     *
+     * <p>A game in which a player never moved was never a game: rating it would hand one
+     * player points for the other's mis-click, closed tab, or accidental challenge. Thirty
+     * seconds is long enough for a human who is actually there and short enough that an
+     * abandoned challenge does not sit in both players' lists for five minutes.
+     *
+     * <p>Mirrored as a literal in {@code V5__first_move_abort_deadline.sql}, which
+     * backfills existing games. Changing it here needs no migration — only games created
+     * afterwards are affected — but the two should be kept in step so the record stays
+     * explainable.
+     */
+    public static final Duration FIRST_MOVE_WINDOW = Duration.ofSeconds(30);
+
+    /** Plies 0 and 1: White's first move, then Black's. */
+    private static final int OPENING_PLIES = 2;
+
+    /** What, if anything, has to happen to a game because time passed. */
+    public enum Expiry {
+        /** Nothing. The side to move still has time. */
+        NONE,
+        /** A player never made their first move. No result, no rating change. */
+        ABORT,
+        /** The side to move ran out of time in a game that had started. They lose. */
+        FLAG
+    }
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
@@ -106,9 +136,14 @@ public class Game {
     private Instant lastMoveAt;
 
     /**
-     * {@code lastMoveAt + } the mover's remaining time. Stored rather than computed so the
-     * sweeper's query is an index scan bounded by expired games rather than a scan of all
-     * of them.
+     * The next instant at which this game needs the server's attention if nobody moves:
+     * the mover's flag-fall, or — while a player has yet to make their first move — the
+     * end of {@link #FIRST_MOVE_WINDOW}, whichever comes first.
+     *
+     * <p>Stored rather than computed so the sweeper's query is an index scan bounded by
+     * expired games rather than a scan of all of them. Folding the abort window into the
+     * same column is what lets one index, one query and one sweeper handle both
+     * timeouts and aborts; {@link #expiryAt} decides which one applies.
      */
     @Column(name = "turn_deadline", nullable = false)
     private Instant turnDeadline;
@@ -142,8 +177,8 @@ public class Game {
         // White's clock starts the moment the game does. Nobody has moved, so the
         // "previous move" is the start of the game.
         this.lastMoveAt = startedAt;
-        this.turnDeadline = ClockCalculator.deadline(startedAt, timeControl.initialMs());
         this.createdAt = startedAt;
+        this.turnDeadline = nextDeadline(startedAt);
     }
 
     public static Game start(UUID id, UUID whitePlayerId, UUID blackPlayerId,
@@ -185,8 +220,9 @@ public class Game {
         this.sideToMove = move.sideToMove();
 
         // The deadline belongs to whoever must move next. Recomputed on every move or the
-        // sweeper's index would point at a stale time and flag the wrong player.
-        this.turnDeadline = ClockCalculator.deadline(at, msLeftFor(this.sideToMove));
+        // sweeper's index would point at a stale time and flag the wrong player. Computed
+        // after `ply` advances, so Black's first move still gets the abort window.
+        this.turnDeadline = nextDeadline(at);
 
         if (move.outcome().isTerminal()) {
             // The mover is whoever was to move BEFORE this move, i.e. the opponent of
@@ -201,14 +237,60 @@ public class Game {
         }
     }
 
+    /**
+     * Resigns — or, before both players have moved, aborts.
+     *
+     * <p>A resignation at ply 0 would award a rated win for a game in which nobody played
+     * a move. That is the textbook rating-farming route: two accounts, one challenge, an
+     * instant resignation, repeat. Turning it into an abort closes it with no extra rule
+     * to enforce elsewhere, and it matches what players expect from every major server,
+     * where the button reads "Abort" until both sides have moved.
+     */
     public void resign(Side resigningSide, Instant at) {
         requireActive();
+        if (awaitingFirstMove()) {
+            abort(at);
+            return;
+        }
         finish(GameResult.winFor(resigningSide.opponent()), Termination.RESIGNATION, at);
     }
 
     /** True when the side to move has no time left. Cheap: arithmetic on stored values. */
     public boolean hasFlagged(Instant now) {
         return remainingMs(sideToMove, now) <= 0;
+    }
+
+    /**
+     * True until both players have made a move. While this holds, an expired game is
+     * aborted rather than lost on time.
+     */
+    public boolean awaitingFirstMove() {
+        return ply < OPENING_PLIES;
+    }
+
+    /**
+     * Decides what time has done to this game, if anything.
+     *
+     * <h2>Why a flag in the opening is an abort, not a loss</h2>
+     *
+     * <p>With a 10-second time control a player's clock runs out before the 30-second
+     * abort window does. Treating that as a timeout would award a win for a game the loser
+     * never played a move in — exactly what aborting exists to prevent. So until both
+     * players have moved, <em>any</em> expiry aborts.
+     *
+     * <p>Boundaries match the flag rule: reaching the window exactly aborts, just as
+     * reaching zero exactly flags. A {@code lastMoveAt} in the future (a clock anomaly —
+     * see {@code ClockCalculator}) never expires anything.
+     */
+    public Expiry expiryAt(Instant now) {
+        if (!isActive()) {
+            return Expiry.NONE;
+        }
+        if (awaitingFirstMove()) {
+            boolean windowClosed = !now.isBefore(lastMoveAt.plus(FIRST_MOVE_WINDOW));
+            return windowClosed || hasFlagged(now) ? Expiry.ABORT : Expiry.NONE;
+        }
+        return hasFlagged(now) ? Expiry.FLAG : Expiry.NONE;
     }
 
     /**
@@ -266,11 +348,40 @@ public class Game {
         return turnDeadline;
     }
 
+    /**
+     * Aborts a game in which a player never made their first move.
+     *
+     * <p>Deliberately no result: an aborted game was never played and must not be rated.
+     * {@code ck_games_result_consistency} enforces the same thing in the database — a
+     * non-FINISHED game with a result cannot be stored.
+     *
+     * <p>Guarded here as well as by the caller. Aborting a game both players have moved in
+     * would let a losing player escape a result by walking away, which is the one thing an
+     * abort rule must never allow.
+     */
     public void abort(Instant at) {
         requireActive();
+        if (!awaitingFirstMove()) {
+            throw new IllegalStateException(
+                    "cannot abort game " + id + " at ply " + ply + ": both players have moved");
+        }
         this.status = GameStatus.ABORTED;
+        this.termination = Termination.ABANDONED;
         this.finishedAt = at;
-        // Deliberately no result: an aborted game was never played and must not be rated.
+    }
+
+    /**
+     * When this game next needs attention if nobody moves. See {@link #turnDeadline}.
+     * Reads {@code ply}, {@code sideToMove} and the stored clocks, so it must be called
+     * after they have been updated for the current turn.
+     */
+    private Instant nextDeadline(Instant from) {
+        Instant flagFall = ClockCalculator.deadline(from, msLeftFor(sideToMove));
+        if (!awaitingFirstMove()) {
+            return flagFall;
+        }
+        Instant abortAt = from.plus(FIRST_MOVE_WINDOW);
+        return abortAt.isBefore(flagFall) ? abortAt : flagFall;
     }
 
     private void finish(GameResult outcome, Termination how, Instant at) {

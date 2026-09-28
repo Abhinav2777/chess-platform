@@ -1,7 +1,8 @@
 # ARCHITECTURE
 
 Authoritative technical design for the real-time multiplayer chess platform.
-Last updated: Phase 0 (2026-09-06).
+Last updated: Milestone 3.2 (2026-09-28). §5.2 and §6 reflect the implementation; later
+sections still describe the target design for phases not yet built.
 
 Companion documents: `ROADMAP.md` (what/when), `PROJECT_STATE.md` (current status),
 `docs/adr/` (why). This file describes the target design; ADRs record the reasoning.
@@ -164,7 +165,9 @@ CREATE TABLE games (
     white_ms_left     INTEGER      NOT NULL,
     black_ms_left     INTEGER      NOT NULL,
     last_move_at      TIMESTAMPTZ  NOT NULL,
-    turn_deadline     TIMESTAMPTZ  NOT NULL,  -- last_move_at + mover's ms_left
+    turn_deadline     TIMESTAMPTZ  NOT NULL,  -- next instant the game needs attention:
+                                              -- mover's flag-fall, or the 30 s first-move
+                                              -- window while ply < 2 (§6.5, ADR-014)
     version           BIGINT       NOT NULL DEFAULT 0,  -- JPA @Version
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     finished_at       TIMESTAMPTZ,
@@ -273,17 +276,30 @@ Every frame, both directions:
 
 **Server → client types**
 
+As implemented (Milestone 3.2). The Phase 0 design listed three more types; what became of
+each is recorded below the table rather than silently dropped.
+
 | Type | Payload | When |
 |---|---|---|
-| `AUTH_OK` / `AUTH_FAILED` | `{userId}` / `{reason}` | after first-message auth |
-| `GAME_SNAPSHOT` | full state (fen, clocks, ply, players, lastMove) | on subscribe/resume |
-| `GAME_STARTED` | `{gameId, white, black, timeControl}` | pairing complete |
-| `MOVE_MADE` | `{ply, uci, san, fenAfter, clocks, deadline}` | move committed |
-| `CLOCK_UPDATED` | `{clocks, deadline}` | resync, low-frequency |
-| `PLAYER_DISCONNECTED` / `PLAYER_RECONNECTED` | `{userId}` | presence change |
-| `GAME_FINISHED` | `{result, termination, ratingDelta}` | terminal |
-| `GAME_ABORTED` | `{reason}` | pre-move abandonment |
-| `ERROR` | `{code, message, clientMoveId?}` | rejected command |
+| `AUTH_OK` / `AUTH_FAILED` | `{userId, username}` / `{code, message}` | after first-message auth |
+| `GAME_SNAPSHOT` | full state: fen, ply, sideToMove, players, yourSide, opponentOnline, status, result, termination, legalMoves, lastMoveUci, whiteMsLeft, blackMsLeft, incrementMs | on subscribe/resume |
+| `MOVE_MADE` | `{gameId, ply, uci, san, fenAfter, sideToMove, legalMoves, whiteMsLeft, blackMsLeft}` | move committed |
+| `PLAYER_PRESENCE` | `{gameId, userId, online}` | presence change |
+| `GAME_FINISHED` | `{gameId, status, result, termination}` — `status` FINISHED or ABORTED; `result` null when ABORTED | terminal, by any route |
+| `ERROR` | `{code, message}` | rejected command |
+| `PONG` | — | reply to `PING` |
+
+Revisions from the Phase 0 design:
+
+- **`GAME_ABORTED` → folded into `GAME_FINISHED` with `status: ABORTED`** (3.2). One terminal
+  message means a client has one place to stop the clock and disable the board. A second
+  type would be a second place to forget.
+- **`CLOCK_UPDATED` → not needed.** Clocks travel on `MOVE_MADE` and `GAME_SNAPSHOT`, and the
+  client extrapolates between them (§6.6). A periodic resync would be traffic proportional
+  to games × time for a value both ends can already compute.
+- **`PLAYER_DISCONNECTED` / `PLAYER_RECONNECTED` → `PLAYER_PRESENCE {online}`** (2.2).
+- **`GAME_STARTED` → Phase 4**, with matchmaking. Direct challenges return the game from REST.
+- **`ratingDelta` → Phase 5**, when ratings exist.
 
 **Client → server types**
 
@@ -394,7 +410,7 @@ new_ms_left      = stored_ms_left − elapsed + increment_ms
 if (stored_ms_left − elapsed) <= 0  → flag fall, game ends on time
 last_move_at     = now()
 side_to_move     = other
-turn_deadline    = now() + other_side_ms_left
+turn_deadline    = now() + other_side_ms_left      // or sooner while ply < 2 — §6.5
 ```
 
 No timers. No in-memory state. No per-game threads. The clock is a pure function of
@@ -412,8 +428,10 @@ every game. This costs nothing and removes an entire class of bug.
 
 If a player simply stops playing, no request arrives to trigger the check. Two layers:
 
-1. **Lazy:** any read or move attempt evaluates the deadline. Covers the common case
-   where the opponent is watching and will act.
+1. **Lazy:** a move attempt evaluates the deadline before legality and, if it has passed,
+   finalises the game in its own transaction and rejects the move. Reads report the
+   computed clock (it may show 0:00) but do not write — a GET that mutates is a surprise
+   nobody wants, and the sweeper arrives within a second.
 2. **Active sweeper:** a scheduled job queries
    `SELECT id FROM games WHERE status='ACTIVE' AND turn_deadline < now() FOR UPDATE SKIP LOCKED LIMIT 100`
    and finalises each. `SKIP LOCKED` means multiple sweeper replicas can run
@@ -430,6 +448,33 @@ charged to the moving player. This is what we do, and we document it. Lichess-st
 lag compensation (crediting back a measured RTT, capped) is a real refinement and is
 **explicitly out of scope** — it requires per-connection RTT measurement and opens an
 abuse vector where a client fakes latency.
+
+### 6.5 Games nobody started (Milestone 3.2, ADR-014)
+
+Until both players have made a move, a game can be **aborted** but never won or lost.
+Each player has 30 s from when their clock starts to make their first move; resigning
+before then aborts instead. Aborted = `status ABORTED`, `termination ABANDONED`, no result,
+never rated — enforced by `ck_games_result_consistency` as well as the entity.
+
+The mechanism is the timeout mechanism. `turn_deadline` is `min(flag-fall, window end)`
+while `ply < 2`, so the same partial index, `SKIP LOCKED` query and sweeper find unstarted
+games; `Game.expiryAt(now)` returns `NONE | ABORT | FLAG` and both the move pipeline and the
+sweeper act on it. While `ply < 2` **any** expiry is an abort — with a 10 s control, the
+flag falls before the window closes, and that must not become a rated win either.
+
+### 6.6 The client's clock
+
+The browser's clock does not tick either. Each `GAME_SNAPSHOT` and `MOVE_MADE` **anchors**
+it: the two values it carried plus the local `performance.now()` when it arrived. The
+displayed value is recomputed from the anchor on each render; a 100 ms interval only decides
+how often to look. So a late timer, a throttled background tab, or a skipped frame costs
+smoothness but never accuracy, and the next server message replaces the anchor outright —
+no error survives past one move. `performance.now()` because it is monotonic: an NTP
+correction to the wall clock mid-game would otherwise add or remove seconds.
+
+The display lags the server by one-way latency, in the player's favour, and it is advisory.
+When it reaches zero the client does nothing but wait for `GAME_FINISHED`; only the server,
+against the database clock, decides that anyone has run out of time.
 
 ---
 
@@ -592,7 +637,10 @@ WebSocket interceptor with `requestId`, `userId`, `gameId`, `instanceId`.
 | `chess_ws_reconnects_total` | counter | connection stability |
 | `chess_games_active` | gauge | load |
 | `chess_matchmaking_wait_seconds` | histogram | product quality |
-| `chess_clock_sweeper_finalized_total` | counter | proves §6.3 fires |
+| `chess_clock_timeouts_total` | counter | games ended on time — proves §6.3 fires (planned as `…sweeper_finalized_total`; renamed when built, since the move path also finalises) |
+| `chess_move_flag_falls_total` | counter | moves refused because the mover had already flagged |
+| `chess_game_aborts_total` | counter | games aborted before both players moved (§6.5) |
+| `chess_move_late_first_moves_total` | counter | first moves refused because the window had closed |
 | `sqs_consumer_lag` / DLQ depth | gauge | async health |
 
 `chess_move_conflicts_total` is the metric to point at in an interview: it is direct
@@ -660,7 +708,7 @@ pod memory.
 | Duplicate SQS delivery | `processed_events` PK → acknowledged, not re-applied | None |
 | Rating consumer fails 3× | Message → DLQ, alarm fires; game result unaffected | Soft |
 | Deploy during live game | Graceful shutdown → close frame → reconnect → snapshot | Near-zero |
-| Both players abandon | Sweeper flags on time; abandoned pre-move games aborted after 30s | None |
+| Both players abandon | Sweeper flags on time; a game where either player never made a first move is aborted after 30 s (implemented 3.2) | None |
 
 The row worth being honest about is **PostgreSQL down**: this architecture has a hard
 dependency on it and there is no graceful path. Pretending otherwise would be worse

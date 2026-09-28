@@ -61,15 +61,23 @@ public final class GameEvents {
     }
 
     /**
-     * A game reached a terminal state, by any route — mate, draw, or resignation.
+     * A game reached a terminal state, by any route — mate, draw, resignation, timeout,
+     * or abort.
      *
-     * <p>Separate from {@link MovePlayed} because a game can end without a move
-     * (resignation, and later timeout and abandonment), and because the rating module
-     * cares about this and nothing else.
+     * <p>Separate from {@link MovePlayed} because a game can end without a move, and
+     * because the rating module cares about this and nothing else.
+     *
+     * @param status FINISHED or ABORTED. Carried explicitly so a consumer never has to
+     *               infer "aborted" from a null result — the rating module in Phase 5
+     *               must skip aborted games, and "skip when status is ABORTED" is a rule
+     *               that cannot be misread, where "skip when result is null" is one
+     *               refactor away from a NullPointerException or a rated abort.
+     * @param result null exactly when {@code status} is ABORTED
      */
     public record GameEnded(UUID gameId,
                             UUID whitePlayerId,
                             UUID blackPlayerId,
+                            GameStatus status,
                             GameResult result,
                             Termination termination) {
     }

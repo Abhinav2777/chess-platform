@@ -58,9 +58,15 @@ public class GameEventBroadcaster {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onGameEnded(GameEvents.GameEnded event) {
+        // result is null for an aborted game. The first version called result().name()
+        // unconditionally — correct for every ending that existed then, and a
+        // NullPointerException in an AFTER_COMMIT listener the moment aborts arrived: the
+        // abort would have committed and no client would ever have been told.
         publisher.publish(event.gameId(), Envelope.of(ServerMessage.GAME_FINISHED,
                 new Payloads.GameFinished(event.gameId(),
-                        event.result().name(), event.termination().name())));
+                        event.status().name(),
+                        event.result() == null ? null : event.result().name(),
+                        event.termination() == null ? null : event.termination().name())));
         gamesFinished.increment();
     }
 }

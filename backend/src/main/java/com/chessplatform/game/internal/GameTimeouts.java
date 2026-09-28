@@ -15,7 +15,16 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Ends games on time. The only place a timeout is ever written.
+ * Ends games because time passed: a timeout when a player's clock runs out, an abort when
+ * a player never makes their first move. The only place either is ever written.
+ *
+ * <h2>One mechanism for both</h2>
+ *
+ * <p>Timeouts and aborts are the same shape of problem — "nobody moved before a deadline"
+ * — so they share one stored deadline, one partial index, one {@code SKIP LOCKED} query and
+ * one sweeper. The entity's {@link Game#expiryAt} decides which outcome applies. A second
+ * sweeper with its own query for aborts would double the background load and, worse, give
+ * two jobs the power to end the same game in different ways.
  *
  * <h2>Why this is its own bean</h2>
  *
@@ -37,7 +46,7 @@ import java.util.UUID;
  *
  * <h2>Two methods, two transaction shapes — and why they must differ</h2>
  *
- * <p>{@link #finaliseIfFlagged} uses {@code REQUIRES_NEW} so the write survives the
+ * <p>{@link #finaliseIfExpired} uses {@code REQUIRES_NEW} so the write survives the
  * caller's exception. That is safe because the move pipeline holds no lock on the row: it
  * read the game with a plain SELECT and relies on optimistic locking.
  *
@@ -61,38 +70,43 @@ public class GameTimeouts {
     private final GameRepository games;
     private final ServerClock serverClock;
     private final ApplicationEventPublisher events;
-    private final Counter finalised;
+    private final Counter timeouts;
+    private final Counter aborts;
 
     public GameTimeouts(GameRepository games, ServerClock serverClock,
                         ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.serverClock = serverClock;
         this.events = events;
-        // Evidence the path actually fires. A counter that never moves means either nobody
-        // abandons games or the job is dead — and until now, it was the second.
-        this.finalised = Counter.builder("chess.clock.timeouts")
+        // Evidence the paths actually fire. A counter that never moves means either nobody
+        // abandons games or the job is dead — and for one milestone, it was the second.
+        this.timeouts = Counter.builder("chess.clock.timeouts")
                 .description("Games finalised on time")
+                .register(metrics);
+        this.aborts = Counter.builder("chess.game.aborts")
+                .description("Games aborted because a player never made a first move")
                 .register(metrics);
     }
 
     /**
-     * Finalises one game on time, in its own transaction.
+     * Ends one game on time or aborts it, in its own transaction.
      *
-     * <p>Called by the move pipeline when the mover has already run out. The caller then
+     * <p>Called by the move pipeline when the game has already expired. The caller then
      * throws to reject the move; {@code REQUIRES_NEW} is what lets this write survive that.
      *
-     * <p>Re-reads the game and re-checks rather than trusting the caller's copy: by the time
-     * this runs the sweeper may already have finalised it, and a second finalisation would
-     * overwrite a correct result.
+     * <p>Re-reads the game and re-decides rather than trusting the caller's copy: by the
+     * time this runs the sweeper may already have finalised it, and a second finalisation
+     * would overwrite a correct result.
      *
-     * @return true if this call ended the game, false if it was already over
+     * @return what this call did — {@link Game.Expiry#NONE} if the game was already over
+     *         or, on re-reading, had not expired after all
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean finaliseIfFlagged(UUID gameId) {
+    public Game.Expiry finaliseIfExpired(UUID gameId) {
         Instant now = serverClock.now();
         return games.findById(gameId)
                 .map(game -> finalise(game, now))
-                .orElse(false);
+                .orElse(Game.Expiry.NONE);
     }
 
     /**
@@ -112,27 +126,36 @@ public class GameTimeouts {
             return 0;
         }
         Instant now = serverClock.now();
-        // Loaded inside the claiming transaction, so each entity is MANAGED: flagOnTime's
-        // changes are dirty-checked and flushed at commit without an explicit save.
+        // Loaded inside the claiming transaction, so each entity is MANAGED: the changes
+        // below are dirty-checked and flushed at commit without an explicit save.
         for (UUID gameId : expired) {
             games.findById(gameId).ifPresent(game -> finalise(game, now));
         }
         return expired.size();
     }
 
-    private boolean finalise(Game game, Instant now) {
-        // Re-checked after claiming: the row was expired when the predicate ran, but a move
+    private Game.Expiry finalise(Game game, Instant now) {
+        // Re-decided after claiming: the row was expired when the predicate ran, but a move
         // could have committed in between. Claiming locks the row; it does not freeze time.
-        if (!game.isActive() || !game.hasFlagged(now)) {
-            return false;
+        Game.Expiry expiry = game.expiryAt(now);
+        switch (expiry) {
+            case NONE -> {
+                return expiry;
+            }
+            case ABORT -> {
+                game.abort(now);
+                aborts.increment();
+            }
+            case FLAG -> {
+                game.flagOnTime(now);
+                timeouts.increment();
+            }
         }
-        game.flagOnTime(now);
         // Published inside the transaction and delivered AFTER_COMMIT, so no client hears
-        // about a timeout that did not persist.
+        // about an ending that did not persist.
         events.publishEvent(new GameEvents.GameEnded(game.id(),
                 game.whitePlayerId(), game.blackPlayerId(),
-                game.result(), game.termination()));
-        finalised.increment();
-        return true;
+                game.status(), game.result(), game.termination()));
+        return expiry;
     }
 }

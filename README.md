@@ -26,11 +26,14 @@ See [`PROJECT_STATE.md`](PROJECT_STATE.md) for the authoritative current state.
 | [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | Questions this project should let you answer |
 | [`DEVELOPMENT_LOG.md`](DEVELOPMENT_LOG.md) | Chronological record of work and decisions |
 
-## Three decisions worth reading first
+## Decisions worth reading first
 
 - **The clock does not tick.** Remaining time is computed from three persisted columns
   and PostgreSQL's `now()`, so it is identical from any pod, survives reconnection to a
   different instance, and cannot drift. [ADR-006](docs/adr/ADR-006-computed-clock.md)
+- **Games nobody started are aborted, never rated** — through the same stored deadline,
+  index and sweeper as timeouts, so the new rule added no new machinery.
+  [ADR-014](docs/adr/ADR-014-first-move-abort.md)
 - **No distributed lock.** Move safety comes from an idempotency key, an optimistic
   version column, and a composite primary key — all inside one database transaction. A
   Redis lock would add a TTL-expiry failure mode without removing any of those.

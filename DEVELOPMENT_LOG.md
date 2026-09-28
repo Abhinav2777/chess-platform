@@ -5,6 +5,163 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 3.2: games nobody started, and the clock in the browser
+
+**Built**
+
+- **First-move abort (ADR-014).** Each player has 30 s from when their clock starts to make a
+  first move. Until both have moved, any expiry aborts: `status ABORTED`, `termination
+  ABANDONED`, no result. One method, `Game.expiryAt(now) → NONE | ABORT | FLAG`, used by the
+  move pipeline and the sweeper alike.
+- **No new machinery.** `turn_deadline` now means "the next instant this game needs
+  attention" — `min(flag-fall, window end)` while `ply < 2`. The partial index, the
+  `SKIP LOCKED` query and the sweeper are unchanged. `V5` backfills in-progress games.
+- **Early resignation aborts.** Resigning at ply 0 or 1 used to be a rated win for the
+  opponent — the whole rating-farming loop in one request. The UI button reads "Abort".
+- **`GameEnded.status`** and a `status` field on `GAME_FINISHED`, so consumers never infer
+  "aborted" from a null result.
+- **Client clock.** Anchored on every `GAME_SNAPSHOT`/`MOVE_MADE`, computed from
+  `performance.now()`, never decremented (ARCHITECTURE.md §6.6). Time-control presets in the
+  lobby. Readable endings ("Black wins on time", "Game aborted — no rating change").
+- Postman folder 5: time controls, validation, early-resignation abort. 44 requests.
+
+**Found by review, before anything ran**
+
+- **The broadcaster would have thrown on the first abort.** `event.result().name()` was
+  unconditional — correct for every ending that existed, and a `NullPointerException` the
+  moment one had no result. It runs in an `AFTER_COMMIT` listener, so the abort would have
+  committed and *no client would have been told*: database right, every screen wrong, no
+  error anywhere a user could see. Now null-safe, and covered by an end-to-end test in which
+  the real scheduled sweeper aborts a game and both sockets must hear about it.
+  **General lesson: adding a state is cheap; the cost is in every consumer that assumed the
+  old states were all there were.** Grep for accessors of the fields whose invariants you
+  just loosened.
+- **A latent test race left over from 3.1.** 3.1 disabled the scheduled sweeper in
+  `ClockIntegrationTest` only. But Spring caches test contexts, and a cached context's
+  `@Scheduled` tasks keep running: the context built for `GameplayIntegrationTest` stayed
+  alive and swept the *same* database every second while `ClockIntegrationTest` pushed
+  clocks into the past. It passed only because the window between `expire()` and the
+  explicit sweep is a few milliseconds. Now disabled for every `IntegrationTestBase`
+  context — which also means they share one cached context instead of two.
+- **`npm run build` had never passed.** No `vite-env.d.ts`, so `import.meta.env` was untyped
+  and `tsc -b` failed. `npm run dev` does not type-check, which is how it survived Phase 2.
+  First found now because this is the first milestone where the production build was run.
+
+**Changed expectations in existing tests** — the rule working, not regressions:
+- Flag-fall tests in `ClockIntegrationTest` expired games at ply 0, which is now an abort.
+  They play 1.e4 e5 first so they still test timeouts.
+- Three resignation tests resigned at ply 0/1. `GameplayIntegrationTest` and
+  `RealtimeGameplayIntegrationTest` now move first; `ValkeyFanoutIntegrationTest`
+  deliberately keeps the early resignation and asserts the abort, because a null `result`
+  crossing Valkey and back is the harder fanout case.
+
+**How this was verified here, and what was not**
+
+This workspace cannot reach Maven Central or the Gradle distribution server, so Gradle
+could not run. Instead: every changed main class (and the classes they depend on) compiled
+with `javac --release 21 -Xlint:all,-serial,-processing -Werror` against minimal stubs of
+the Spring/JPA/Micrometer types; `GameExpiryTest` ran through a stub harness, 13/13; the
+client clock module's arithmetic ran under Node with assertions; `tsc -b` and `vite build`
+passed. **The integration tests and folder 5 of the Postman collection have not run.** Their
+first run is on the development machine.
+
+**Verified on the development machine (2026-09-28)**
+
+- `./gradlew :backend:test` — 67/67. `./gradlew :backend:integrationTest` — 78/78, including
+  `ClockIntegrationTest$Abort`, the realtime end-to-end abort and the Valkey fanout of a
+  null result.
+- `bootRun` (local profile): Flyway migrated 4 → 5; `flyway_schema_history` lists V1–V5, all
+  successful. The V5 backfill was a no-op here — no ACTIVE games existed — so its `UPDATE`
+  is correct by inspection, not by observation.
+- `npm run build` — passes for the first time (`tsc -b` + `vite build`).
+- Postman via newman: **44 requests, 110 assertions, 0 failures**, folders 0–5.
+- Live abort check, scripted instead of two browsers (Node `WebSocket` + `fetch` against the
+  running server, real scheduled sweeper). An untouched game: both players' sockets received
+  `GAME_FINISHED {status: ABORTED, result: null, termination: ABANDONED}` at 30.0 s. A game
+  where only White moved: Black's socket received the same at 31.0 s (window starts at
+  White's move, plus up to one sweep interval). Black's late move afterwards → `422
+  GAME_NOT_ACTIVE` — not `GAME_ABORTED`, correctly, because the sweeper got there first;
+  `GAME_ABORTED` is the move-path race, covered by the integration test.
+- **Not verified:** the clock *rendering* in a browser (countdown, low-time red). The
+  server-side data it renders from was checked in the snapshots above.
+
+**Noticed while verifying, not fixed:** the `local` profile logs every SQL statement at
+DEBUG, so the once-a-second sweep produces ~100k tokens of log in a few minutes and buries
+everything else; and Spring Boot still auto-configures an unused in-memory
+`UserDetailsService` ("Using generated security password" at startup). Both are small
+cleanups for 3.3.
+
+**Deliberately not built:** a live countdown of the abort window in the UI (the server does
+not send the window's end, and hard-coding 30 s twice to animate it is poor value — the hint
+text says it), and configurable window length (no second value has ever been wanted).
+
+**Hours:** ~5. Phase 3 at ~14 of 16–20.
+
+---
+
+## 2026-09-14 — Milestone 3.1 fixes: two rules I had already written down
+
+Getting 3.1 green took five rounds. The failures fall into three groups, and the third is
+the one that matters.
+
+**1. A static initialisation order bug.** `TimeControl.BLITZ_5_3` was declared above the
+limits its constructor validated against. Static fields initialise top to bottom, so
+`MAX_INITIAL_MS` was still `0` when the constructor ran, and five minutes was rejected as
+out of range. The class failed to initialise, became permanently unloadable, and — because
+the `Game` entity references it — Hibernate could not build the persistence unit. **One
+line produced every integration failure in the suite.** Fixed by the project owner by
+declaring the constants first.
+
+**2. Three compile failures from scripted edits.** Missing `@Min`/`@Max` imports (the
+replacement was anchored on a line that lives in a different file, so it silently did
+nothing), two stacked javadoc blocks, an unreferenced try-with-resources variable, and
+`assertThat((List<?>) x).contains(...)`. Common cause: **a string replacement that finds no
+match is a no-op that reports success.** The edit helper now aborts if an anchor is not
+found exactly once.
+
+**3. Two bugs that were rules already written in this repository.**
+
+- **Write-then-throw.** On flag-fall, `submitMove` finalised the game and then threw
+  `OUT_OF_TIME`. The transaction rolled back and took the finalisation with it — the game
+  stayed ACTIVE forever. That is the refresh-token bug from ADR-013, documented in
+  TROUBLESHOOTING as a general rule.
+- **Self-invocation.** The sweeper called its own `@Transactional` method via `this`,
+  bypassing Spring's proxy. There was no transaction; `flagOnTime` mutated a detached entity
+  that was never saved. That rule is in `TokenFamilyRevoker`'s javadoc.
+
+**The production sweeper never finalised a single game.** It claimed rows and persisted
+nothing, and a green build concealed it — the tests only caught it because they assert on
+the reloaded database state, not on return values. `finaliseExpiredBatch()` returned `1`
+throughout; the game was simply never written.
+
+Both paths now live in `GameTimeouts`, reached only through other beans, which makes the two
+bugs structurally impossible rather than something to remember.
+
+**The detail worth keeping: the two paths need opposite transaction shapes.** The move path
+uses `REQUIRES_NEW` so the timeout survives the caller's exception — safe because the move
+pipeline holds no row lock. The sweeper must *not*: it claims rows with
+`FOR UPDATE SKIP LOCKED`, and an inner `REQUIRES_NEW` transaction updating the same row would
+wait for a lock held by its own caller, which is waiting for the inner call to return.
+PostgreSQL cannot detect that as a deadlock — one side is waiting in application code, not on
+a lock — so it hangs until the lock timeout.
+
+**A consequence of fixing it.** Once the sweeper worked, it raced the tests: the background
+job could finalise a game between `expireClock()` and the assertion. The broken sweeper had
+never raced anything, because it did nothing. `ClockIntegrationTest` now disables the
+scheduler and drives sweeps directly.
+
+**Lesson, stated honestly.** Writing a rule down clearly is not the same as applying it.
+Both rules were documented, in plain English, in files I wrote — and I wrote both bugs again
+in the same milestone. The protection that actually worked was structural (one bean, reached
+through the proxy) and a test style (assert on persisted state). Documentation alone did not.
+
+**Also: my workspace was reset mid-milestone.** The repository existed only on the project
+owner's machine until it was re-uploaded, which is exactly the case `PROJECT_STATE.md` §0
+anticipates. Four documentation updates had been written into the lost workspace and never
+delivered; they are restored in this entry and its siblings.
+
+---
+
 ## 2026-09-14 — Milestone 3.1: the server-authoritative clock
 
 Phase 2 closed after a full game was played by hand through the UI. Phase 3 begins with the

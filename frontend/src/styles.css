@@ -112,3 +112,34 @@ aside { flex: 1 1 12rem; display: flex; flex-direction: column; gap: .5rem; }
 
 .moves, .games { margin: 0; padding-left: 1.2rem; max-height: 14rem; overflow-y: auto; }
 .games { list-style: none; padding-left: 0; }
+
+/* ---- Milestone 3.2: clocks and the time-control picker ---- */
+
+.challenge { display: flex; gap: .5rem; flex-wrap: wrap; }
+.challenge input { flex: 1 1 10rem; }
+select {
+  font: inherit;
+  padding: .55rem .7rem;
+  border-radius: 6px;
+  border: 1px solid #45443f;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.board-column { display: flex; flex-direction: column; gap: .5rem; }
+
+.clock {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: min(70vw, 480px);
+  padding: .4rem .75rem;
+  border-radius: 6px;
+  background: var(--panel);
+  color: #9a9a95;
+}
+.clock-name { font-size: .9rem; }
+/* Tabular figures, so the digits do not shift sideways as they change every tenth. */
+.clock-time { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.clock.running { color: var(--text); box-shadow: inset 0 0 0 2px var(--highlight); }
+.clock.low .clock-time { color: #e08a8a; }

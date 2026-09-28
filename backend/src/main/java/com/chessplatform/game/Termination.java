@@ -22,7 +22,10 @@ public enum Termination {
     /** The side to move ran out of time. Their opponent wins. */
     TIMEOUT,
 
-    /** Both players left without finishing. Set by the abandonment sweeper. */
+    /**
+     * A player never made their first move within {@code Game.FIRST_MOVE_WINDOW}. Always
+     * paired with status ABORTED and no result: nobody won a game nobody played.
+     */
     ABANDONED;
 
     public static Termination from(GameOutcome outcome) {

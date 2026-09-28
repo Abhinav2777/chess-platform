@@ -115,7 +115,7 @@ a retried move with the same `clientMoveId` returns the original result.
 
 ---
 
-### Phase 2 — Real-Time Multiplayer · 15–18 h · Weeks 3–5
+### Phase 2 — Real-Time Multiplayer · 15–18 h · Weeks 3–5 — **COMPLETE (2026-09-14, ~18 h)**
 
 **Target:** two browsers, live moves, survives disconnection.
 
@@ -141,7 +141,13 @@ position.
 
 ---
 
-### Phase 3 — Concurrency, Clock & Reliability · 16–20 h · Weeks 5–7
+### Phase 3 — Concurrency, Clock & Reliability · 16–20 h · Weeks 5–7 — **IN PROGRESS (~14 h)**
+
+**Progress:** 3.1 server-authoritative clock + sweeper ✅ · 3.2 clock UI + first-move
+abort ✅ (pending integration run on the dev machine) · **3.3 closeout** remaining:
+threefold repetition, automatic resync on a stale-ply rejection, the three "done when"
+verifications below, and the one place a JVM clock still reaches a player
+(`GameSummary.withNames` uses `Instant.now()` for REST clock values).
 
 **Target:** the backend becomes technically robust rather than merely functional. Per
 the spec, this phase outranks new features.
@@ -307,6 +313,16 @@ Flyway auto-configuration, Jackson 3, starter renames, two column-type mismatche
 time was real and is not in the figure above. `docs/BOOT4_CHECKLIST.md` exists to stop it
 recurring, and in Milestone 1.3b it prevented a defect for the first time rather than
 explaining one afterwards.
+
+## Time checkpoint — Milestone 3.2
+
+| | |
+|---|---|
+| **Estimated time used** | ~51 h (Phases 0–2 ~37, Phase 3 so far ~14) |
+| **Estimated remaining** | ~84–124 h of the 135–175 plan |
+| **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
+| **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
+| **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
 
 ## Cumulative schedule
 

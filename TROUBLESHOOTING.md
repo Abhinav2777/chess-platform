@@ -253,6 +253,81 @@ which is also the first reconnect.
 
 ---
 
+### A scheduled job that runs, returns success, and changes nothing
+
+**Symptom:** the timeout sweeper ran every second, claimed expired games, reported how
+many it found — and every game stayed ACTIVE.
+**Cause:** it called its own `@Transactional` method via `this`. Spring's transaction
+handling is proxy-based; a call on `this` never reaches the proxy, so no transaction was
+opened. The entity was mutated while detached and nothing was saved.
+**Fix:** put the transactional work in a different bean and call it through the injected
+reference. See `GameTimeouts` and `TimeoutSweeper`.
+
+**When self-invocation is actually a bug.** Not always. Calling a `@Transactional` method
+from another method that *already holds a compatible transaction* is harmless — the ignored
+annotation would have joined the existing transaction anyway. It is a bug only when the
+callee's annotation was meant to **change** something: open a transaction the caller lacks
+(the sweeper), or start a separate one (`REQUIRES_NEW`). A four-hit audit of this codebase
+found only benign cases once the sweeper was fixed.
+
+**Keep the scheduler method itself non-transactional.** If `sweep()` were `@Transactional`,
+a database failure would mark it rollback-only, the catch block would swallow the exception,
+the proxy would then try to commit and throw `UnexpectedRollbackException` *outside* the
+catch — and that exception would cancel the schedule permanently.
+
+### `REQUIRES_NEW` inside a transaction that holds `FOR UPDATE` hangs
+
+**Symptom:** a call that should take milliseconds blocks until the lock timeout.
+**Cause:** the outer transaction locked a row (`FOR UPDATE`); the inner `REQUIRES_NEW`
+transaction, on a different connection, tries to update the same row and waits for that
+lock — while the outer transaction waits for the inner call to return. PostgreSQL does not
+report a deadlock, because one party is waiting in application code rather than on a lock.
+**Fix:** do the claim and the update in one transaction. `REQUIRES_NEW` is for writes that
+must survive the caller's failure, and only when the caller holds no conflicting lock.
+
+### A background job starts racing the tests once it is fixed
+
+**Symptom:** tests that passed begin failing intermittently after a scheduled job is repaired.
+**Cause:** the job now does real work concurrently with the test. The broken job raced
+nothing because it did nothing — so a green run was concealing a dead job.
+**Fix:** disable the scheduler in tests that assert on its effects
+(`chess.clock.sweeper-enabled=false`) and drive the work explicitly.
+
+**And disable it for every context that shares the database, not only the test that
+cares.** Spring caches test contexts, and a cached context's `@Scheduled` tasks keep running
+after its test class has finished. Disabling the sweeper in one test class's context left
+the other class's context sweeping the same PostgreSQL container underneath it. Since 3.2
+the property is set in `IntegrationTestBase`, so every context built on it has it.
+
+### `422 GAME_ABORTED` on the first move (or `ABORTED` in the lobby)
+
+**Symptom:** the first move of a game is refused with `GAME_ABORTED`, or a game you just
+created shows as aborted.
+**Cause:** working as designed (ADR-014). Each player must make their first move within
+30 s of their clock starting — White from creation, Black from White's first move. Stepping
+through Postman by hand, or creating a game and then opening the second browser slowly, is
+enough to miss it.
+**Fix:** move sooner. A full Postman "Run collection" never hits it. If an integration test
+hits it unexpectedly, something is holding a game at ply 0–1 for 30 s — look for a missing
+cleanup or a test that waits.
+
+### Resigning returned `ABORTED` instead of a win
+
+**Symptom:** `POST /api/games/{id}/resign` returns `status: ABORTED`, `result: null`.
+**Cause:** working as designed. Before both players have moved, resigning aborts — otherwise
+an instant resignation is a free rated win (ADR-014). The UI labels the button "Abort".
+**Fix:** none. Tests that need a real resignation play 1.e4 e5 first.
+
+### `npm run build` fails: `Property 'env' does not exist on type 'ImportMeta'`
+
+**Symptom:** `npm run dev` works; `npm run build` fails in `tsc -b`.
+**Cause:** no `src/vite-env.d.ts`, so TypeScript does not know about `import.meta.env`. The
+dev server never type-checks, so this can go unnoticed for as long as nobody builds for
+production — two milestones, here.
+**Fix:** `src/vite-env.d.ts` containing `/// <reference types="vite/client" />`. Added in 3.2.
+
+---
+
 ## Anticipated issues
 
 These have not occurred yet. They are recorded because they are predictable and the

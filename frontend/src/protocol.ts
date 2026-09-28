@@ -27,12 +27,19 @@ export interface GameSnapshot {
   blackPlayerId: string;
   yourSide: Side | null;
   opponentOnline: boolean;
-  status: 'ACTIVE' | 'FINISHED' | 'ABORTED';
+  status: GameStatus;
   result: string | null;
   termination: string | null;
   /** Every legal move in UCI form. The client has no rules engine; this is the rules. */
   legalMoves: string[];
   lastMoveUci: string | null;
+  /**
+   * Remaining time AS OF THE MOMENT THE SERVER BUILT THIS SNAPSHOT — already net of the
+   * current player's think so far. The client counts the side to move down from here.
+   */
+  whiteMsLeft: number;
+  blackMsLeft: number;
+  incrementMs: number;
 }
 
 export interface MoveMade {
@@ -44,12 +51,19 @@ export interface MoveMade {
   sideToMove: Side;
   /** Legality in the new position. The client has no rules engine; this is the rules. */
   legalMoves: string[];
+  /** Both clocks as the move committed, increment included. The new mover starts here. */
+  whiteMsLeft: number;
+  blackMsLeft: number;
 }
+
+export type GameStatus = 'ACTIVE' | 'FINISHED' | 'ABORTED';
 
 export interface GameFinished {
   gameId: string;
-  result: string;
-  termination: string;
+  /** Since 3.2. FINISHED has a result; ABORTED never does and must never be scored. */
+  status: Exclude<GameStatus, 'ACTIVE'>;
+  result: 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW' | null;
+  termination: string | null;
 }
 
 export interface PlayerPresence {

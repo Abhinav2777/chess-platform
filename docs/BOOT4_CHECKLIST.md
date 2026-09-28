@@ -60,6 +60,49 @@ grep -rn "authorizeRequests" --include=*.java backend/src
 grep -rn "@MockBean\|@SpyBean" --include=*.java backend/src  # removed; use @MockitoBean
 ```
 
+## Edits that fail silently
+
+A scripted string replacement that finds no match is a **no-op that reports success**. It
+produced subtly incomplete files four times in this project. Verify the *result*, not the
+edit — or make the edit fail loudly when its anchor is absent.
+
+- annotations used without their import (a replacement anchored in the wrong file)
+- adjacent javadoc blocks (a new one stacked above an existing one)
+- try-with-resources variables never referenced (`-Xlint:try` under `-Werror`)
+- `@Column` Java type vs migration column type (ARCHITECTURE.md §4.2.1)
+- `assertThat((List<?>) x).contains(...)` does not compile — a wildcard cast gives AssertJ a
+  capture type. `hasSize` on the same cast does, which is why this slips through.
+
+## Transactions
+
+- [ ] **No `@Transactional` method called on `this` where the annotation must change
+      anything.** Self-invocation bypasses the proxy. Benign when the caller already holds a
+      compatible transaction; a bug when the callee needed to open one or start a new one.
+- [ ] **No write followed by a throw in the same transaction** unless the write has its own
+      transaction. Rolled back with the exception. Has shipped twice.
+- [ ] **No `REQUIRES_NEW` updating a row the caller locked `FOR UPDATE`.** Hangs until lock
+      timeout; PostgreSQL does not report it as a deadlock.
+- [ ] **Static constants declared before any static instance that uses them.** Or written as
+      constant expressions, which the compiler inlines. A failed static initialiser makes the
+      class unloadable for the life of the JVM.
+
+## Adding a state, or loosening an invariant
+
+- [ ] **Grep every accessor of a field that can now be null or take a new value.** Adding
+      ABORTED made `result` nullable for a terminal game; the broadcaster's
+      `result().name()` would have thrown in an `AFTER_COMMIT` listener — after the commit,
+      with no client told. The new state is cheap; the cost is in consumers that assumed
+      the old states were all there were.
+- [ ] **Look for exhaustive `switch`es over the enum** you extended. A switch *expression*
+      without `default` fails to compile, which is the good outcome; a switch *statement*
+      silently does nothing for the new value.
+
+## Tests and scheduled jobs
+
+- [ ] **A `@Scheduled` job keeps running in every cached test context.** Disabling it with
+      a property in one test class does nothing about another class's context that is still
+      alive and pointed at the same database. Disable it in the shared base class.
+
 ## Debugging
 
 - [ ] Many tests failing at once with `DefaultCacheAwareContextLoaderDelegate` is **one**

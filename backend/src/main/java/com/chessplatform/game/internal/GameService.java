@@ -79,9 +79,10 @@ public class GameService {
     private final Counter idempotentReplays;
     private final Counter staleSubmissions;
     private final Counter flagFalls;
+    private final Counter lateFirstMoves;
 
     public GameService(GameRepository games, MoveRepository moves, ChessRules rules,
-                       Clock clock, ServerClock serverClock,GameTimeouts timeouts,
+                       Clock clock, ServerClock serverClock, GameTimeouts timeouts,
                        ApplicationEventPublisher events, MeterRegistry metrics) {
         this.games = games;
         this.moves = moves;
@@ -108,6 +109,9 @@ public class GameService {
                 .register(metrics);
         this.flagFalls = Counter.builder("chess.move.flag_falls")
                 .description("Moves rejected because the mover had already run out of time")
+                .register(metrics);
+        this.lateFirstMoves = Counter.builder("chess.move.late_first_moves")
+                .description("First moves rejected because the abort window had closed")
                 .register(metrics);
     }
 
@@ -188,18 +192,36 @@ public class GameService {
                             .formatted(command.expectedPly(), game.ply()));
         }
 
-        // 6. The clock, before legality. A player who has already run out does not get to
-        //    play a legal move: the game ended the moment their time did, and only nobody
-        //    having looked kept it ACTIVE. Checking after would let a move land on a game
-        //    that was over.
+        // 6. Time, before legality. A player who has already run out — or who never made
+        //    a first move inside the abort window — does not get to play a legal move: the
+        //    game ended when the deadline passed, and only nobody having looked kept it
+        //    ACTIVE. Checking after would let a move land on a game that was over.
+        //
+        //    Deciding here rather than leaving it to the sweeper makes the outcome depend
+        //    only on the database clock, never on when the sweeper last ran. Without it, a
+        //    first move at 30.4s would be accepted or refused depending on a one-second
+        //    scheduling race nobody could reproduce.
+        //
+        //    Either way the game is finalised in its OWN transaction (REQUIRES_NEW),
+        //    because we are about to throw — and a write in this transaction would be
+        //    rolled back with the move.
         Instant now = serverClock.now();
-        if (game.hasFlagged(now)) {
-            flagFalls.increment();
-            // Finalised in its OWN transaction (REQUIRES_NEW), because we are about to
-            // throw — and a write in this transaction would be rolled back with the move.
-            timeouts.finaliseIfFlagged(gameId);
-            throw new DomainException.Rejected(
-                    ErrorCode.OUT_OF_TIME, "Your time ran out.");
+        switch (game.expiryAt(now)) {
+            case NONE -> {
+                // Still in time. Carry on.
+            }
+            case ABORT -> {
+                lateFirstMoves.increment();
+                timeouts.finaliseIfExpired(gameId);
+                throw new DomainException.Rejected(ErrorCode.GAME_ABORTED,
+                        "This game was aborted: the first move was not made in time.");
+            }
+            case FLAG -> {
+                flagFalls.increment();
+                timeouts.finaliseIfExpired(gameId);
+                throw new DomainException.Rejected(
+                        ErrorCode.OUT_OF_TIME, "Your time ran out.");
+            }
         }
 
         // 7. Legality. The only authority on whether this move is playable.
@@ -263,9 +285,13 @@ public class GameService {
     private void publishGameEnded(Game game) {
         events.publishEvent(new GameEvents.GameEnded(game.id(),
                 game.whitePlayerId(), game.blackPlayerId(),
-                game.result(), game.termination()));
+                game.status(), game.result(), game.termination()));
     }
 
+    /**
+     * Resigns for the caller. Before both players have moved this aborts instead — see
+     * {@link Game#resign}.
+     */
     @Transactional
     public Game resign(UUID gameId, UUID playerId) {
         Game game = requireGame(gameId);

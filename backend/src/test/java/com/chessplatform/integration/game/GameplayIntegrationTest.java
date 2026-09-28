@@ -132,7 +132,10 @@ class GameplayIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("resignation awards the win to the opponent")
         void resigns() {
+            // Both players must have moved: since 3.2, resigning earlier aborts the game
+            // unrated (ClockIntegrationTest covers that path).
             play(white, 0, "e2", "e4");
+            play(black, 1, "e7", "e5");
 
             Game resigned = gameService.resign(game.id(), black.id());
 

@@ -3,6 +3,7 @@ package com.chessplatform.integration.game;
 import com.chessplatform.chess.MoveIntent;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
+import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.game.GameResult;
 import com.chessplatform.game.GameStatus;
 import com.chessplatform.game.Termination;
@@ -24,7 +25,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -33,24 +33,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The clock against a real database.
+ * The clock and the abort rule against a real database.
  *
- * <p>{@code ClockCalculatorTest} covers the arithmetic exhaustively without a database.
- * What can only be tested here is the part involving PostgreSQL: that time comes from the
- * database, that timeouts persist, and that {@code FOR UPDATE SKIP LOCKED} finalises an
- * abandoned game exactly once.
+ * <p>{@code ClockCalculatorTest} and {@code GameExpiryTest} cover the arithmetic and the
+ * rules exhaustively without a database. What can only be tested here is the part
+ * involving PostgreSQL: that time comes from the database, that timeouts and aborts
+ * persist even when the request that discovered them fails, and that
+ * {@code FOR UPDATE SKIP LOCKED} finalises an expired game exactly once.
  *
- * <h2>Why the scheduled sweeper is disabled here</h2>
+ * <h2>The scheduled sweeper is off</h2>
  *
- * <p>Once the sweeper genuinely worked, it began racing these tests: the background job
- * could finalise a game between {@code expireClock()} and the test's own assertion, so a
- * test expecting "this sweep finalised one game" would see zero. Tests drive sweeps
- * explicitly through {@link GameTimeouts} instead, which makes them deterministic.
+ * <p>Disabled for every context built on {@link IntegrationTestBase} — see the comment
+ * there for the cached-context race that made disabling it here alone insufficient. Tests
+ * drive sweeps explicitly through {@link GameTimeouts}, which makes them deterministic.
  *
- * <p>Worth noting that the race only appeared after the fix. The broken sweeper finalised
- * nothing, so there was nothing to race against — a green test run was hiding a dead job.
+ * <h2>Timeouts need a started game</h2>
+ *
+ * <p>Since Milestone 3.2, a game that expires before both players have moved is
+ * <em>aborted</em>, not lost on time. Every timeout test therefore plays 1.e4 e5 first;
+ * before 3.2 they expired a game at ply 0, which now tests the abort path instead.
  */
-@TestPropertySource(properties = "chess.clock.sweeper-enabled=false")
 @DisplayName("Game clock")
 class ClockIntegrationTest extends IntegrationTestBase {
 
@@ -93,9 +95,21 @@ class ClockIntegrationTest extends IntegrationTestBase {
         return gameService.createGame(white.id(), black.id(), timeControl);
     }
 
+    /** A game both players have moved in: 1.e4 e5, White to move at ply 2. */
+    private Game startedGame(TimeControl timeControl) {
+        Game game = newGame(timeControl);
+        play(game, white, 0, "e2", "e4");
+        play(game, black, 1, "e7", "e5");
+        return game;
+    }
+
     private void play(Game game, User player, int expectedPly, String from, String to) {
         gameService.submitMove(game.id(), player.id(),
                 new SubmitMoveCommand(UUID.randomUUID(), expectedPly, MoveIntent.of(from, to)));
+    }
+
+    private Game reload(Game game) {
+        return games.findById(game.id()).orElseThrow();
     }
 
     @Nested
@@ -120,15 +134,16 @@ class ClockIntegrationTest extends IntegrationTestBase {
     class Charging {
 
         @Test
-        @DisplayName("a new game starts with both clocks full and a deadline set")
+        @DisplayName("a new game starts with both clocks full and the abort window as its deadline")
         void startsFull() {
             Game game = newGame(TimeControl.BLITZ_5_3);
 
             assertThat(game.whiteMsLeft()).isEqualTo(300_000);
             assertThat(game.blackMsLeft()).isEqualTo(300_000);
             assertThat(game.turnDeadline())
-                    .as("white is already on the clock")
-                    .isEqualTo(game.lastMoveAt().plusMillis(300_000));
+                    .as("white must make a first move within the window, which is sooner "
+                        + "than their five-minute clock")
+                    .isEqualTo(game.lastMoveAt().plus(Game.FIRST_MOVE_WINDOW));
         }
 
         @Test
@@ -139,7 +154,7 @@ class ClockIntegrationTest extends IntegrationTestBase {
 
             play(game, white, 0, "e2", "e4");
 
-            Game reloaded = games.findById(game.id()).orElseThrow();
+            Game reloaded = reload(game);
             assertThat(reloaded.whiteMsLeft())
                     .as("white spent ~150ms and gained a 3s increment")
                     .isBetween(302_000L, 303_000L);
@@ -149,15 +164,14 @@ class ClockIntegrationTest extends IntegrationTestBase {
         }
 
         @Test
-        @DisplayName("the deadline moves to the player who must now reply")
+        @DisplayName("once both have moved, the deadline is the mover's flag-fall")
         void deadlineFollowsTheTurn() {
-            Game game = newGame(TimeControl.BLITZ_5_3);
-            play(game, white, 0, "e2", "e4");
+            Game game = startedGame(TimeControl.BLITZ_5_3);
 
-            Game reloaded = games.findById(game.id()).orElseThrow();
-            assertThat(reloaded.sideToMove()).isEqualTo(Side.BLACK);
+            Game reloaded = reload(game);
+            assertThat(reloaded.sideToMove()).isEqualTo(Side.WHITE);
             assertThat(reloaded.turnDeadline())
-                    .isEqualTo(reloaded.lastMoveAt().plusMillis(reloaded.blackMsLeft()));
+                    .isEqualTo(reloaded.lastMoveAt().plusMillis(reloaded.whiteMsLeft()));
         }
     }
 
@@ -174,14 +188,14 @@ class ClockIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("a move by a player whose time has gone ends the game on time")
         void movingAfterFlaggingLosesOnTime() {
-            Game game = newGame(TEN_SECONDS);
-            expireClock(game.id());
+            Game game = startedGame(TEN_SECONDS);
+            expire(game.id());
 
-            assertThatThrownBy(() -> play(game, white, 0, "e2", "e4"))
+            assertThatThrownBy(() -> play(game, white, 2, "g1", "f3"))
                     .isInstanceOf(DomainException.Rejected.class)
                     .hasMessageContaining("time ran out");
 
-            Game finished = games.findById(game.id()).orElseThrow();
+            Game finished = reload(game);
             assertThat(finished.status())
                     .as("the timeout must survive the exception that rejected the move")
                     .isEqualTo(GameStatus.FINISHED);
@@ -190,22 +204,106 @@ class ClockIntegrationTest extends IntegrationTestBase {
                     .as("white's flag fell, so black wins")
                     .isEqualTo(GameResult.BLACK_WIN);
             assertThat(moves.findByGameIdOrderByPlyAsc(game.id()))
-                    .as("the move must not be recorded")
-                    .isEmpty();
+                    .as("the rejected move must not be recorded")
+                    .hasSize(2);
         }
 
         @Test
         @DisplayName("the flagged player's clock is stored as zero")
         void flaggedClockIsZeroed() {
-            Game game = newGame(TEN_SECONDS);
-            expireClock(game.id());
+            Game game = startedGame(TEN_SECONDS);
+            expire(game.id());
 
-            assertThatThrownBy(() -> play(game, white, 0, "e2", "e4"))
+            assertThatThrownBy(() -> play(game, white, 2, "g1", "f3"))
                     .isInstanceOf(DomainException.class);
 
             // A finished game whose loser still shows time would be a permanent
             // inconsistency in the record.
-            assertThat(games.findById(game.id()).orElseThrow().whiteMsLeft()).isZero();
+            assertThat(reload(game).whiteMsLeft()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("aborting games nobody started")
+    class Abort {
+
+        /**
+         * The same write-then-throw shape as a flag-fall, on the abort path: the late move
+         * is refused AND the abort persists.
+         */
+        @Test
+        @DisplayName("a first move after the window closes is refused and the game is aborted")
+        void lateFirstMoveAborts() {
+            Game game = newGame(TimeControl.BLITZ_5_3);
+            expire(game.id());
+
+            assertThatThrownBy(() -> play(game, white, 0, "e2", "e4"))
+                    .isInstanceOfSatisfying(DomainException.Rejected.class, rejected ->
+                            assertThat(rejected.code()).isEqualTo(ErrorCode.GAME_ABORTED));
+
+            Game aborted = reload(game);
+            assertThat(aborted.status())
+                    .as("the abort must survive the exception that rejected the move")
+                    .isEqualTo(GameStatus.ABORTED);
+            assertThat(aborted.result()).as("an aborted game is never rated").isNull();
+            assertThat(aborted.termination()).isEqualTo(Termination.ABANDONED);
+            assertThat(moves.findByGameIdOrderByPlyAsc(game.id())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("black never replying to the first move also aborts")
+        void blackNeverRepliesAborts() {
+            Game game = newGame(TimeControl.BLITZ_5_3);
+            play(game, white, 0, "e2", "e4");
+            expire(game.id());
+
+            assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
+
+            Game aborted = reload(game);
+            assertThat(aborted.status()).isEqualTo(GameStatus.ABORTED);
+            assertThat(aborted.result())
+                    .as("white made one move; that is not a game worth a rating change")
+                    .isNull();
+        }
+
+        /**
+         * With a clock shorter than the window, White's flag falls first. Recorded as an
+         * abort, not a timeout: Black must not win a rated game White never played in.
+         */
+        @Test
+        @DisplayName("a flag before anyone has moved is an abort, not a loss")
+        void earlyFlagIsAnAbort() {
+            Game game = newGame(TEN_SECONDS);
+            expire(game.id());
+
+            timeouts.finaliseExpiredBatch();
+
+            assertThat(reload(game).status()).isEqualTo(GameStatus.ABORTED);
+        }
+
+        @Test
+        @DisplayName("resigning before both players have moved aborts instead")
+        void earlyResignationAborts() {
+            Game game = newGame(TimeControl.BLITZ_5_3);
+
+            Game after = gameService.resign(game.id(), white.id());
+
+            assertThat(after.status()).isEqualTo(GameStatus.ABORTED);
+            assertThat(reload(game).result()).isNull();
+        }
+
+        @Test
+        @DisplayName("the database refuses an ABORTED game that has a result")
+        void databaseRejectsARatedAbort() {
+            Game game = newGame(TimeControl.BLITZ_5_3);
+
+            // ck_games_result_consistency, from V1. The entity cannot produce this state;
+            // the database refuses it anyway, for the code paths that do not go through
+            // the entity — a manual fix, a future migration, a bulk job.
+            assertThatThrownBy(() -> jdbc().update(
+                    "UPDATE games SET status = 'ABORTED', result = 'WHITE_WIN' WHERE id = ?",
+                    game.id()))
+                    .hasMessageContaining("ck_games_result_consistency");
         }
     }
 
@@ -214,7 +312,7 @@ class ClockIntegrationTest extends IntegrationTestBase {
     class Sweep {
 
         /**
-         * The case laziness cannot cover: both players walked away. Before the fix this
+         * The case laziness cannot cover: both players walked away. Before the 3.1 fix this
          * returned 1 — the row WAS claimed — while persisting nothing, because the method
          * was called on {@code this} and never ran in a transaction. Asserting on the
          * reloaded game is what exposed it.
@@ -222,67 +320,79 @@ class ClockIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("finalises an abandoned game nobody is looking at")
         void finalisesAbandonedGame() {
-            Game game = newGame(TEN_SECONDS);
-            expireClock(game.id());
+            Game game = startedGame(TEN_SECONDS);
+            expire(game.id());
 
             assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
 
-            Game finished = games.findById(game.id()).orElseThrow();
+            Game finished = reload(game);
             assertThat(finished.status()).isEqualTo(GameStatus.FINISHED);
             assertThat(finished.termination()).isEqualTo(Termination.TIMEOUT);
             assertThat(finished.result()).isEqualTo(GameResult.BLACK_WIN);
         }
 
         @Test
+        @DisplayName("aborts an unstarted game nobody is looking at")
+        void abortsUnstartedGame() {
+            Game game = newGame(TimeControl.BLITZ_5_3);
+            expire(game.id());
+
+            assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
+
+            assertThat(reload(game).status()).isEqualTo(GameStatus.ABORTED);
+        }
+
+        @Test
         @DisplayName("leaves games whose clock is still running")
         void ignoresLiveGames() {
             newGame(TimeControl.BLITZ_5_3);
+            startedGame(TimeControl.BLITZ_5_3);
 
             assertThat(timeouts.finaliseExpiredBatch())
-                    .as("a game with five minutes left is not expired")
+                    .as("neither a fresh game nor one with five minutes left is expired")
                     .isZero();
         }
 
         /**
          * The second sweep finds nothing because the first persisted FINISHED, so the row
-         * no longer matches {@code status = 'ACTIVE'}. Before the fix the second sweep also
-         * returned 1 — the same game, claimed again, because nothing had been written.
+         * no longer matches {@code status = 'ACTIVE'}. Before the 3.1 fix the second sweep
+         * also returned 1 — the same game, claimed again, because nothing had been written.
          */
         @Test
         @DisplayName("a second sweep finds nothing to do")
         void doesNotDoubleFinalise() {
-            Game game = newGame(TEN_SECONDS);
-            expireClock(game.id());
+            Game game = startedGame(TEN_SECONDS);
+            expire(game.id());
 
             assertThat(timeouts.finaliseExpiredBatch()).isEqualTo(1);
             assertThat(timeouts.finaliseExpiredBatch()).isZero();
 
-            assertThat(games.findById(game.id()).orElseThrow().result())
-                    .isEqualTo(GameResult.BLACK_WIN);
+            assertThat(reload(game).result()).isEqualTo(GameResult.BLACK_WIN);
         }
 
         @Test
         @DisplayName("never finalises a game that already ended another way")
         void ignoresFinishedGames() {
-            Game game = newGame(TEN_SECONDS);
+            Game game = startedGame(TEN_SECONDS);
             gameService.resign(game.id(), white.id());
-            expireClock(game.id());
+            expire(game.id());
 
             timeouts.finaliseExpiredBatch();
 
-            assertThat(games.findById(game.id()).orElseThrow().termination())
+            assertThat(reload(game).termination())
                     .as("a resignation must not be rewritten as a timeout")
                     .isEqualTo(Termination.RESIGNATION);
         }
     }
 
     /**
-     * Pushes a game's clock into the past so it is expired, without waiting.
+     * Pushes a game's last move an hour into the past, so its clock and its first-move
+     * window have both expired, without waiting.
      *
      * <p>Raw SQL because the entity deliberately offers no way to move time backwards —
      * that is the kind of API that gets used in production by accident.
      */
-    private void expireClock(UUID gameId) {
+    private void expire(UUID gameId) {
         jdbc().update("""
                 UPDATE games
                    SET last_move_at  = now() - INTERVAL '1 hour',
