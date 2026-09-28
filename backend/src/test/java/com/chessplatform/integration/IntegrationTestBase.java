@@ -91,5 +91,11 @@ public abstract class IntegrationTestBase {
         // Same rule for the matchmaker — and there is no Valkey here, so a live one would
         // log a failed tick every second. Matchmaking tests call Matchmaker.tick() directly.
         registry.add("chess.matchmaking.scheduler-enabled", () -> "false");
+        // And the rate limiter, which would otherwise make this base class's promise false
+        // ("nothing here touches Valkey"): with no Valkey configured it defaults to
+        // localhost:6379 — which on a development machine is the compose Valkey, so tests
+        // passed in CI and failed locally once real limits applied. RateLimitIntegrationTest
+        // has its own context with the limiter on.
+        registry.add("chess.ratelimit.enabled", () -> "false");
     }
 }

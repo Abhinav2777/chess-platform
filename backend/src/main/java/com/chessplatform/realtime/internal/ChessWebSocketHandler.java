@@ -4,6 +4,8 @@ import com.chessplatform.chess.MoveIntent;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.common.ratelimit.RateLimit;
+import com.chessplatform.common.ratelimit.RateLimiter;
 import com.chessplatform.game.TimeControl;
 import com.chessplatform.matchmaking.MatchmakingFacade;
 import com.chessplatform.matchmaking.SeekResult;
@@ -87,6 +89,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private final GameEventPublisher publisher;
     private final PresenceTracker presence;
     private final MatchmakingFacade matchmaking;
+    private final RateLimiter rateLimiter;
 
     /**
      * One thread for auth timeouts. These fire rarely and do almost nothing, so a pool
@@ -104,7 +107,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                                  IdentityFacade identity, GameFacade gameFacade,
                                  RealtimeProperties properties, GameEventPublisher publisher,
                                  PresenceTracker presence, MatchmakingFacade matchmaking,
-                                 MeterRegistry metrics) {
+                                 RateLimiter rateLimiter, MeterRegistry metrics) {
         this.registry = registry;
         this.sender = sender;
         this.identity = identity;
@@ -113,6 +116,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         this.publisher = publisher;
         this.presence = presence;
         this.matchmaking = matchmaking;
+        this.rateLimiter = rateLimiter;
 
         Gauge.builder("chess.ws.connections.active", registry,
                         GameSessionRegistry::localConnectionCount)
@@ -248,6 +252,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private void seek(WebSocketSession session, GameSessionRegistry.SessionState state,
                       Envelope envelope) {
         Payloads.Seek request = sender.parsePayload(envelope.payload(), Payloads.Seek.class);
+        rateLimiter.enforce(RateLimit.SEEK, state.userId().toString());
         if (request.initialSeconds() == null || request.incrementSeconds() == null) {
             throw new DomainException.Rejected(ErrorCode.VALIDATION_FAILED,
                     "SEEK needs initialSeconds and incrementSeconds.");
@@ -387,6 +392,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                       Envelope envelope) {
         Payloads.Move request = sender.parsePayload(envelope.payload(), Payloads.Move.class);
         MDC.put("gameId", request.gameId().toString());
+        rateLimiter.enforce(RateLimit.MOVE, state.userId().toString());
 
         // Exactly the same pipeline the REST endpoint uses. The transport does not get its
         // own validation, its own turn check, or its own idempotency handling — one set of

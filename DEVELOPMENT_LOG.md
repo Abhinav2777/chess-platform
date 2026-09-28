@@ -5,6 +5,38 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 4.2: rate limiting
+
+**Decided (with the project owner):** a Lua token bucket rather than Bucket4j, and fail open
+for login as well as moves. Bucket4j 8.20's Lettuce module is compiled against Lettuce 6.1;
+Boot 4.1 ships 7.5 — an untested major-version gap — and it wants its own native connection
+outside Spring's factory. ADR-017.
+
+**Built:** `RateLimiter` in `common` (not `platform`, which would recreate the 4.1b cycle),
+`token-bucket.lua`, five policies, `429` + `Retry-After`, socket `RATE_LIMITED`, a 5 s
+circuit after a Valkey failure, metrics `chess.ratelimit.rejected{limit}` and
+`.unavailable`.
+
+**Found while building**
+
+- **Environment-dependent tests.** `AuthApiIntegrationTest`'s refresh tests failed locally
+  with 429. The context sets no Valkey host, so it used `localhost:6379` — my compose Valkey —
+  and real limits applied. In CI nothing listens there and the limiter fails open: green in
+  CI, red on a laptop. Contexts not about rate limiting now disable it; the checklist has
+  the general rule. It also restores `IntegrationTestBase`'s own claim that nothing in it
+  touches Valkey.
+- **The outage test measured what fail-open costs.** It slept a fixed second and failed:
+  the first move after Valkey dies waits out the 1 s command timeout before the limiter
+  fails open. Now it polls with a deadline and prints the delay — 1,037 ms — and the
+  circuit makes later moves free. A bounded, documented cost instead of a hidden one.
+
+**Verified:** unit 77, integration 107, Postman 54 / 132 against the live app with limits
+on, browser matchmaking check still green, `rl:*` buckets visible in Valkey.
+
+**Hours:** ~2.5. Phase 4 at ~10 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 4.1c: lobby UI — Milestone 4.1 complete
 
 **Built:** "Play online" buttons per preset; `useSeek` (lobby socket, seek, re-seek every 15 s

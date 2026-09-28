@@ -262,6 +262,31 @@ read-only transaction can't hit a serialisation failure, so it costs nothing.
 
 ---
 
+## Milestone 4.2 — rate limiting
+
+### "Design a distributed rate limiter."
+Token bucket per key in Valkey, one Lua script for refill-and-take so it's atomic across
+instances; two numbers per key, lazy refill from Valkey's clock, TTL of one full refill.
+Fixed windows allow 2× at the boundary; sliding logs cost memory per request. Keys by IP
+and by username for login (each covers the other's blind spot), by user for moves — one
+bucket for REST and WebSocket so switching transport buys nothing. ADR-017.
+
+### "Your limiter depends on Redis. Redis goes down."
+Fail open — it's a guard, not a dependency. The subtle part: naive fail-open still waits
+out the timeout on every request. A five-second circuit means one slow request per five
+seconds per instance. Measured: first move after the outage ~1 s, the rest unaffected.
+
+### "Why didn't you use Bucket4j?"
+I evaluated it: built against Lettuce 6 while Boot 4.1 ships 7, and it wants its own
+native connection outside Spring's pool. Twenty lines of Lua on existing infrastructure was
+lower risk, behind one method so the library can replace it.
+
+### "What's X-Forwarded-For got to do with it?"
+Behind a load balancer the remote address is the balancer's. Trusting the header blindly
+lets any client pick its own bucket. Trust it only from the ALB (forward-headers strategy).
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

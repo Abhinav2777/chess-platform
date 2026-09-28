@@ -53,6 +53,9 @@ class AuthApiIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // Logs the same accounts in many times a minute; limits are RateLimitIntegrationTest's
+        // subject, and without this the test would talk to whatever Valkey is on localhost.
+        registry.add("chess.ratelimit.enabled", () -> "false");
     }
 
     @Autowired

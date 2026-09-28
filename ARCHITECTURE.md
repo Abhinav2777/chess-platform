@@ -604,7 +604,7 @@ We have none of these, and Kafka's operational cost (or MSK's ~$150+/month) is r
 | Why JWT | Stateless verification lets any pod authenticate a WebSocket without a shared session store or sticky sessions — the same property that makes §5.4 work |
 | WS auth | First message (§5.3), 5s timeout, unauthenticated-socket cap |
 | WS authz | Every `SUBSCRIBE` re-checks that the user is a player in that game |
-| Rate limiting | Bucket4j backed by Valkey: 5/min on login, 20/s on moves per user |
+| Rate limiting | Lua token bucket in Valkey (ADR-017, not Bucket4j): login 10/min per IP + 5/min per username, register 5/min per IP, moves 20/s per user across REST and WS, seeks 10/30 s. 429 + `Retry-After`. Fails open behind a 5 s circuit |
 | Transport | TLS terminated at ALB; WSS only in production |
 | Secrets | AWS Secrets Manager (RDS creds) + SSM Parameter Store (config); never in env files committed to git |
 | SQLi | Parameterised queries via JPA/JDBC only; zero string-concatenated SQL |
@@ -708,7 +708,7 @@ pod memory.
 | Failure | Behaviour | Degradation |
 |---|---|---|
 | PostgreSQL down | Moves rejected with 503; existing sockets stay open; no data loss | Hard — game pauses. Clocks are wall-clock derived so they keep running; on recovery a player may have flagged. **Accepted, documented.** |
-| Valkey down | Moves still commit (DB path unaffected). Fanout stops. | Soft — clients fall back to polling `GET /games/{id}` on backoff. Matchmaking unavailable. Presence unavailable. |
+| Valkey down | Moves still commit (DB path unaffected). Fanout stops. | Soft — clients fall back to polling `GET /games/{id}` on backoff. Matchmaking unavailable. Presence unavailable. Rate limiting fails open (ADR-017); the first request after the outage waits ~1 s (measured), then the circuit skips Valkey. |
 | SQS down | Game plays and finishes normally; rating updates queue in an outbox table | Soft — ratings lag, then catch up |
 | API pod crashes | Sockets drop; clients reconnect to another pod; snapshot restores state | Near-zero — a reconnect blip |
 | Whole AZ fails | RDS Multi-AZ failover (~60–120s) if enabled; otherwise outage | Documented; Multi-AZ is Optional (cost) |

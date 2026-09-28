@@ -48,6 +48,8 @@ public enum ErrorCode {
     MATCHMAKING_UNAVAILABLE,
 
     // --- generic ------------------------------------------------------------
+    /** A rate limit refused the request. HTTP 429 with Retry-After; on the socket, an ERROR. */
+    RATE_LIMITED,
     VALIDATION_FAILED,
     CONFLICT
 }

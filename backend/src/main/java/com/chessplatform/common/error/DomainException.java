@@ -74,6 +74,23 @@ public abstract class DomainException extends RuntimeException {
     }
 
     /**
+     * Too many requests from this subject. Maps to HTTP 429 with {@code Retry-After}.
+     * Carries the wait, so a well-behaved client can back off precisely rather than guess.
+     */
+    public static final class RateLimited extends DomainException {
+        private final java.time.Duration retryAfter;
+
+        public RateLimited(String message, java.time.Duration retryAfter) {
+            super(ErrorCode.RATE_LIMITED, message);
+            this.retryAfter = retryAfter;
+        }
+
+        public java.time.Duration retryAfter() {
+            return retryAfter;
+        }
+    }
+
+    /**
      * Authentication failed. Maps to HTTP 401.
      *
      * <p>Callers must not distinguish "no such user" from "wrong password" in the

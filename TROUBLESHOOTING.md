@@ -353,6 +353,22 @@ pass on nothing.
 **Fix:** upgrade ArchUnit (1.5.1 here). `importerSeesTheCodebase` now fails loudly if this
 recurs. Check with `javap -v <class> | grep major`.
 
+### Integration tests pass in CI but fail locally with 429
+
+**Symptom:** login/refresh tests get `429 RATE_LIMITED` on a developer machine only.
+**Cause:** the test context configured no Valkey, so it used `localhost:6379` — the compose
+Valkey — and real rate limits applied (in CI nothing listens there and the limiter fails
+open).
+**Fix:** contexts not testing rate limits set `chess.ratelimit.enabled=false`
+(`IntegrationTestBase`, `AuthApiIntegrationTest`). `RateLimitIntegrationTest` uses its own
+Valkey container.
+
+### `429` during local development
+
+The `local` profile raises auth limits (application-local.yml). If you still hit one,
+buckets live in Valkey as `rl:*` and expire within a minute; or
+`docker exec chess-valkey valkey-cli --scan --pattern 'rl:*' | xargs docker exec -i chess-valkey valkey-cli del`.
+
 ---
 
 ## Anticipated issues

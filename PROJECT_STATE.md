@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.1c (lobby UI) — Milestone 4.1 complete
+**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.2 (rate limiting)
 
 
 ---
@@ -75,17 +75,34 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 4 — Valkey + Matchmaking |
-| **Phase status** | **4.1 complete** (matchmaking end to end, verified in a real browser). Unit 76, integration 101. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~7.5 of 12–16 |
-| **Cumulative hours (estimated)** | ~62.5 of 135–175 |
+| **Phase status** | **4.2 green**: unit 77, integration 107, Postman 132/132. 4.3 remains. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~10 of 12–16 |
+| **Cumulative hours (estimated)** | ~65 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 4.2 — rate limiting (§10) |
+| **Next milestone** | 4.3 — full game with Valkey stopped; client polling fallback (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 4 — Milestone 4.2: rate limiting (2026-09-28, green)
+
+- **ADR-017.** `common.ratelimit.RateLimiter.enforce(limit, subject)`; `token-bucket.lua`
+  (lazy refill, Valkey `TIME`, TTL = one full refill). Bucket4j evaluated and rejected
+  (Lettuce 6 vs 7, separate native connection); decided with the owner.
+- Limits: login 10/min per IP + 5/min per username; register 5/min per IP; moves 20/s per
+  user (REST and WS share the bucket); seeks 10/30 s. `local` profile raises auth limits.
+- `429` + `Retry-After` (`DomainException.RateLimited`); socket `ERROR RATE_LIMITED`.
+- **Fail open behind a 5 s circuit** (owner chose fail-open for login too). Measured: first
+  move after a Valkey outage 1,037 ms, then no cost.
+- **Found:** test contexts without Valkey configured were talking to the dev machine's
+  compose Valkey — pass in CI, fail locally. Limiter disabled in `IntegrationTestBase` and
+  `AuthApiIntegrationTest`; checklist item added. Outage test now polls and reports.
+- Tests: `RateLimiterFailOpenTest` (unit, dead port + controllable clock),
+  `RateLimitIntegrationTest` (6, production limits, HTTP 429), WS move flood.
+
 
 ### Phase 4 — Milestone 4.1c: lobby UI (2026-09-28, verified in a browser)
 
@@ -402,7 +419,7 @@ working on the development machine.
 
 ## 3. Not yet started
 
-- **4.2** rate limiting, **4.3** Valkey-down game + client polling fallback.
+ **4.3** Valkey-down game + client polling fallback.
 - **Phases 5–10** per `ROADMAP.md`.
 - **Phases 4–10** per `ROADMAP.md`.
 
@@ -467,6 +484,7 @@ Full reasoning in `docs/adr/`. Summary:
 | 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
 | 015 | Threefold repetition: history from `moves.fen_after`, bounded by the halfmove clock; automatic draw |
 | 016 | Matchmaking: Valkey queue + Lua pairing on every instance, no lock; idempotent re-seek as heartbeat; push with pull recovery |
+| 017 | Rate limiting: Lua token bucket in Valkey (not Bucket4j); fail open behind a 5 s circuit |
 
 ---
 
@@ -499,25 +517,22 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 4.2 — rate limiting** (~2–3 h). ARCHITECTURE.md §11 specifies 5/min on login and
-20/s on moves per user, backed by Valkey so the limit holds across instances.
+**Milestone 4.3 — Valkey stopped, end to end** (~2 h). Phase 4's "done when": `docker stop
+valkey` degrades to polling without any move being lost.
 
-- **Decide first:** Bucket4j with its Lettuce/Redis integration vs a small Lua token bucket.
-  Check Bucket4j's current artifact coordinates and Lettuce compatibility against Boot 4.1
-  before choosing (BOOT4_CHECKLIST). Bucket4j is the industry answer; a Lua bucket is
-  ~20 lines on top of machinery already in the codebase.
-- What to limit: login and register by IP *and* username (credential stuffing vs one
-  account); moves per user on both REST and WebSocket (one limiter, both transports);
-  `SEEK` per user. Return `429` with `Retry-After`; on the socket, an `ERROR` with
-  `RATE_LIMITED`.
-- Failure mode: **fail open** when Valkey is down for moves (never block chess on a cache),
-  and decide explicitly for login (fail open is kinder; fail closed is safer).
-
-**Worth doing while it is fresh:** move `lobby-e2e.mjs` into the repo (e.g. `frontend/e2e/`)
-as a documented manual check, so the browser verification is reproducible rather than a
-claim in this file.
-
-Then **4.3** — full game with Valkey stopped + client polling fallback.
+- **Server side is mostly proven:** moves commit with Valkey down
+  (`ValkeyFanoutIntegrationTest`), matchmaking returns 503, rate limiting fails open.
+  Extend to a **full game** (several moves by both players, to a result) with Valkey
+  stopped, through REST — the path a degraded client will use.
+- **Client side is the gap:** with fanout down, a player never receives `MOVE_MADE`. The
+  client needs to notice silence and poll `GET /api/games/{id}` (which now returns the same
+  `GameState` as the snapshot). Likely rule: while it is the opponent's turn and no event
+  has arrived for N seconds, poll with backoff; stop when events resume. Make the lobby say
+  "matchmaking unavailable" and still offer direct challenges.
+- **Browser check:** play in two headless browsers, `docker stop chess-valkey` mid-game,
+  keep playing, `docker start`, confirm recovery. Consider committing `lobby-e2e.mjs` into
+  `frontend/e2e/` alongside it.
+- Then Phase 4 closeout: roadmap checkpoint, archive at the phase boundary.
 
 ---
 
@@ -541,6 +556,7 @@ If it is not in this table, it is an estimate and must be labelled as one.
 |---|---|---|---|
 | Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
+| Rate limiter cost during a Valkey outage | First move after Valkey stops: 1,037 ms (= 1 s Redis command timeout); later moves within 5 s skip Valkey (circuit) | Testcontainers, 2026-09-28 | `ValkeyFanoutIntegrationTest.survivesValkeyOutage` prints `MEASURED` |
 | Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |
 
 Estimates currently in the repository, all clearly labelled as such: AWS monthly costs

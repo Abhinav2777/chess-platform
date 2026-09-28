@@ -5,7 +5,10 @@ import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.identity.api.dto.AuthRequests;
 import com.chessplatform.identity.api.dto.AuthResponses;
 import com.chessplatform.identity.internal.AuthenticationService;
+import com.chessplatform.common.ratelimit.RateLimit;
+import com.chessplatform.common.ratelimit.RateLimiter;
 import com.chessplatform.identity.internal.AuthProperties;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
@@ -48,21 +51,33 @@ public class AuthController {
     private final AuthenticationService auth;
     private final AuthProperties properties;
 
-    public AuthController(AuthenticationService auth, AuthProperties properties) {
+    private final RateLimiter rateLimiter;
+
+    public AuthController(AuthenticationService auth, AuthProperties properties,
+                          RateLimiter rateLimiter) {
         this.auth = auth;
         this.properties = properties;
+        this.rateLimiter = rateLimiter;
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponses.Session> register(
-            @Valid @RequestBody AuthRequests.Register request, HttpServletResponse response) {
+            @Valid @RequestBody AuthRequests.Register request, HttpServletRequest http,
+            HttpServletResponse response) {
+        rateLimiter.enforce(RateLimit.REGISTER_IP, clientAddress(http));
         return respond(auth.register(request.username(), request.email(), request.password()),
                 response, HttpStatus.CREATED);
     }
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponses.Session> login(
-            @Valid @RequestBody AuthRequests.Login request, HttpServletResponse response) {
+            @Valid @RequestBody AuthRequests.Login request, HttpServletRequest http,
+            HttpServletResponse response) {
+        // IP first: a source already over its limit must not also drain the bucket of the
+        // account it is targeting, or an attacker could lock a victim out for free. The
+        // username is lower-cased so case variants share one bucket.
+        rateLimiter.enforce(RateLimit.LOGIN_IP, clientAddress(http));
+        rateLimiter.enforce(RateLimit.LOGIN_USER, request.username().toLowerCase(java.util.Locale.ROOT));
         return respond(auth.login(request.username(), request.password()),
                 response, HttpStatus.OK);
     }
@@ -125,5 +140,15 @@ public class AuthController {
                 .secure(true)        // HTTPS only; browsers accept Secure on localhost
                 .sameSite("Strict")  // withheld cross-site: closes CSRF on this cookie
                 .path("/api/auth");  // sent only to the endpoints that need it
+    }
+
+    /**
+     * The connecting address. Behind a load balancer this is the balancer's, and the client's
+     * is in {@code X-Forwarded-For} — which any client can also set. Phase 7 enables
+     * {@code server.forward-headers-strategy=native} with only the ALB trusted; reading the
+     * header here directly would let an attacker choose their own bucket.
+     */
+    private static String clientAddress(HttpServletRequest http) {
+        return http.getRemoteAddr();
     }
 }

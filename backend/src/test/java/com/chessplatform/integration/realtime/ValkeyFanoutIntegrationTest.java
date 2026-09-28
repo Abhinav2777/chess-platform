@@ -379,7 +379,18 @@ class ValkeyFanoutIntegrationTest {
             // No frame arrives — fanout is down. But the move is durable, which is the
             // property that matters. The client recovers by polling GET /api/games/{id}
             // or by reconnecting, both of which read from PostgreSQL.
-            Thread.sleep(1_000);
+            //
+            // Polled, not slept for a fixed second. Since 4.2 the move path consults the
+            // rate limiter first; the first request after Valkey dies waits out the Redis
+            // command timeout before the limiter fails open and trips its circuit. That
+            // delay is real and bounded, so it is measured and reported, not hidden.
+            long started = System.currentTimeMillis();
+            while (games.findById(game.id()).orElseThrow().ply() == 0
+                   && System.currentTimeMillis() - started < 5_000) {
+                Thread.sleep(50);
+            }
+            System.out.printf("MEASURED first move after Valkey outage committed in %d ms%n",
+                    System.currentTimeMillis() - started);
 
             Game reloaded = games.findById(game.id()).orElseThrow();
             assertThat(reloaded.ply())
