@@ -71,6 +71,9 @@ class ValkeyOutageIntegrationTest {
         registry.add("spring.data.redis.host", VALKEY::getHost);
         registry.add("spring.data.redis.port", () -> VALKEY.getMappedPort(6379));
         registry.add("chess.matchmaking.scheduler-enabled", () -> "false");
+        // Short circuit window so the recovery check is quick. The window is also the
+        // longest recovery can lag after Valkey returns — see the recovery step below.
+        registry.add("chess.valkey.circuit-open-for", () -> "1s");
     }
 
     @LocalServerPort
@@ -149,6 +152,10 @@ class ValkeyOutageIntegrationTest {
         }
 
         unpause();
+        // The circuit trades per-call timeouts during an outage for up to one window of
+        // continued degradation after it: until the window lapses and a call probes, this
+        // instance does not know Valkey is back. Wait it out, then events must flow.
+        Thread.sleep(1_200);
 
         // Recovery: a fresh game, and events flow live again on the same instance.
         Game second = gameService.createGame(white.id(), black.id(), TimeControl.BLITZ_5_3);

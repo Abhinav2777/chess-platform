@@ -107,6 +107,13 @@ edit — or make the edit fail loudly when its anchor is absent.
       context passes in CI and fails locally (or the reverse). Switch it off or point it at
       a container; never leave it to whatever is running.
 
+## Profiles
+
+- [ ] **A development profile must not change failure timing.** `application-local.yml`
+      set a 2 s Redis timeout from the first commit, silently doubling the 1 s fail-fast in
+      `application.yml`; every local outage measurement was wrong until a trace caught it.
+      Profiles change *where* things are, not *how they fail*.
+
 ## JDK upgrades and bytecode readers
 
 - [ ] **Anything that parses class files lags the JDK**: ArchUnit, JaCoCo, ASM-based

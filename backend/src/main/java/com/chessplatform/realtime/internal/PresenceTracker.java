@@ -1,7 +1,6 @@
 package com.chessplatform.realtime.internal;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.chessplatform.common.resilience.ValkeyGuard;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -45,13 +44,19 @@ import java.util.UUID;
 @Component
 public class PresenceTracker {
 
-    private static final Logger log = LoggerFactory.getLogger(PresenceTracker.class);
     private static final Duration TTL = Duration.ofSeconds(90);
 
     private final StringRedisTemplate valkey;
+    private final ValkeyGuard guard;
 
-    public PresenceTracker(StringRedisTemplate valkey) {
+    /**
+     * Every call goes through the instance-wide circuit. {@link #connected} alone makes three
+     * Valkey round trips on the subscribe path; unguarded, a reconnect during an outage paid
+     * a timeout for each presence operation on it.
+     */
+    public PresenceTracker(StringRedisTemplate valkey, ValkeyGuard guard) {
         this.valkey = valkey;
+        this.guard = guard;
     }
 
     /**
@@ -62,16 +67,13 @@ public class PresenceTracker {
      *         overlapping reconnect silent.
      */
     public boolean connected(UUID gameId, UUID userId, String sessionId) {
-        try {
+        return guard.call(() -> {
             String key = key(gameId, userId);
             valkey.opsForSet().add(key, sessionId);
             // Refreshed on every connection and heartbeat, so a live session never expires.
             valkey.expire(key, TTL);
             return size(key) == 1;
-        } catch (RuntimeException unavailable) {
-            log.debug("Presence unavailable: {}", unavailable.toString());
-            return false;
-        }
+        }, () -> false);
     }
 
     /**
@@ -80,14 +82,11 @@ public class PresenceTracker {
      * @return true only if that was the user's last connection.
      */
     public boolean disconnected(UUID gameId, UUID userId, String sessionId) {
-        try {
+        return guard.call(() -> {
             String key = key(gameId, userId);
             valkey.opsForSet().remove(key, sessionId);
             return size(key) == 0;
-        } catch (RuntimeException unavailable) {
-            log.debug("Presence unavailable: {}", unavailable.toString());
-            return false;
-        }
+        }, () -> false);
     }
 
     /** Called on PING so a connected but quiet player does not expire mid-game. */
@@ -102,12 +101,7 @@ public class PresenceTracker {
      *         connection that may not exist.
      */
     public boolean isOnline(UUID gameId, UUID userId) {
-        try {
-            return size(key(gameId, userId)) > 0;
-        } catch (RuntimeException unavailable) {
-            log.debug("Presence unavailable: {}", unavailable.toString());
-            return false;
-        }
+        return guard.call(() -> size(key(gameId, userId)) > 0, () -> false);
     }
 
     private long size(String key) {

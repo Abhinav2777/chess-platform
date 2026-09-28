@@ -304,11 +304,14 @@ Two reasons. A paused server holds connections and never answers, so every call 
 its timeout — the harder failure than connection refused. And it comes back on the same port,
 so the test can check recovery.
 
-### "What didn't you explain?"
-The first degraded move took 4.8 s to appear for the mover, not the ~2 s I expected. My
-suspect is the fanout publisher, which has no circuit breaker and blocks for the Redis
-timeout on every broadcast during an outage. It's recorded as unexplained until measured —
-I'd rather say that than guess.
+### "Tell me about something you measured and couldn't explain."
+The first degraded move took 4.8 s, not ~2 s. I recorded it as unexplained, then traced it:
+WebSocket frames and polls from the browser aligned with server log timestamps. The move
+hadn't committed when the first poll ran, and every Valkey call was taking 2 s — a local
+profile override from the first commit, doubling the fail-fast timeout. And only one of five
+Valkey callers had a circuit. One shared circuit plus one deleted line: 4.8 s → 1.9 s. My
+first suspect (the publisher alone) was half right; the trace found the other half.
+Cost of the fix, also measured: up to 5 s of recovery lag after Valkey returns. ADR-018.
 
 ---
 

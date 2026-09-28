@@ -1,5 +1,6 @@
 package com.chessplatform.realtime.internal;
 
+import com.chessplatform.common.resilience.ValkeyGuard;
 import com.chessplatform.realtime.GameEventPublisher;
 import com.chessplatform.realtime.protocol.Envelope;
 import io.micrometer.core.instrument.Counter;
@@ -70,6 +71,7 @@ public class ValkeyGameEventPublisher implements GameEventPublisher {
     private static final String CHANNEL_PREFIX = "game:";
 
     private final StringRedisTemplate valkey;
+    private final ValkeyGuard guard;
     private final RedisMessageListenerContainer container;
     private final GameChannelListener listener;
     private final WebSocketSender sender;
@@ -83,8 +85,10 @@ public class ValkeyGameEventPublisher implements GameEventPublisher {
                                     RedisMessageListenerContainer container,
                                     GameChannelListener listener,
                                     WebSocketSender sender,
+                                    ValkeyGuard guard,
                                     MeterRegistry metrics) {
         this.valkey = valkey;
+        this.guard = guard;
         this.container = container;
         this.listener = listener;
         this.sender = sender;
@@ -98,16 +102,21 @@ public class ValkeyGameEventPublisher implements GameEventPublisher {
 
     @Override
     public void publish(UUID gameId, Envelope event) {
-        try {
+        // Never rethrow. The move is already committed and durable; failing here would turn
+        // a fanout outage into a move failure. Clients notice the silence and poll (4.3).
+        //
+        // Through the instance-wide circuit: this runs on the socket's thread after commit,
+        // and without the guard every broadcast in an outage blocked that socket for the
+        // full Redis timeout — measured in the 4.3 follow-up.
+        boolean sent = guard.call(() -> {
             valkey.convertAndSend(CHANNEL_PREFIX + gameId, sender.serialise(event));
+            return true;
+        }, () -> false);
+        if (sent) {
             published.increment();
-        } catch (RuntimeException valkeyUnavailable) {
-            // Never rethrow. The move is already committed and durable; failing here would
-            // turn a fanout outage into a move failure. Clients see a stale board and
-            // recover by polling or reconnecting (ARCHITECTURE.md §13).
+        } else {
             publishFailures.increment();
-            log.warn("Fanout failed for game {} — clients will fall back to polling: {}",
-                    gameId, valkeyUnavailable.toString());
+            log.debug("Fanout skipped for game {}: Valkey unavailable", gameId);
         }
     }
 

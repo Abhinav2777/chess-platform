@@ -1,5 +1,6 @@
 package com.chessplatform.realtime.internal;
 
+import com.chessplatform.common.resilience.ValkeyGuard;
 import com.chessplatform.realtime.protocol.Envelope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,12 +41,15 @@ public final class ValkeyUserNotifier implements UserNotifier, MessageListener {
     private static final String CHANNEL_PREFIX = "user:";
 
     private final StringRedisTemplate valkey;
+    private final ValkeyGuard guard;
     private final GameSessionRegistry registry;
     private final WebSocketSender sender;
 
     public ValkeyUserNotifier(StringRedisTemplate valkey, RedisMessageListenerContainer container,
-                              GameSessionRegistry registry, WebSocketSender sender) {
+                              GameSessionRegistry registry, WebSocketSender sender,
+                              ValkeyGuard guard) {
         this.valkey = valkey;
+        this.guard = guard;
         this.registry = registry;
         this.sender = sender;
         container.addMessageListener(this, new PatternTopic(CHANNEL_PREFIX + "*"));
@@ -53,13 +57,9 @@ public final class ValkeyUserNotifier implements UserNotifier, MessageListener {
 
     @Override
     public void notify(UUID userId, Envelope message) {
-        try {
-            valkey.convertAndSend(CHANNEL_PREFIX + userId, sender.serialise(message));
-        } catch (RuntimeException valkeyUnavailable) {
-            // Never rethrow: the game already exists. The player finds it on reconnect
-            // (pull path) or in their game list.
-            log.warn("Could not notify user {}: {}", userId, valkeyUnavailable.toString());
-        }
+        // Never rethrow: the game already exists. The player finds it on reconnect (pull
+        // path) or in their game list.
+        guard.run(() -> valkey.convertAndSend(CHANNEL_PREFIX + userId, sender.serialise(message)));
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.chessplatform.matchmaking;
 
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.common.resilience.ValkeyGuard;
 import com.chessplatform.game.GameFacade;
 import com.chessplatform.game.TimeControl;
 import com.chessplatform.identity.IdentityFacade;
@@ -11,7 +12,6 @@ import com.chessplatform.matchmaking.internal.QueueTimeControls;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
@@ -35,13 +35,15 @@ import java.util.function.Supplier;
 public class MatchmakingFacade {
 
     private final MatchQueue queue;
+    private final ValkeyGuard guard;
     private final GameFacade games;
     private final IdentityFacade identity;
     private final Counter seeks;
 
-    public MatchmakingFacade(MatchQueue queue, GameFacade games, IdentityFacade identity,
-                             MeterRegistry metrics) {
+    public MatchmakingFacade(MatchQueue queue, ValkeyGuard guard, GameFacade games,
+                             IdentityFacade identity, MeterRegistry metrics) {
         this.queue = queue;
+        this.guard = guard;
         this.games = games;
         this.identity = identity;
         this.seeks = Counter.builder("chess.matchmaking.seeks")
@@ -112,22 +114,15 @@ public class MatchmakingFacade {
      * failing when Valkey is down: this is a courtesy on reconnect, not a request.
      */
     public Optional<UUID> unseenMatch(UUID userId) {
-        try {
-            return queue.matchOf(userId)
-                    .filter(value -> !MatchQueue.PENDING_VALUE.equals(value))
-                    .map(UUID::fromString);
-        } catch (DataAccessException valkeyUnavailable) {
-            return Optional.empty();
-        }
+        return guard.call(() -> queue.matchOf(userId)
+                .filter(value -> !MatchQueue.PENDING_VALUE.equals(value))
+                .map(UUID::fromString), Optional::empty);
     }
 
     /** The player has opened the game; stop re-announcing it. Best effort. */
     public void acknowledge(UUID userId, UUID gameId) {
-        try {
-            queue.acknowledge(userId, gameId);
-        } catch (DataAccessException ignored) {
-            // The record expires on its own (match-ttl).
-        }
+        // Best effort through the circuit; the record expires on its own (match-ttl).
+        guard.run(() -> queue.acknowledge(userId, gameId));
     }
 
     private static SeekResult fromMatchValue(String value) {
@@ -136,12 +131,11 @@ public class MatchmakingFacade {
                 : SeekResult.matched(UUID.fromString(value));
     }
 
-    private static <T> T valkey(Supplier<T> call) {
-        try {
-            return call.get();
-        } catch (DataAccessException unreachable) {
+    /** Through the circuit: while it is open, a seek is refused at once rather than after a timeout. */
+    private <T> T valkey(Supplier<T> call) {
+        return guard.call(call, () -> {
             throw new DomainException.Unavailable(ErrorCode.MATCHMAKING_UNAVAILABLE,
                     "Matchmaking is temporarily unavailable. Direct challenges still work.");
-        }
+        });
     }
 }

@@ -2,19 +2,16 @@ package com.chessplatform.common.ratelimit;
 
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.common.resilience.ValkeyGuard;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.List;
@@ -39,17 +36,16 @@ import java.util.Map;
  * the project owner chose availability — bcrypt at cost 12 still makes each guess cost
  * ~250 ms of server time.
  *
- * <p>Failing open alone is not enough. Every call would still wait out the Valkey timeout
- * before failing open, so an outage would add up to a second to <em>every move</em>. After
- * one failure the limiter stops asking Valkey for {@code circuit-open-for} (5 s) and allows
- * everything; the next call after that probes again. An outage costs one slow request per
- * five seconds per instance, not one per request.
+ * <p>Failing open alone is not enough: every call would still wait out the Valkey timeout
+ * first. Calls go through {@link ValkeyGuard}, the instance-wide circuit — after one failure
+ * nothing on this instance asks Valkey for five seconds. The limiter began with a private
+ * circuit (4.2); it moved to the shared guard once tracing showed the fanout publisher and
+ * presence paying the same timeout on the same request.
  */
 @Component
 @EnableConfigurationProperties(RateLimitProperties.class)
 public class RateLimiter {
 
-    private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
     private static final String KEY_PREFIX = "rl:";
 
     @SuppressWarnings("rawtypes")
@@ -57,27 +53,20 @@ public class RateLimiter {
 
     private final StringRedisTemplate valkey;
     private final RateLimitProperties properties;
-    private final Clock clock;
+    private final ValkeyGuard guard;
     private final Map<RateLimit, Counter> rejected = new EnumMap<>(RateLimit.class);
-    private final Counter unavailable;
-
-    /** Epoch millis until which Valkey is not consulted. Racy by design: a few extra probes are harmless. */
-    private volatile long circuitOpenUntil;
 
     public RateLimiter(StringRedisTemplate valkey, RateLimitProperties properties,
-                       Clock clock, MeterRegistry metrics) {
+                       ValkeyGuard guard, MeterRegistry metrics) {
         this.valkey = valkey;
         this.properties = properties;
-        this.clock = clock;
+        this.guard = guard;
         for (RateLimit limit : RateLimit.values()) {
             rejected.put(limit, Counter.builder("chess.ratelimit.rejected")
                     .tag("limit", limit.key())
                     .description("Requests refused by a rate limit")
                     .register(metrics));
         }
-        this.unavailable = Counter.builder("chess.ratelimit.unavailable")
-                .description("Checks skipped because Valkey was unreachable (failed open)")
-                .register(metrics);
     }
 
     /**
@@ -89,22 +78,19 @@ public class RateLimiter {
      *                                     the next token, for {@code Retry-After}
      */
     public void enforce(RateLimit limit, String subject) {
-        if (!properties.enabled() || clock.millis() < circuitOpenUntil) {
+        if (!properties.enabled()) {
             return;
         }
         RateLimitProperties.Policy policy = properties.policyFor(limit);
-        List<?> result;
-        try {
-            result = valkey.execute(TOKEN_BUCKET, List.of(KEY_PREFIX + limit.key() + ":" + subject),
-                    Integer.toString(policy.capacity()), Double.toString(policy.refillPerMs()));
-        } catch (DataAccessException valkeyUnavailable) {
-            circuitOpenUntil = clock.millis() + properties.circuitOpenFor().toMillis();
-            unavailable.increment();
-            log.warn("Rate limiter cannot reach Valkey; allowing requests for {}: {}",
-                    properties.circuitOpenFor(), valkeyUnavailable.toString());
+        // Fail open: null means Valkey was unreachable or the circuit is open.
+        List<?> result = guard.call(
+                () -> valkey.execute(TOKEN_BUCKET, List.of(KEY_PREFIX + limit.key() + ":" + subject),
+                        Integer.toString(policy.capacity()), Double.toString(policy.refillPerMs())),
+                () -> null);
+        if (result == null) {
             return;
         }
-        if (result == null || result.size() != 2) {
+        if (result.size() != 2) {
             throw new IllegalStateException("unexpected token-bucket result: " + result);
         }
         if (Long.parseLong(result.get(0).toString()) == 1) {

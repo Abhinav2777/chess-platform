@@ -44,6 +44,14 @@ can be down, and ADR-004 says a Valkey outage must never stop chess.
   `server.forward-headers-strategy=native` with only the balancer trusted. Reading
   `X-Forwarded-For` directly would let a client choose its own bucket.
 
+## Update, 2026-09-28 — circuit moved to ValkeyGuard (ADR-018)
+
+The limiter's private circuit became the instance-wide `ValkeyGuard`, shared with the fanout
+publisher, presence and matchmaking, after tracing showed them paying the same timeout on the
+same request. `chess.ratelimit.circuit-open-for` is now `chess.valkey.circuit-open-for`, and
+the `chess.ratelimit.unavailable` metric is replaced by `chess.valkey.circuit.trips` /
+`chess.valkey.calls.skipped`.
+
 ## Alternatives considered
 
 | Alternative | Why not |
