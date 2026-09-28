@@ -203,7 +203,7 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
 
 function GameView({ session, game, onLeave }:
                   { session: Session; game: GameSummary; onLeave: () => void }) {
-  const { connection, snapshot, clock, moves, failure, myTurn, submitMove, resign } =
+  const { connection, degraded, snapshot, clock, moves, failure, myTurn, submitMove, resign } =
     useGame(game.id);
 
   const orientation: Side = snapshot?.yourSide ?? 'WHITE';
@@ -220,7 +220,7 @@ function GameView({ session, game, onLeave }:
     <div className="game">
       <header>
         <button type="button" className="link" onClick={onLeave}>&larr; Back</button>
-        <Connection state={connection} />
+        <Connection state={connection} degraded={degraded} />
       </header>
 
       {snapshot ? (
@@ -321,16 +321,20 @@ function shortOutcome(status: string, result: string | null): string {
   return (result && SCORES[result]) ?? status.toLowerCase();
 }
 
-function Connection({ state }: { state: string }) {
-  const label = {
-    connecting: 'Connecting…',
-    live: 'Live',
-    reconnecting: 'Reconnecting…',
-    closed: 'Disconnected',
-  }[state] ?? state;
+function Connection({ state, degraded = false }: { state: string; degraded?: boolean }) {
+  const label = degraded && state === 'live'
+    // The socket is up but live updates are not arriving (fanout down); the board is
+    // being refreshed by polling. Said plainly, so a slower board does not look broken.
+    ? 'Live · updates delayed'
+    : {
+      connecting: 'Connecting…',
+      live: 'Live',
+      reconnecting: 'Reconnecting…',
+      closed: 'Disconnected',
+    }[state] ?? state;
 
   // Shown always, not just when broken. A user who can see the connection is live trusts
   // a quiet board; one who cannot assumes the app is broken and reloads — which in a
   // real-time app is the worst possible response, because it drops the socket.
-  return <span className={`connection ${state}`}>{label}</span>;
+  return <span className={`connection ${state}${degraded ? ' degraded' : ''}`}>{label}</span>;
 }

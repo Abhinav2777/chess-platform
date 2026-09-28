@@ -46,6 +46,16 @@ export interface GameSummary {
   blackMsLeft: number;
 }
 
+/**
+ * GET /api/games/{id}: the same consistent snapshot the socket's GAME_SNAPSHOT is built
+ * from (GameFacade#state), which is what lets a poll stand in for a lost event.
+ */
+export interface GameDetail {
+  game: GameSummary;
+  moves: { ply: number; uci: string; san: string; playedAt: string }[];
+  legalMoves: string[];
+}
+
 /** A time control, as the server's create endpoint takes it. */
 export interface TimeControl {
   initialSeconds: number;
@@ -125,4 +135,6 @@ export const api = {
     }),
 
   myGames: () => request<GameSummary[]>('/api/games?page=0&size=20'),
+
+  getGame: (gameId: string) => request<GameDetail>(`/api/games/${gameId}`),
 };

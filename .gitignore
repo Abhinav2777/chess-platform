@@ -26,6 +26,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 .vite/
+# Screenshots from the browser checks (frontend/e2e)
+frontend/e2e/out/
 
 # ---------------------------------------------------------------------------
 # Secrets and local config

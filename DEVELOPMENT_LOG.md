@@ -5,6 +5,42 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 4.3: Valkey outage end to end — Phase 4 complete
+
+**Design question first:** in the `local` profile (in-JVM fanout) Valkey carries no moves, so
+"stop Valkey" changes nothing there. The scenario that matters is `fanout=valkey` with players
+on different instances: the socket stays up, sending works, and nothing arrives.
+
+**Built**
+
+- `ValkeyOutageIntegrationTest`: Valkey **paused**, not stopped — a hung server (every call
+  waits for its timeout) is the harsher failure, and unpausing keeps the port so recovery is
+  testable. A full scholar's mate with Valkey down: 7/7 moves, correct result; seek refused
+  cleanly; live events after unpause.
+- Client fallback in `useGame`: two detectors (own-echo timeout 1.5 s; for the waiting player,
+  10 s of silence on the opponent's turn), then 2 s polling of the same snapshot the socket
+  sends, until an event arrives. Forward-only apply, ERROR clears the pending echo, resign
+  gets a follow-up poll. "Live · updates delayed".
+- `frontend/e2e/lobby.mjs` and `outage.mjs` committed as documented manual checks.
+
+**Decided:** reconcile at 10 s rather than 25 s. The waiting player has no echo to miss, so the
+reconcile interval *is* their detection time; 10 s costs ~100 req/s at 1,000 concurrent
+players. The better long-term signal is server-side (an instance sees its own subscription
+drop) — recorded, not built.
+
+**Measured in a browser** (PROJECT_STATE §12): healthy 0.13 s; first outage move 4.8 s for the
+mover and 10.6 s for the waiting opponent; steady state 0.8–3.9 s; < 0.1 s after unpause.
+
+**Not explained:** the mover's first degraded move (4.8 s vs ~1.5–2.5 s expected). The fanout
+publisher has no circuit, so each broadcast blocks its socket thread for the 1 s Redis timeout
+during an outage — the leading suspect, not verified. Recorded as the first thing to measure.
+
+**Also fixed:** PROJECT_STATE §3 had been left with a broken bullet by a 4.2 edit.
+
+**Hours:** ~2. Phase 4 complete at ~12 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 4.2: rate limiting
 
 **Decided (with the project owner):** a Lua token bucket rather than Bucket4j, and fail open

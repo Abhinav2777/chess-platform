@@ -1,11 +1,11 @@
-snapshot:  M3.3
+snapshot:  M4.3
 date:      2026-09-28
-contains:  Phase 1 + Phase 2 + Phase 3 complete (clock, aborts, repetition, resync, done-when proofs)
+contains:  Phases 1-4 complete: auth, game + clock + aborts + repetition, realtime + Valkey fanout,
+           matchmaking (Lua pairing, WebSocket push), rate limiting, Valkey-outage fallback
 migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock, V5 first_move_abort_deadline
-clock:     ADR-006 - never ticks, server or client. PostgreSQL now() decides and displays every
-           game clock (REST included since 3.3). Verified: +10 min JVM skew, kill -9 mid-game.
-aborts:    ADR-014 - until both players have moved, any expiry or resignation aborts.
-repetition: ADR-015 - automatic threefold from moves.fen_after, bounded by the halfmove clock.
-verified:  2026-09-28 - test 75/75, integrationTest 82/82, npm run build, Postman 54 req / 132
-           assertions, 100-round concurrency soak.
-next:      Phase 4 - Valkey + matchmaking (PROJECT_STATE §10)
+valkey:    queue + seeks + matches (ADR-016), rate-limit buckets (ADR-017), fanout + presence.
+           Nothing unrecoverable (ADR-004); verified by pausing it mid-game.
+boundaries: ArchUnit 1.5.1, genuinely enforced since 4.1b (guarded against empty imports).
+verified:  2026-09-28 - test 77/77, integrationTest 108/108, Postman 54 req / 132 assertions,
+           browser checks frontend/e2e (lobby, outage).
+next:      Phase 5 - async processing: outbox, SQS, Elo (PROJECT_STATE §10)

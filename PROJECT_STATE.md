@@ -7,11 +7,11 @@
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M3.3 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M4.3 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.2 (rate limiting)
+**Last updated:** 2026-09-28 · **Updated at:** Phase 4 Milestone 4.3 — **Phase 4 complete**
 
 
 ---
@@ -74,18 +74,35 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 4 — Valkey + Matchmaking |
-| **Phase status** | **4.2 green**: unit 77, integration 107, Postman 132/132. 4.3 remains. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~10 of 12–16 |
-| **Cumulative hours (estimated)** | ~65 of 135–175 |
+| **Current phase** | Phase 4 — Valkey + Matchmaking — **complete** |
+| **Phase status** | **Phase 4 complete**: unit 77, integration 108, Postman 132/132, browser checks `e2e:lobby` + `e2e:outage` green. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~12 of 12–16 (done) |
+| **Cumulative hours (estimated)** | ~67 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 4.3 — full game with Valkey stopped; client polling fallback (§10) |
+| **Next milestone** | Phase 5 — async processing: outbox, SQS, Elo (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 4 — Milestone 4.3: Valkey outage end to end (2026-09-28, green) — **Phase 4 complete**
+
+- **Server:** `ValkeyOutageIntegrationTest` (fanout=valkey, Valkey **paused** so it hangs and
+  can recover on the same port): a whole game to checkmate with Valkey down, 7/7 moves, seek →
+  `MATCHMAKING_UNAVAILABLE`, live events resume after unpause.
+- **Client fallback** (`useGame`): degraded when our own `MOVE_MADE` echo is missing after
+  1.5 s, or — for the waiting player — after 10 s of socket silence on the opponent's turn;
+  then polls `GET /api/games/{id}` every 2 s until a socket event arrives. Forward-only apply;
+  refused moves (ERROR) never count as a missing echo; a follow-up poll after resigning.
+  Indicator: "Live · updates delayed".
+- **Browser-verified** (`npm run e2e:outage`): play continues through a Valkey pause; latency
+  table in §12; recovery < 100 ms.
+- `frontend/e2e/` — both browser checks committed (`e2e:lobby`, `e2e:outage`) with a README.
+- **Unattributed:** first degraded move took 4.8 s for the mover (expected ~1.5–2.5 s). Leading
+  suspect: fanout publish blocking the socket thread for the 1 s Redis timeout (no circuit).
+
 
 ### Phase 4 — Milestone 4.2: rate limiting (2026-09-28, green)
 
@@ -419,9 +436,7 @@ working on the development machine.
 
 ## 3. Not yet started
 
- **4.3** Valkey-down game + client polling fallback.
 - **Phases 5–10** per `ROADMAP.md`.
-- **Phases 4–10** per `ROADMAP.md`.
 
 ---
 
@@ -517,22 +532,21 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 4.3 — Valkey stopped, end to end** (~2 h). Phase 4's "done when": `docker stop
-valkey` degrades to polling without any move being lost.
+**Phase 4 is complete.** Before Phase 5:
 
-- **Server side is mostly proven:** moves commit with Valkey down
-  (`ValkeyFanoutIntegrationTest`), matchmaking returns 503, rate limiting fails open.
-  Extend to a **full game** (several moves by both players, to a result) with Valkey
-  stopped, through REST — the path a degraded client will use.
-- **Client side is the gap:** with fanout down, a player never receives `MOVE_MADE`. The
-  client needs to notice silence and poll `GET /api/games/{id}` (which now returns the same
-  `GameState` as the snapshot). Likely rule: while it is the opponent's turn and no event
-  has arrived for N seconds, poll with backoff; stop when events resume. Make the lobby say
-  "matchmaking unavailable" and still offer direct challenges.
-- **Browser check:** play in two headless browsers, `docker stop chess-valkey` mid-game,
-  keep playing, `docker start`, confirm recovery. Consider committing `lobby-e2e.mjs` into
-  `frontend/e2e/` alongside it.
-- Then Phase 4 closeout: roadmap checkpoint, archive at the phase boundary.
+1. Commit Milestone 4.3.
+2. Phase-boundary archive (per §0):
+   `git archive --format=tar.gz -o ../chess-platform-M4.3-2026-09-28.tar.gz HEAD`.
+3. **Optional, ~30 min, recommended:** circuit-break `ValkeyGameEventPublisher.publish` the
+   way `RateLimiter` is, then rerun `npm run e2e:outage` and see whether the 4.8 s first
+   degraded move drops toward ~1.5 s. Measure before and after; record in §12.
+
+**Phase 5 — async processing (10–14 h), per ROADMAP.md:** transactional outbox + relay,
+SQS Standard + DLQ (LocalStack in tests), `GameFinished` event, Elo consumer with a
+`processed_events` dedupe table, worker profile. Start with the design discussion: what the
+outbox row holds, relay polling vs `LISTEN/NOTIFY`, and why `rating += delta` is not
+idempotent. Note an interaction with ADR-014: aborted games must never produce a rating
+event.
 
 ---
 
@@ -556,6 +570,9 @@ If it is not in this table, it is an estimate and must be labelled as one.
 |---|---|---|---|
 | Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
+| Matchmaking pairing latency (browser) | Both players on the board 0.3–0.8 s after the second seek | Headless Chromium, local, 2026-09-28 | `npm run e2e:lobby` |
+| Degraded play, Valkey paused (browser) | Healthy ~0.13 s; first outage move 4.8 s (mover) / 10.6 s (waiting opponent); steady state 0.8–3.9 s; after unpause < 0.1 s | Headless Chromium, local, fanout=valkey, 2026-09-28 | `npm run e2e:outage` |
+| Degraded move visible via REST (server) | Worst 1,039 ms per move with Valkey paused | Testcontainers, 2026-09-28 | `ValkeyOutageIntegrationTest` prints `MEASURED` |
 | Rate limiter cost during a Valkey outage | First move after Valkey stops: 1,037 ms (= 1 s Redis command timeout); later moves within 5 s skip Valkey (circuit) | Testcontainers, 2026-09-28 | `ValkeyFanoutIntegrationTest.survivesValkeyOutage` prints `MEASURED` |
 | Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |
 

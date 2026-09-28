@@ -287,6 +287,31 @@ lets any client pick its own bucket. Trust it only from the ALB (forward-headers
 
 ---
 
+## Milestone 4.3 — degrading when the fanout dies
+
+### "Your pub/sub goes down mid-game. What do players see?"
+The socket stays up — sending needs only the instance — but nothing arrives. The client
+notices two ways: the server echoes a mover's own move through the same fanout, so a missing
+echo after 1.5 s is a precise signal; and the waiting player, who has nothing to echo, polls
+once after 10 s of silence on the opponent's turn. Then it polls the same snapshot the socket
+would have sent, every 2 s, until an event arrives again. Nothing is lost because Postgres
+holds every move; Valkey only carries notifications. I verified it by pausing Valkey
+mid-game in a headless-browser test: steady-state opponent latency about two seconds,
+immediate recovery.
+
+### "Why pause the container instead of stopping it?"
+Two reasons. A paused server holds connections and never answers, so every call waits out
+its timeout — the harder failure than connection refused. And it comes back on the same port,
+so the test can check recovery.
+
+### "What didn't you explain?"
+The first degraded move took 4.8 s to appear for the mover, not the ~2 s I expected. My
+suspect is the fanout publisher, which has no circuit breaker and blocks for the Redis
+timeout on every broadcast during an outage. It's recorded as unexplained until measured —
+I'd rather say that than guess.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,
