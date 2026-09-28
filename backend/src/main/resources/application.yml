@@ -156,6 +156,24 @@ chess:
       - http://localhost:5173
       - http://localhost:3000
 
+  # Matchmaking (ADR-016). The queue lives in Valkey; pairing is a Lua script.
+  matchmaking:
+    # Rating difference accepted at once, growth per second waited, and the cap. At these
+    # values a 200-point gap is accepted after 10 s and the 400 cap is reached after 30 s.
+    base-window: 100
+    window-growth: 10
+    max-window: 400
+    # The client re-seeks every 15 s while waiting. Three missed re-seeks = gone.
+    seek-ttl: 45s
+    # Claim-to-commit budget for creating the game. Far above normal (milliseconds);
+    # bounds how long an instance crash can hold two players out of the queue.
+    pending-ttl: 30s
+    # How long an unseen match is re-announced on reconnect.
+    match-ttl: 60s
+    scan-limit: 50
+    neighbours: 5
+    pairs-per-tick: 50
+
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
   error:

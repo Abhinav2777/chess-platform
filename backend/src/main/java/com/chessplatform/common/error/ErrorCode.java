@@ -34,6 +34,19 @@ public enum ErrorCode {
     GAME_NOT_FOUND,
     NOT_A_PLAYER,
 
+    // --- matchmaking ----------------------------------------------------------
+    /** Only the preset time controls have queues; anything else would be an empty one. */
+    UNSUPPORTED_TIME_CONTROL,
+    /** Already seeking a different time control. Cancel first; seeks are not merged. */
+    ALREADY_SEEKING,
+    /** One game at a time: a player with an ACTIVE game cannot be paired into another. */
+    ALREADY_IN_GAME,
+    /**
+     * The matchmaking queue lives in Valkey and Valkey is unreachable. Direct challenges
+     * still work — they never touch the queue.
+     */
+    MATCHMAKING_UNAVAILABLE,
+
     // --- generic ------------------------------------------------------------
     VALIDATION_FAILED,
     CONFLICT

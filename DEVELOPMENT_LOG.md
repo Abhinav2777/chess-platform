@@ -5,6 +5,46 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-28 — Milestone 4.1a: matchmaking core
+
+**Decided before building (with the project owner)**
+
+- **The `game:{id}:state` read cache is dropped.** It was on the roadmap's must-implement
+  list. Game reads are PK lookups; the move pipeline must hit PostgreSQL anyway; a cache would
+  add invalidation risk to the correctness-critical path for no measured gain. Revisit on
+  Phase 9 evidence.
+- **Matches are pushed over WebSocket** rather than polled (owner's call, for UX and real-time
+  depth; ~2–3 h). Push needs a pull fallback because pub/sub is fire-and-forget, so matches
+  stay readable for 60 s — the ADR-007 pattern again.
+
+**Built** — ADR-016: two ZSETs per preset queue, a TTL'd seek key, a PENDING/gameId match key,
+five Lua scripts, a leaderless `Matchmaker` on every instance, `MatchmakingFacade`, `GameFacade
+.startGame`/`hasActiveGame`, `503` via a new `DomainException.Unavailable`, four metrics.
+
+**Design points worth remembering**
+
+- **The idempotent re-seek carries three jobs**: heartbeat (refreshes the TTL), repair
+  (`ZADD NX` re-adds a lost entry without resetting the join time), and crash recovery (after
+  a PENDING claim lapses, the next re-seek queues the player again). One mechanism instead of
+  three is less to get wrong.
+- **Queue time comes from Valkey `TIME`** inside the scripts — one clock for waiting, as
+  PostgreSQL `now()` is one clock for games.
+- **The commit point is the game row.** Everything before it in Valkey is disposable.
+- **Oldest-first makes the window effectively symmetric**: anyone older than the current seeker
+  was visited first, with a wider window, and found nobody — so no player is paired outside
+  what their own window would allow.
+
+**Known limit, recorded:** `pair.lua` and `cancel.lua` build key names at runtime. Fine on one
+node; Valkey Cluster requires declared, same-slot keys. ADR-016 describes the re-keying.
+
+**Verified:** `MatchmakingIntegrationTest` 13/13 (real Valkey + PostgreSQL), including 20
+players × 2 concurrent seeks against 4 concurrent matchmakers → exactly 10 games, every player
+in one, no queue or seek key left. Full suite on `--rerun-tasks`: unit 75, integration 95.
+
+**Hours:** ~3. Phase 4 at ~3 of 12–16.
+
+---
+
 ## 2026-09-28 — Milestone 3.3: Phase 3 closeout
 
 **Built**

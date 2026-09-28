@@ -28,6 +28,11 @@ public interface GameRepository extends JpaRepository<Game, UUID> {
            + "ORDER BY g.createdAt DESC")
     List<Game> findByPlayer(@Param("playerId") UUID playerId, Pageable pageable);
 
+    /** Served by idx_games_white / idx_games_black; a player has few games, fewer active. */
+    @Query("SELECT count(g) > 0 FROM Game g WHERE g.status = com.chessplatform.game.GameStatus.ACTIVE "
+           + "AND (g.whitePlayerId = :playerId OR g.blackPlayerId = :playerId)")
+    boolean existsActiveForPlayer(@Param("playerId") UUID playerId);
+
     /**
      * Claims games whose clock has expired, for the timeout sweeper.
      *

@@ -2,6 +2,7 @@ package com.chessplatform.game;
 
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
+import com.chessplatform.game.internal.GameService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,10 +14,11 @@ import java.util.UUID;
 /**
  * The game module's sole entry point for other modules.
  *
- * <p>Read-only by design. Nothing outside this module creates games or plays moves —
- * those go through the HTTP layer or, from Phase 4, matchmaking calling
- * {@code GameService} within the module. A facade should expose what collaborators need,
- * not everything the module can do.
+ * <p>Deliberately narrow. Other modules may read games and — since Phase 4 — start one,
+ * because matchmaking has to turn a pairing into a game and cannot reach
+ * {@code game.internal}. They cannot play moves or end games: those stay behind the HTTP
+ * and WebSocket paths, which carry the player's identity. A facade should expose what
+ * collaborators need, not everything the module can do.
  */
 @Service
 public class GameFacade {
@@ -24,9 +26,24 @@ public class GameFacade {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final GameRepository games;
+    private final GameService gameService;
 
-    public GameFacade(GameRepository games) {
+    public GameFacade(GameRepository games, GameService gameService) {
         this.games = games;
+        this.gameService = gameService;
+    }
+
+    /**
+     * Starts a game between two players. Its own transaction: when this returns, the game
+     * is committed and visible to any instance, so a caller may announce it immediately.
+     */
+    public GameView startGame(UUID whitePlayerId, UUID blackPlayerId, TimeControl timeControl) {
+        return toView(gameService.createGame(whitePlayerId, blackPlayerId, timeControl));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasActiveGame(UUID playerId) {
+        return games.existsActiveForPlayer(playerId);
     }
 
     @Transactional(readOnly = true)
