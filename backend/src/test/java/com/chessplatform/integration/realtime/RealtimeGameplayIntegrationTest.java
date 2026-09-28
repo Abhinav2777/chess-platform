@@ -319,6 +319,30 @@ class RealtimeGameplayIntegrationTest {
             }
         }
 
+        /**
+         * The limiter runs before the move pipeline, so a flood is refused before it costs a
+         * database transaction. Twenty moves a second is the bucket; frames arrive in
+         * milliseconds, so at most one or two tokens refill during the burst.
+         */
+        @Test
+        @DisplayName("a flood of moves is cut off with RATE_LIMITED")
+        void rateLimitsMoves() throws Exception {
+            try (TestWebSocketClient blackClient = connectedAndSubscribed(blackToken)) {
+                for (int i = 0; i < 25; i++) {
+                    blackClient.send(ClientMessage.MOVE, new Payloads.Move(
+                            game.id(), UUID.randomUUID(), 0, "e7", "e5", null));
+                }
+                java.util.List<Object> codes = new java.util.ArrayList<>();
+                for (int i = 0; i < 25; i++) {
+                    codes.add(blackClient.payloadOf(blackClient.await("ERROR")).get("code"));
+                }
+                assertThat(codes).startsWith("NOT_YOUR_TURN").contains("RATE_LIMITED");
+                assertThat(codes.stream().filter("NOT_YOUR_TURN"::equals).count())
+                        .as("about one bucket's worth got through to the pipeline")
+                        .isBetween(20L, 22L);
+            }
+        }
+
         @Test
         @DisplayName("rejects a move made out of turn")
         void rejectsOutOfTurn() throws Exception {

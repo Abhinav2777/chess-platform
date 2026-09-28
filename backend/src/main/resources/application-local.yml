@@ -25,3 +25,13 @@ spring:
 logging:
   level:
     org.hibernate.SQL: INFO
+
+# Rate limits sized for development: Postman, the browser checks and manual play all log in
+# from 127.0.0.1 many times a minute. The production-shaped values in application.yml are
+# exercised by RateLimitIntegrationTest instead.
+chess:
+  ratelimit:
+    policies:
+      login-ip:    { capacity: 200, period: 1m }
+      login-user:  { capacity: 100, period: 1m }
+      register-ip: { capacity: 100, period: 1m }

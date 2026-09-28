@@ -174,6 +174,20 @@ chess:
     neighbours: 5
     pairs-per-tick: 50
 
+  # Rate limits (Milestone 4.2, ARCHITECTURE.md §11). Token buckets in Valkey: `capacity`
+  # at once, refilling at `capacity` per `period`. Fail open when Valkey is unreachable.
+  ratelimit:
+    enabled: true
+    circuit-open-for: 5s
+    policies:
+      login-ip:    { capacity: 10, period: 1m }
+      login-user:  { capacity: 5,  period: 1m }
+      register-ip: { capacity: 5,  period: 1m }
+      # Humans cannot sustain 20 moves a second; a script can. Burst-tolerant for premoves.
+      move:        { capacity: 20, period: 1s }
+      # The client re-seeks every 15 s; ten in 30 s leaves room for clicks and reconnects.
+      seek:        { capacity: 10, period: 30s }
+
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
   error:

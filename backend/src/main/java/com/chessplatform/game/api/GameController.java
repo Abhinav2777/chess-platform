@@ -3,6 +3,8 @@ package com.chessplatform.game.api;
 import com.chessplatform.chess.MoveIntent;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
+import com.chessplatform.common.ratelimit.RateLimit;
+import com.chessplatform.common.ratelimit.RateLimiter;
 import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.game.GameFacade;
 import com.chessplatform.game.GameState;
@@ -46,14 +48,17 @@ public class GameController {
     private final GameFacade gameFacade;
     private final IdentityFacade identity;
     private final ServerClock serverClock;
+    private final RateLimiter rateLimiter;
     private final SecureRandom random = new SecureRandom();
 
     public GameController(GameService gameService, GameFacade gameFacade,
-                          IdentityFacade identity, ServerClock serverClock) {
+                          IdentityFacade identity, ServerClock serverClock,
+                          RateLimiter rateLimiter) {
         this.gameService = gameService;
         this.gameFacade = gameFacade;
         this.identity = identity;
         this.serverClock = serverClock;
+        this.rateLimiter = rateLimiter;
     }
 
     @PostMapping
@@ -116,6 +121,8 @@ public class GameController {
     public GameResponses.MoveAccepted move(@PathVariable UUID gameId,
                                            @Valid @RequestBody GameRequests.SubmitMove request,
                                            @AuthenticationPrincipal AuthenticatedUser caller) {
+        // The same per-user bucket as the WebSocket path: changing transport buys nothing.
+        rateLimiter.enforce(RateLimit.MOVE, caller.id().toString());
 
         GameService.MoveAccepted accepted = gameService.submitMove(gameId, caller.id(),
                 new SubmitMoveCommand(

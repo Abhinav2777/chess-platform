@@ -102,6 +102,10 @@ edit — or make the edit fail loudly when its anchor is absent.
 - [ ] **A `@Scheduled` job keeps running in every cached test context.** Disabling it with
       a property in one test class does nothing about another class's context that is still
       alive and pointed at the same database. Disable it in the shared base class.
+- [ ] **A test context with no Valkey configured talks to `localhost:6379`** — on a
+      development machine, the compose Valkey. Anything that reaches Valkey from such a
+      context passes in CI and fails locally (or the reverse). Switch it off or point it at
+      a container; never leave it to whatever is running.
 
 ## JDK upgrades and bytecode readers
 

@@ -3,8 +3,10 @@ package com.chessplatform.common.error;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -60,6 +62,20 @@ public class ApiExceptionHandler {
     }
 
     /**
+     * 429 with {@code Retry-After}. A separate handler only because the header needs a
+     * {@code ResponseEntity}; the body is the same problem+json as every other domain error.
+     */
+    @ExceptionHandler(DomainException.RateLimited.class)
+    public ResponseEntity<ProblemDetail> handleRateLimited(DomainException.RateLimited exception,
+                                                           HttpServletRequest request) {
+        // Whole seconds, rounded up: rounding down would tell a client to retry too early.
+        long seconds = Math.max(1, (exception.retryAfter().toMillis() + 999) / 1000);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(handleDomain(exception, request));
+    }
+
+    /**
      * Bean-validation failures, reported per field so a form can highlight the offending
      * input rather than showing one generic message above everything.
      */
@@ -103,6 +119,7 @@ public class ApiExceptionHandler {
             case DomainException.Unauthorized ignored -> HttpStatus.UNAUTHORIZED;
             case DomainException.Rejected ignored -> HttpStatus.UNPROCESSABLE_CONTENT;
             case DomainException.Unavailable ignored -> HttpStatus.SERVICE_UNAVAILABLE;
+            case DomainException.RateLimited ignored -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
