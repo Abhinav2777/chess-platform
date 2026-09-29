@@ -8,4 +8,4 @@ image:     ghcr.io/abhinav2777/chess-platform:<commit-sha> (public), one image /
 ci:        protected main; backend + frontend + image (Trivy before push) required - ADR-022;
            nightly browser checks; Dependabot live (6 PRs open, 4 majors)
 verified:  2026-09-30 - main run 36616824363 green; unit 90, integration 127.
-next:      Dependabot triage, then Phase 7 - AWS (PROJECT_STATE §10)
+next:      Phase 7 - AWS (PROJECT_STATE §10); Dependabot triage done 2026-09-30

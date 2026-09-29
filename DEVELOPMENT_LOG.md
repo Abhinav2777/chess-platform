@@ -5,6 +5,53 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — Dependabot triage: the pins were fighting the BOM
+
+Dependabot's first run opened six PRs; five were red. Triaged together on one branch rather
+than merged one by one, because the failures were not independent.
+
+**Testcontainers (PR #3) — a latent bug, not an upgrade.** The resolved classpath already had
+Testcontainers **core 2.0.5** (the Spring Boot BOM manages it) next to `junit-jupiter`,
+`postgresql` and `jdbc` **1.20.4** (our catalog's BOM). A mixed-major classpath that happened to
+work. Bumping our BOM could not resolve: 2.0 renamed every module (`testcontainers-postgresql`)
+and moved `PostgreSQLContainer` to `org.testcontainers.postgresql` (no longer generic). Fix:
+**delete** our BOM and version, use the new names, let Boot own the version.
+
+**AssertJ (in PR #2) — the same mistake the other way round.** Our `3.26.3` pin was
+*downgrading* Boot's 3.27.7. Deleted too. Rule recorded in BOOT4_CHECKLIST: pin only what
+Boot does not manage; check `dependencyInsight` for `->` arrows pointing down.
+
+**Gradle 9.8.0 (in PR #2)** — Dependabot edits only `gradle-wrapper.properties`;
+`verifyGradleVersion` failed it on the drift from the catalog. The guard did its job. Bumped the
+catalog, regenerated the wrapper (jar and `gradlew.bat` from the real distribution — which also
+finished Phase 0's bootstrap: `README-MISSING-JAR.md` removed), and cleared the Gradle 9.6
+deprecations (`by getting` / `by registering` → `named` / `register`).
+
+**logstash-logback-encoder 9.0 (PR #4)** moved to Jackson 3. It was the only thing pulling
+Jackson 2 databind into the runtime, so Jackson 2 is gone from the image and the
+`jackson-2-bom.version` CVE override with it (fewer overrides to forget). Verified the encoder at
+runtime, not just by compiling: ran the migrate role on the jar — 45 JSON log lines, exit 0.
+(Seen in passing: the Spring banner prints 7 non-JSON lines to stdout — Phase 7/8 item.)
+
+**Vite 8 + plugin-react 6 + TypeScript 7 (PRs #5, #6, #1).** #5 and #6 each failed alone —
+plugin-react 6 requires Vite 8, plugin-react 4 rejects it — so they can only land together;
+`dependabot.yml` now groups them. 52 fewer packages (Vite 8 drops esbuild/Babel for its own
+toolchain). TS 7 is the native compiler; the build went to ~0.5 s, fast enough to be suspicious,
+so a type error was planted: `TS2322`, exit 1. It checks.
+
+**Browser checks run locally on the new stack:** lobby (pair, clocks, resign, rating push) and
+outage (degrade → poll → recover, same timings as Phase 4). Lobby showed one console 404 that the
+script could not attribute; added response-URL capture, which saw nothing — so it was a request
+the page never makes: Chrome's own `/favicon.ico`. Pre-existing. Inline SVG icon added; console
+errors now `none`, so a real one will stand out.
+
+**Result:** unit 90, integration 127, frontend build, both browser checks — green.
+The six Dependabot PRs are superseded (Dependabot closes them once `main` has the versions).
+
+**Hours:** ~1.5.
+
+---
+
 ## 2026-09-30 — Phase 6 complete
 
 PR #7 (the image-name fix and the matchmaking race fix) merged; the run on `main`

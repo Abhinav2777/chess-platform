@@ -76,16 +76,28 @@ left half-migrated because a sub-milestone ended.
 |---|---|
 | **Current phase** | Phase 6 — Docker + CI/CD — **complete** |
 | **Phase status** | **Phase 6 complete.** CI green on protected `main`; image published and public; unit 90, integration 127. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done) |
-| **Cumulative hours (estimated)** | ~83 of 135–175 |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5 |
+| **Cumulative hours (estimated)** | ~84.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Dependabot triage, then Phase 7 — AWS (§10) |
+| **Next milestone** | Phase 7 — AWS: design + cost decisions first (§10, §11) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Dependabot triage (2026-09-30)
+
+- All six first-run PRs handled on one branch: Gradle 9.8.0, Testcontainers 2.0.5, AssertJ
+  3.27.7, logstash-logback-encoder 9.0, Vite 8.3.1 + plugin-react 6.1.1, TypeScript 7.0.2.
+- **Latent bug fixed:** the catalog's Testcontainers and AssertJ pins fought the Boot BOM
+  (mixed 1.x/2.x Testcontainers classpath; AssertJ downgraded). Both pins deleted; Boot owns them.
+- Jackson 2 databind no longer ships (encoder 9 is on Jackson 3); its CVE override removed.
+- Dependabot groups Vite with its React plugin; wrapper bootstrap finished (`gradlew.bat`).
+- Verified: unit 90, integration 127, frontend build (and a planted type error caught),
+  migrate role with JSON logs, both browser checks; console errors `none` after a favicon fix.
+
 
 ### Phase 6 — closeout (2026-09-30) — **Phase 6 complete**
 
@@ -623,7 +635,7 @@ Full reasoning in `docs/adr/`. Summary:
 | 008 | SQS Standard + outbox + `processed_events` dedupe; **not** Kafka, **not** FIFO |
 | 009 | JWT access + rotating refresh; WebSocket auth in the first message, not the URL |
 | 010 | ECS Fargate as the production path; EKS time-boxed; **no NAT Gateway** |
-| 011 | Java 25 LTS + Spring Boot 4.1.1 + **Gradle 9.7.1**; virtual threads, no WebFlux (SQS client amended by 020) |
+| 011 | Java 25 LTS + Spring Boot 4.1.1 + **Gradle 9.7.1** (9.8.0 since 2026-09-30); virtual threads, no WebFlux (SQS client amended by 020) |
 | 012 | JitPack accepted for chesslib, scoped via `exclusiveContent` to one group |
 | 013 | Refresh tokens rotate on every use; reuse of a spent token revokes the whole family |
 | 014 | Games nobody started are aborted, never rated — through the same deadline, index and sweeper as timeouts |
@@ -669,10 +681,7 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 1. **Phase-boundary archive** (after this PR merges):
    `git archive --format=tar.gz -o ../chess-platform-M6-2026-09-30.tar.gz origin/main`
-2. **Dependabot triage (~1 h)** — 6 open PRs, four majors. Each needs `@dependabot rebase` (they
-   predate the CI fixes), a green run, and a changelog read: Testcontainers 2.0 renamed modules
-   and packages; Vite 8 / TypeScript 7 / plugin-react 6 belong together; logstash-encoder 9 may
-   let the `jackson-2-bom.version` override go.
+2. ~~Dependabot triage~~ — done 2026-09-30 (§2). Close PRs #1–#6 if Dependabot has not.
 3. **Phase 7 — AWS (14–18 h).** Starts with a design and cost discussion; the open questions in
    §11 (account, region, domain) must be answered first, and the $20 budget alarm exists before
    the first `terraform apply` (DEPLOYMENT.md rule 1).
