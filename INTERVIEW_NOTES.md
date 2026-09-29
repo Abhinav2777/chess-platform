@@ -398,6 +398,29 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Dependency updates — the pins that fought the BOM
+
+### "How do you keep dependencies up to date?"
+Dependabot weekly, minors and patches grouped, majors one per PR because those are the ones to
+read. CI is the first filter; a Trivy scan catches what Dependabot can't see. But its first run
+taught me more than that: five of six PRs were red, and triaging them found a real bug. We
+pinned Testcontainers at 1.20.4 while Spring Boot's BOM managed 2.0.5, so the classpath had core
+at 2.x and the modules at 1.x — it happened to work. And our AssertJ pin was quietly *downgrading*
+Boot's version. The fix wasn't a bump, it was deleting both pins. My rule now: pin only what the
+framework doesn't manage, and read `dependencyInsight` for arrows that point down.
+
+### "Did any update need more than a version change?"
+Three. Testcontainers 2 renamed its modules and moved classes. Vite 8 and its React plugin
+could only move together — each PR failed alone — so I grouped them in Dependabot. And the log
+encoder moved to Jackson 3, which took Jackson 2 out of the image entirely and let me delete a
+CVE override. I verified that one by running the jar and parsing the log output, because a
+logging library can compile fine and break at runtime.
+
+### "Your type-check + build now takes half a second. How do you know it still type-checks?"
+I didn't assume it. I planted a type error and watched the build fail with TS2322.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,
