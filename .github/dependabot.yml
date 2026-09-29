@@ -18,6 +18,11 @@ updates:
     directory: /frontend
     schedule: { interval: weekly }
     groups:
+      # Vite and its React plugin move together, majors included: plugin-react 6 requires
+      # Vite 8 and plugin-react 4 rejects it, so as two PRs (#5, #6) neither could pass CI.
+      # Listed first — Dependabot puts an update in the first group that matches.
+      vite:
+        patterns: ['vite', '@vitejs/*']
       npm-minor-and-patch:
         update-types: [minor, patch]
 
