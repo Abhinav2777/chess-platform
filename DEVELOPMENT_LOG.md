@@ -5,6 +5,25 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — 6.2: the second CI run found a real race
+
+The fix PR's run (99154576839): `frontend` green, `backend` red — the 20-player matchmaking test,
+`ALREADY_IN_GAME`, after passing every local run and CI's first. Not flaky test code: a real race.
+A seek read "no match yet"; a matchmaker paired the player and committed the game; the seek's
+active-game check then found it and refused a player who had just been matched.
+
+**Fixed** by re-reading the match key before refusing (sound by write order: key before commit).
+**Reproduced deterministically first** — a Mockito spy on `MatchQueue.matchOf` runs a tick right
+after the seek's first read — and seen failing with CI's exact error. A first hook, on
+`GameFacade.hasActiveGame`, failed for the wrong reason (the forced tick joined that read-only
+transaction and could not insert); caught by reading the failure message instead of trusting red.
+20-player test then passed 5 more runs; full suite 90 + 127 green. ADR-016 correction.
+
+**Lessons:** a concurrency test on one machine explores one machine's timing. And a test written
+to reproduce a bug must fail *with that bug's message*, or it has not reproduced anything.
+
+---
+
 ## 2026-09-30 — 6.2: the first CI run ever
 
 The owner created `main` and made it the default branch; CI ran for the first time in the

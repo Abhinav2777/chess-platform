@@ -380,6 +380,24 @@ a lost push costs a moment, not correctness. Measured in a browser: 0.8 s from r
 
 ---
 
+## Phase 6 — what the first CI runs found
+
+### "Tell me about a bug CI caught that your machine didn't."
+A race in matchmaking. My 20-player concurrency test had passed every local run; on the second CI
+run it failed with "finish your current game". A player's duplicate seek read "no match yet",
+then a matchmaker paired them and committed the game, then the seek's active-game check found it.
+I reproduced it deterministically — a Mockito spy that runs a pairing tick right after the seek's
+first read — watched it fail with exactly CI's error, then fixed it by re-reading the match key
+before refusing. That's sound because pairing writes the key before the game commits, so the key
+is visible no later than the game. Different machine, different timing: that's what CI is for.
+
+### "And the first run?"
+The image job failed because image names must be lowercase and my GitHub username isn't. The
+metadata action lowercased the tags; my scan step didn't. Nothing local could have caught it —
+locally the image was just `chess-platform:dev`.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,
