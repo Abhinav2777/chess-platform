@@ -290,6 +290,7 @@ each is recorded below the table rather than silently dropped.
 | `PONG` | — | reply to `PING` |
 | `SEEK_STATUS` | `{status, initialSeconds?, incrementSeconds?}` — QUEUED \| PAIRING \| CANCELLED \| NOT_SEEKING | reply to `SEEK` / `CANCEL_SEEK` (4.1b) |
 | `MATCH_FOUND` | `{gameId, yourSide, initialSeconds, incrementSeconds}` | pushed on pairing; in reply to a seek that finds a match; after `AUTH_OK` if unseen (4.1b, ADR-016) |
+| `RATING_UPDATED` | `{gameId, rating, delta}` | after the rating worker commits, via the user channel (5.3); never for a duplicate delivery |
 
 Revisions from the Phase 0 design:
 
@@ -301,7 +302,7 @@ Revisions from the Phase 0 design:
   to games × time for a value both ends can already compute.
 - **`PLAYER_DISCONNECTED` / `PLAYER_RECONNECTED` → `PLAYER_PRESENCE {online}`** (2.2).
 - **`GAME_STARTED` → `MATCH_FOUND`** (4.1b). Addressed to a player, not a game; direct challenges still return the game from REST.
-- **`ratingDelta` → Phase 5**, when ratings exist.
+- **`ratingDelta` on `GAME_FINISHED` → a separate `RATING_UPDATED`** (5.3). Ratings are applied asynchronously, so the result is known before the rating; one message per fact.
 
 **Client → server types**
 

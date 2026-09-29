@@ -55,6 +55,10 @@ public final class Payloads {
     public record MatchFound(UUID gameId, Side yourSide, long initialSeconds, long incrementSeconds) {
     }
 
+    /** @param rating the new rating; {@code delta} is signed, e.g. +16 or -15 */
+    public record RatingUpdated(UUID gameId, int rating, int delta) {
+    }
+
     /**
      * Everything needed to render the board from cold.
      *

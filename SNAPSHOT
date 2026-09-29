@@ -1,11 +1,12 @@
-snapshot:  M4.3
-date:      2026-09-28
-contains:  Phases 1-4 complete: auth, game + clock + aborts + repetition, realtime + Valkey fanout,
-           matchmaking (Lua pairing, WebSocket push), rate limiting, Valkey-outage fallback
-migrations: V1 baseline, V2 refresh_tokens, V3 side_to_move, V4 game_clock, V5 first_move_abort_deadline
-valkey:    queue + seeks + matches (ADR-016), rate-limit buckets (ADR-017), fanout + presence.
-           Nothing unrecoverable (ADR-004); verified by pausing it mid-game.
-boundaries: ArchUnit 1.5.1, genuinely enforced since 4.1b (guarded against empty imports).
-verified:  2026-09-28 - test 77/77, integrationTest 108/108, Postman 54 req / 132 assertions,
-           browser checks frontend/e2e (lobby, outage).
-next:      Phase 5 - async processing: outbox, SQS, Elo (PROJECT_STATE §10)
+snapshot:  M5.3
+date:      2026-09-29
+contains:  Phases 1-5 complete: auth, game + clock + aborts + repetition, realtime + Valkey fanout,
+           matchmaking, rate limiting, Valkey-outage fallback, outbox + SQS + Elo ratings + push
+migrations: V1 baseline .. V5 first_move_abort_deadline, V6 outbox, V7 ratings
+messaging: outbox in the game transaction -> relay (SKIP LOCKED) -> SQS (Spring Cloud AWS 4.1.1,
+           ADR-020; ElasticMQ locally, ADR-019) -> @SqsListener (manual ack after commit) ->
+           exactly-once rating (processed_events + rating_history PK) -> RATING_UPDATED push
+roles:     API (default) / worker (chess.messaging.relay-enabled, chess.rating.consumer-enabled)
+verified:  2026-09-29 - test 90/90, integrationTest 126/126, Postman 54 req / 132 assertions,
+           browser checks frontend/e2e (lobby incl. rating, outage).
+next:      Phase 6 - Docker + CI/CD (PROJECT_STATE §10)

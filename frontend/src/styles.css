@@ -152,3 +152,8 @@ select {
 
 /* Socket up, fanout down: the board updates by polling (useGame, Milestone 4.3). */
 .connection.degraded { color: #e0b050; }
+
+/* Rating change after a finished game (Phase 5.3). */
+.rating { margin: 0; font-weight: 600; }
+.rating .gain { color: #7fc97f; }
+.rating .loss { color: #e07a6a; }

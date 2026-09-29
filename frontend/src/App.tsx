@@ -93,6 +93,13 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
 
   const seek = useSeek(openMatch);
 
+  // Current rating, read from the server on arrival — the pull side of RATING_UPDATED, so a
+  // missed push never leaves the lobby showing a stale number.
+  const [myRating, setMyRating] = useState<number | null>(null);
+  useEffect(() => {
+    api.me().then((me) => setMyRating(me.rating)).catch(() => { /* shown without it */ });
+  }, []);
+
   // A ticking "waiting for 0:12" while seeking. Display only.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -125,7 +132,7 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
 
   return (
     <div className="panel">
-      <h1>Hello, {session.username}</h1>
+      <h1>Hello, {session.username}{myRating !== null ? ` · ${myRating}` : ''}</h1>
 
       <h2>Play online</h2>
       {seek.state.phase === 'idle' ? (
@@ -203,7 +210,7 @@ function Lobby({ session, onOpen }: { session: Session; onOpen: (game: GameSumma
 
 function GameView({ session, game, onLeave }:
                   { session: Session; game: GameSummary; onLeave: () => void }) {
-  const { connection, degraded, snapshot, clock, moves, failure, myTurn, submitMove, resign } =
+  const { connection, degraded, snapshot, clock, moves, failure, myTurn, submitMove, resign, rating } =
     useGame(game.id);
 
   const orientation: Side = snapshot?.yourSide ?? 'WHITE';
@@ -245,6 +252,16 @@ function GameView({ session, game, onLeave }:
 
           <aside>
             <p className="status">{statusLine(snapshot, myTurn)}</p>
+            {snapshot.status === 'FINISHED' && snapshot.yourSide !== null && (
+              // Ratings are applied asynchronously by the worker, so this follows
+              // GAME_FINISHED by a second or two. Said so, rather than left blank.
+              <p className="rating">
+                {rating
+                  ? <>Rating {rating.rating} <span className={rating.delta >= 0 ? 'gain' : 'loss'}>
+                      ({rating.delta >= 0 ? '+' : ''}{rating.delta})</span></>
+                  : <span className="hint">Updating rating…</span>}
+              </p>
+            )}
             {snapshot.status === 'ACTIVE' && awaitingFirstMove && (
               <p className="hint">
                 Each player must make a first move within {FIRST_MOVE_WINDOW_SECONDS} seconds

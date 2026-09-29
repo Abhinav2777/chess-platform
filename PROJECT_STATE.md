@@ -7,11 +7,11 @@
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M4.3 (2026-09-28)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M5.3 (2026-09-29)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-29 · **Updated at:** Phase 5 Milestone 5.2 (rating consumer)
+**Last updated:** 2026-09-29 · **Updated at:** Phase 5 Milestone 5.3 — **Phase 5 complete**
 
 
 ---
@@ -74,18 +74,32 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 5 — Async processing |
-| **Phase status** | **5.2 green**: unit 90, integration 125, Postman 132/132; games are rated end to end locally; DLQ empty. Phase 5 done-when met. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~7.5 of ~12–15 |
-| **Cumulative hours (estimated)** | ~67 of 135–175 |
+| **Current phase** | Phase 5 — Async processing — **complete** |
+| **Phase status** | **Phase 5 complete**: unit 90, integration 126, Postman 132/132, `e2e:lobby` (now through the rating) + `e2e:outage` green. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done) |
+| **Cumulative hours (estimated)** | ~76.5 of 135–175 (this line had gone stale at ~67 through Phase 4's follow-up and 5.1–5.2; corrected at the Phase 5 boundary) |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 5.3 — `RATING_UPDATED` push (§10) |
+| **Next milestone** | Phase 6 — Docker + CI/CD (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 5 — Milestone 5.3: rating changes pushed to players (2026-09-29) — **Phase 5 complete**
+
+- `rating.RatingsChanged` published inside the rating transaction; `realtime.RatingAnnouncer`
+  (`AFTER_COMMIT`) sends `RATING_UPDATED {gameId, rating, delta}` via `UserNotifier` (the
+  worker is rarely the instance with the player's socket). Nothing for duplicates.
+- Client: "Rating 1216 (+16)" on the finished-game panel ("Updating rating…" until then);
+  lobby heading shows the current rating from `/api/users/me` — the pull fallback.
+- Tests: realtime — both players receive the update after commit, a duplicate apply sends
+  nothing. Browser — `e2e:lobby` now resigns the game and waits for both ratings:
+  **0.8 s from resignation to both screens**, the whole async pipeline included.
+- `e2e` sign-in wait raised to 15 s after a cold-start failure (the app, not the check, was
+  slow for its first requests).
+
 
 ### Phase 5 — Milestone 5.2: the rating consumer (2026-09-29, green)
 
@@ -601,17 +615,19 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 5.3 — `RATING_UPDATED` push** (~1.5 h, owner's choice; previously SKIP).
+**Phase 5 is complete.** Before Phase 6:
 
-- After `RatingService.apply` commits, publish an application event (`AFTER_COMMIT` — the
-  broadcast must not precede the commit) with both players' before/after; `realtime` sends
-  `RATING_UPDATED {gameId, rating, delta}` to each player through `UserNotifier` (the Valkey
-  user channel — the worker may be on a different instance from the players' sockets).
-- Client: the finished-game panel shows "Rating 1216 (+16)" when it arrives; if it never
-  does (fire-and-forget), the lobby shows the current rating from `/api/users/me` anyway.
-- Module check: `rating` publishes the event from its public package; `realtime` depends on
-  `rating`, not the reverse.
-- Then Phase 5 closeout: docs, time checkpoint, phase-boundary archive.
+1. Commit Milestone 5.3.
+2. Phase-boundary archive (§0): `git archive --format=tar.gz -o ../chess-platform-M5.3-2026-09-29.tar.gz HEAD`.
+
+**Phase 6 — Docker + CI/CD (8–10 h), per ROADMAP.md.** Start with the design discussion:
+multi-stage build and layer caching (Boot's layered jars), a non-root runtime image, the JVM
+flags the image must carry (`--enable-native-access=ALL-UNNAMED` — ADR-020; container-aware
+memory), one image with two roles (API; worker = relay + rating consumer — ADR-001) and how
+each is started, health/readiness probes for both, and what CI must gate on (unit,
+integration with Testcontainers, ArchUnit, frontend build; the browser checks stay manual or
+become a nightly job — decide explicitly). Carry-overs worth folding in: an outbox purge job,
+and whether CI can run the Testcontainers suite within free-tier minutes.
 
 ---
 
@@ -635,6 +651,8 @@ If it is not in this table, it is an estimate and must be labelled as one.
 |---|---|---|---|
 | Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
+| Game end → rating shown to both players (browser) | 0.8 s (outbox → relay tick → ElasticMQ → worker → commit → push) | Headless Chromium, local, 2026-09-29 | `npm run e2e:lobby` |
+| Backlog drain on worker start | 7 queued events rated within 80 ms of startup | Local, ElasticMQ, 2026-09-29 | bootRun log (DEVELOPMENT_LOG, 5.2) |
 | Matchmaking pairing latency (browser) | Both players on the board 0.3–0.8 s after the second seek | Headless Chromium, local, 2026-09-28 | `npm run e2e:lobby` |
 | Degraded play, Valkey paused (browser) — before ADR-018 | Healthy ~0.13 s; first outage move 4.8 s (mover) / 10.6 s (waiting opponent); steady state 0.8–3.9 s; after unpause < 0.1 s | Headless Chromium, local, fanout=valkey, 2026-09-28 | `npm run e2e:outage` (M4.3 commit) |
 | Degraded play, Valkey paused (browser) — after ADR-018 | Healthy ~0.13 s; first outage move 1.9 s (mover) / 10.3 s (waiting opponent); steady state 0.9–2.0 s; recovery after the 5 s window, then ~0.13 s | Same | `npm run e2e:outage` |

@@ -39,6 +39,8 @@ export function useGame(gameId: string) {
   const [clock, setClock] = useState<ClockAnchor | null>(null);
   const [moves, setMoves] = useState<PlayedMove[]>([]);
   const [failure, setFailure] = useState<Failure | null>(null);
+  // The rating change for this game, when the worker has applied it (Phase 5.3).
+  const [rating, setRating] = useState<{ rating: number; delta: number } | null>(null);
   const socketRef = useRef<GameSocket | null>(null);
 
   // ---- degraded fanout (Milestone 4.3) ------------------------------------------------
@@ -179,6 +181,11 @@ export function useGame(gameId: string) {
         });
       },
 
+      onRatingUpdated: (update) => {
+        // Addressed to the player, not the game: ignore one for a different game.
+        if (update.gameId === gameId) setRating({ rating: update.rating, delta: update.delta });
+      },
+
       onPresence: (presence) => {
         lastEventAt.current = performance.now();
         setSnapshot((previous) => {
@@ -256,7 +263,7 @@ export function useGame(gameId: string) {
     [snapshot],
   );
 
-  return { connection, degraded, snapshot, clock, moves, failure, myTurn, submitMove, resign };
+  return { connection, degraded, snapshot, clock, moves, failure, myTurn, submitMove, resign, rating };
 }
 
 function meIn(snapshot: GameSnapshot): string {

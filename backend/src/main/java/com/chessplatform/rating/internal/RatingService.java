@@ -2,10 +2,12 @@ package com.chessplatform.rating.internal;
 
 import com.chessplatform.game.GameFinished;
 import com.chessplatform.identity.IdentityFacade;
+import com.chessplatform.rating.RatingsChanged;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,12 +51,15 @@ public class RatingService {
 
     private final JdbcTemplate jdbc;
     private final IdentityFacade identity;
+    private final ApplicationEventPublisher events;
     private final Counter applied;
     private final Counter duplicates;
 
-    public RatingService(JdbcTemplate jdbc, IdentityFacade identity, MeterRegistry metrics) {
+    public RatingService(JdbcTemplate jdbc, IdentityFacade identity,
+                         ApplicationEventPublisher events, MeterRegistry metrics) {
         this.jdbc = jdbc;
         this.identity = identity;
+        this.events = events;
         this.applied = Counter.builder("chess.rating.applied")
                 .description("Games applied to ratings").register(metrics);
         // Not an error: at-least-once delivery working as designed. A counter that never
@@ -85,16 +90,22 @@ public class RatingService {
         }
 
         Elo.Change change = Elo.change(white, black, game.result().whiteScore());
-        record(game, eventId, game.whitePlayerId(), white, change.white());
-        record(game, eventId, game.blackPlayerId(), black, change.black());
+        int whiteAfter = record(game, eventId, game.whitePlayerId(), white, change.white());
+        int blackAfter = record(game, eventId, game.blackPlayerId(), black, change.black());
         applied.increment();
+        // Delivered to listeners only after this transaction commits (they are AFTER_COMMIT):
+        // a player is never told about a change that then rolls back.
+        events.publishEvent(new RatingsChanged(game.gameId(), List.of(
+                new RatingsChanged.Change(game.whitePlayerId(), white, whiteAfter),
+                new RatingsChanged.Change(game.blackPlayerId(), black, blackAfter))));
         log.info("Rated game {}: white {} ({}{}), black {} ({}{})", game.gameId(),
                 white, change.white() >= 0 ? "+" : "", change.white(),
                 black, change.black() >= 0 ? "+" : "", change.black());
         return Outcome.APPLIED;
     }
 
-    private void record(GameFinished game, UUID eventId, UUID userId, int before, int delta) {
+    /** Writes one player's new rating and its history row. Returns the rating written. */
+    private int record(GameFinished game, UUID eventId, UUID userId, int before, int delta) {
         int after = Math.clamp(before + delta, 0, 4000);
         identity.setRating(userId, after);
         // Plain INSERT, deliberately: if this row already exists, a second event id was minted
@@ -104,5 +115,6 @@ public class RatingService {
                 INSERT INTO rating_history (game_id, user_id, event_id, rating_before, rating_after, delta)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, game.gameId(), userId, eventId, before, after, after - before);
+        return after;
     }
 }
