@@ -75,7 +75,7 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 6 — Docker + CI/CD |
-| **Phase status** | **6.2 written** (CI, e2e, Dependabot, protection-as-code; `actionlint` clean). **CI still has never run** — waits on the owner creating `main` (§10). |
+| **Phase status** | **CI has run** (first ever, on `main`): `backend` ✅ `frontend` ✅ `image` ❌ — uppercase owner in the image name; fixed, awaiting the first PR (§10). |
 | **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~5 of 8–10 |
 | **Cumulative hours (estimated)** | ~81.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
@@ -655,24 +655,18 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 6.3 — make CI real, then prove it** (owner's steps; GitHub auth required).
+`main` exists and is the default branch; CI has run once (backend ✅, frontend ✅, image ❌ →
+fixed). Remaining, as the first real use of the PR flow:
 
-1. Commit 6.2 on `users/Abhinav/initial`.
-2. Create `main` from it and publish (local `main` is the stale first commit):
-   `git branch -f main HEAD && git push -u origin main`
-3. `gh auth login`, then make `main` the default:
-   `gh repo edit Abhinav2777/chess-platform --default-branch main`
-4. Wait for the first CI run on `main` to go green (`gh run watch`). The image appears at
-   `ghcr.io/abhinav2777/chess-platform`. If the package is private, make it public in its
-   settings (Phase 7 pulls it).
-5. Protect `main` (check names must exist, hence after step 4):
-   `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
-6. **Done-when:** a branch with a deliberately failing test, opened as a PR — `backend` must go
-   red and the PR must be unmergeable; then close it. Optionally run the browser checks once:
-   `gh workflow run e2e.yml`.
-
-Then Phase 6 closeout (checkpoint, archive) and **Phase 7 — AWS** (open questions in §11:
-account, region, domain; budget alarm before the first `terraform apply`).
+1. Commit the fix on `users/Abhinav/initial`, push it, open a PR into `main`:
+   `git push origin users/Abhinav/initial && gh pr create --base main --fill`
+   The PR run builds and scans the image but does not push.
+2. When all three checks are green, merge (`gh pr merge --merge`). The `main` run publishes
+   `ghcr.io/abhinav2777/chess-platform:<sha>` and `:main`. Make the package public if GHCR
+   created it private (Phase 7 pulls it).
+3. Protect `main`: `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
+4. **Done-when:** a PR with a deliberately failing test goes red and cannot merge; close it.
+5. Optional: `gh workflow run e2e.yml`.
 
 ---
 

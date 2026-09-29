@@ -92,9 +92,14 @@ jobs:
     permissions:
       contents: read
       packages: write   # GHCR push; used only on main (see the push step's condition)
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/chess-platform
     steps:
+      # Image names must be lowercase and the owner is "Abhinav2777". metadata-action
+      # lowercases its tags on its own, so the first CI run built ghcr.io/abhinav2777/… and
+      # then asked Trivy to scan ghcr.io/Abhinav2777/… — an unparseable name, exit 1.
+      # GitHub expressions have no lower(); bash does. Every later step uses this one value.
+      - name: Image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/chess-platform" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
