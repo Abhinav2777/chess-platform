@@ -75,7 +75,7 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 6 — Docker + CI/CD |
-| **Phase status** | **CI has run** (first ever, on `main`): `backend` ✅ `frontend` ✅ `image` ❌ — uppercase owner in the image name; fixed, awaiting the first PR (§10). |
+| **Phase status** | CI run 1 (`main`): image ❌ uppercase owner → fixed. PR run 2: backend ❌ — **a real matchmaking race** CI found → reproduced deterministically, fixed (ADR-016 correction). Unit 90, integration 127. |
 | **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~5 of 8–10 |
 | **Cumulative hours (estimated)** | ~81.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
