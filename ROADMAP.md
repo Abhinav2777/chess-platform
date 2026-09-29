@@ -194,9 +194,9 @@ entries; `docker stop valkey` degrades to polling without any move being lost.
 
 ---
 
-### Phase 5 — Async Processing · 10–14 h (now ~12–15 h) · Weeks 8–10 — **IN PROGRESS (~4 h)**
+### Phase 5 — Async Processing · 10–14 h (now ~12–15 h) · Weeks 8–10 — **IN PROGRESS (~7.5 h)**
 
-**Progress:** 5.1 outbox + relay + SQS ✅ · 5.2 Elo consumer (idempotency, DLQ, crash safety) ·
+**Progress:** 5.1 outbox + relay + SQS ✅ · 5.2 Elo consumer ✅ (all three done-when proven) ·
 5.3 `RATING_UPDATED` push. **Changed from the plan:** ElasticMQ instead of LocalStack, which
 now needs an account (ADR-019); Spring Cloud AWS 4.1.1 instead of the SDK directly (ADR-020); ratings pushed to players (owner's choice, ~1.5 h, previously
 SKIP).

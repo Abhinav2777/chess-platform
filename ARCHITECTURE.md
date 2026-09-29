@@ -589,6 +589,14 @@ semantics, because handling duplicate delivery correctly is the skill worth
 demonstrating, and FIFO would hide it behind a managed guarantee that doesn't exist in
 most real systems.
 
+**As built (5.2): the rating consumer.** `@SqsListener` (worker role only; manual
+acknowledgement *after* the rating transaction commits — ADR-020) → `RatingService.apply`, one
+transaction: claim `processed_events` with `INSERT … ON CONFLICT DO NOTHING` (zero rows =
+duplicate, stop) → lock both players `FOR UPDATE` in id order → Elo (K = 32, zero-sum) → write
+ratings through `IdentityFacade` → `rating_history`, whose `PRIMARY KEY (game_id, user_id)`
+is the backstop. Metrics: `chess.rating.applied|duplicates|failures|ignored`,
+`chess.sqs.messages{queue}` (DLQ should be zero).
+
 Consumer idempotency: a `processed_events (event_id PRIMARY KEY, processed_at)` table.
 The consumer inserts the event id in the same transaction as its side effect; a
 duplicate hits the PK constraint and is acknowledged without re-applying. Rating

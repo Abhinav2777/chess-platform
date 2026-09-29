@@ -6,6 +6,7 @@ import com.chessplatform.identity.domain.User;
 import com.chessplatform.identity.domain.UserRepository;
 import com.chessplatform.identity.internal.JwtService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
@@ -42,6 +43,30 @@ public class IdentityFacade {
     public IdentityFacade(UserRepository users, JwtService jwt) {
         this.users = users;
         this.jwt = jwt;
+    }
+
+    /**
+     * Locks the players' rows for the rest of the caller's transaction and returns their
+     * current ratings.
+     *
+     * <p>For the rating consumer: Elo reads both ratings to compute the change, so two games
+     * of one player rated concurrently would each read the same starting rating and one update
+     * would be lost. Locking serialises them — the second waits, then reads the first's
+     * result. Players missing from the result have been deleted.
+     *
+     * <p>{@code MANDATORY}: a lock outside the caller's transaction would be released before
+     * the caller wrote anything, protecting nothing.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Map<UUID, Integer> lockRatings(Collection<UUID> userIds) {
+        return users.lockAllById(userIds).stream()
+                .collect(Collectors.toMap(User::id, User::rating));
+    }
+
+    /** Sets a rating locked by {@link #lockRatings} in the same transaction. Clamped to 0–4000. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void setRating(UUID userId, int rating) {
+        users.findById(userId).ifPresent(user -> user.changeRating(rating));
     }
 
     /**

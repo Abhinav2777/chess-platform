@@ -46,6 +46,8 @@ chess:
   messaging:
     relay-enabled: true
     create-queues: true
+  rating:
+    consumer-enabled: true
   ratelimit:
     policies:
       login-ip:    { capacity: 200, period: 1m }

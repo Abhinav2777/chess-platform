@@ -119,6 +119,11 @@ public class User {
         return rating;
     }
 
+    /** Bounded like {@code ck_users_rating}: Elo cannot push a rating below 0 or above 4000. */
+    public void changeRating(int newRating) {
+        this.rating = Math.clamp(newRating, 0, 4000);
+    }
+
     public Instant createdAt() {
         return createdAt;
     }

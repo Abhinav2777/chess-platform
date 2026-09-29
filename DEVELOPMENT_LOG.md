@@ -5,6 +5,42 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-29 — Milestone 5.2: the rating consumer
+
+**Built:** V7 (`processed_events`, `rating_history`); `rating` module (Elo, `RatingService`,
+`@SqsListener` consumer with manual ack); identity's `lockRatings`/`setRating`; messaging's
+`QueueBootstrap`, visibility timeout and `QueueDepthMonitor`.
+
+**Design points**
+
+- **Claim with `ON CONFLICT DO NOTHING`, not a caught PK violation** — a failed statement
+  aborts a PostgreSQL transaction. Concurrent duplicates serialise on the index entry.
+- **Ack after commit, written out** — the correctness argument lives in our code.
+- **Lock order by id** — no deadlocks between two games sharing a player.
+- **Backstop fails loudly** — a second rating of one game is a DLQ entry, not a silent no-op.
+- **Unknown schema version → DLQ; unknown event type → ack and count.** A newer producer's
+  message waits for a consumer that understands it; another producer's is not ours to fail on.
+
+**Found**
+
+- **A concurrency test that proved nothing.** Two messages through the listener: green —
+  and still green with the lock removed. The race window (read → commit) is milliseconds.
+  Rewritten deterministic: two threads on a latch, a trigger sleeping 300 ms between read and
+  commit. Mutation check: without the lock it fails, 1200 instead of 1216. **Second time this
+  project has had a green test that could not fail (ArchUnit, 4.1b); mutation-checking new
+  concurrency and architecture tests is now habit, not an afterthought.**
+- **Container config validated at startup:** `maxMessagesPerPoll` (10) > `maxConcurrentMessages`
+  (5) refused. Tied together.
+- **Crash injection needs a non-transactional counter** — a sequence, since a marker row
+  would roll back with the failure it records.
+
+**Verified:** unit 90, integration 125; locally, 7 backlogged events rated 80 ms after start,
+Postman games rated live, DLQ empty.
+
+**Hours:** ~3.5. Phase 5 at ~7.5 of ~12–15.
+
+---
+
 ## 2026-09-29 — 5.1 migrated to Spring Cloud AWS (ADR-020)
 
 **Request:** use Spring Cloud AWS for SQS, e.g. `spring-cloud-aws-starter-sqs:3.4.0`. This

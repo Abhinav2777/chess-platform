@@ -66,7 +66,10 @@ public class SqsQueues {
         String redrive = "{\"deadLetterTargetArn\":\"%s\",\"maxReceiveCount\":\"%d\"}"
                 .formatted(dlqArn, properties.maxReceiveCount());
         queueUrl = sqs.createQueue(r -> r.queueName(properties.queue())
-                .attributes(Map.of(QueueAttributeName.REDRIVE_POLICY, redrive))).join().queueUrl();
+                .attributes(Map.of(
+                        QueueAttributeName.REDRIVE_POLICY, redrive,
+                        QueueAttributeName.VISIBILITY_TIMEOUT,
+                        Long.toString(properties.visibilityTimeout().toSeconds())))).join().queueUrl();
         deadLetterQueueUrl = dlqUrl;
     }
 }

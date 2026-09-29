@@ -337,6 +337,37 @@ an outage; fifty events a second old is a busy second.
 
 ---
 
+## Milestone 5.2 — exactly-once effects on at-least-once delivery
+
+### "SQS delivers a message twice. How is a rating not applied twice?"
+The consumer claims the event id in a processed_events table in the same transaction as the
+rating change, with INSERT … ON CONFLICT DO NOTHING — zero rows means it's a duplicate. Not a
+caught unique violation: in Postgres a failed statement aborts the transaction. It also works
+for two deliveries at the same instant: the second insert waits on the first's index entry,
+then sees the conflict. And rating_history has a primary key on (game, user) as a backstop, so
+even a second event id for the same game can't rate it twice — it fails into the DLQ instead.
+
+### "When do you delete the message?"
+After commit, explicitly. Delete before commit and a crash in between loses the rating; commit
+before delete and a crash in between just redelivers it, which the dedupe absorbs. I use manual
+acknowledgement so that ordering is written in my code, not implied by a framework default.
+
+### "Two of a player's games finish at once."
+Elo reads both ratings first, so without a lock both transactions read the same starting
+rating and one result is lost. SELECT FOR UPDATE on both players, always in id order so two
+transactions can't deadlock. And I proved the test meant something: my first concurrency test
+passed with the lock removed, because the natural race window is milliseconds. I made it
+deterministic — two threads on a latch, and a trigger that holds each transaction 300 ms
+between reading and committing — and then it failed without the lock: expected 1216, was 1200.
+
+### "How did you test a crash in the middle of the transaction?"
+A trigger that raises an exception on the first rating_history insert — after the ratings were
+already updated in that transaction. It counts attempts with a sequence, because nextval isn't
+rolled back; a marker table would roll back with the failure and fire forever. First attempt
+rolls back, redelivery applies it once.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

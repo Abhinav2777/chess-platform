@@ -9,6 +9,10 @@ spring:
     aws:
       region:
         static: us-east-1
+      sqs:
+        # Listener containers must never create a queue: it would have no dead-letter policy.
+        # Queues come from SqsQueues (ElasticMQ) or Terraform (AWS). ADR-020.
+        queue-not-found-strategy: fail
 
   # Authentication is JWT-only (SecurityConfig: stateless, httpBasic and formLogin off),
   # so Boot's default in-memory user — one account, random password printed at startup —
@@ -173,6 +177,12 @@ chess:
     max-receive-count: 3
     create-queues: false
     relay-batch-size: 50
+    visibility-timeout: 30s
+
+  # The rating consumer (Phase 5.2). Worker role only, like the relay (ADR-001).
+  rating:
+    consumer-enabled: false
+    max-concurrent-messages: 5
 
   # One circuit for every degradable Valkey call on this instance (ValkeyGuard): after a
   # failure, nothing asks Valkey for this long, so an outage costs one timeout per window

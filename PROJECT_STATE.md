@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-28 · **Updated at:** Phase 5 Milestone 5.1 (outbox + relay)
+**Last updated:** 2026-09-29 · **Updated at:** Phase 5 Milestone 5.2 (rating consumer)
 
 
 ---
@@ -75,17 +75,42 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 5 — Async processing |
-| **Phase status** | **5.1 green, on Spring Cloud AWS 4.1.1** (ADR-020): unit 82, integration 120, Postman 132/132; events flow to ElasticMQ locally. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~3 of ~12–15 |
+| **Phase status** | **5.2 green**: unit 90, integration 125, Postman 132/132; games are rated end to end locally; DLQ empty. Phase 5 done-when met. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~7.5 of ~12–15 |
 | **Cumulative hours (estimated)** | ~67 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 5.2 — Elo consumer (§10) |
+| **Next milestone** | 5.3 — `RATING_UPDATED` push (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 5 — Milestone 5.2: the rating consumer (2026-09-29, green)
+
+- `V7__ratings.sql`: `processed_events (consumer, event_id)` PK; `rating_history (game_id,
+  user_id)` PK + delta check + FKs (cascade).
+- `rating` module: `Elo` (K = 32, Black = −White so no drift), `RatingService.apply` (one
+  transaction: `ON CONFLICT DO NOTHING` claim → lock both players in id order → compute →
+  ratings via `IdentityFacade.lockRatings/setRating` → history), `GameFinishedListener`
+  (`@SqsListener`, **manual ack after commit**, worker role only, rejects unknown schema
+  versions, ignores other event types).
+- `messaging`: `QueueBootstrap` (creates queues + redrive before listeners start, phase 0);
+  queue visibility timeout configurable; `QueueDepthMonitor` (`chess.sqs.messages{queue}`,
+  error log when the DLQ becomes non-empty). `queue-not-found-strategy: fail` for listeners.
+- **Done-when, proven** (`RatingConsumerIntegrationTest`, real ElasticMQ + listener): duplicate
+  delivery rates once; poison → DLQ after 3 receives (3.5 s at 1 s visibility); crash
+  mid-transaction (trigger, sequence-counted) → applied once on redelivery; concurrent games
+  of one player → no lost update.
+- **Mutation-checked:** the first concurrency test passed with the lock removed (race window
+  of milliseconds). Rewritten deterministic (latch + 300 ms trigger); now fails without the
+  lock (1200 instead of 1216).
+- **Found at first start:** the listener container refuses `maxMessagesPerPoll` (default 10)
+  above `maxConcurrentMessages` (5) — now tied together.
+- **Local stack:** 7 backlogged events rated 80 ms after startup; Postman games rated live;
+  both queues empty.
+
 
 ### Phase 5 — Milestone 5.1: outbox, relay, SQS (2026-09-28, green)
 
@@ -576,25 +601,17 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 5.2 — the Elo consumer** (~4–5 h). Roadmap done-when: the same `GAME_FINISHED`
-delivered twice moves a rating once; a consumer that throws three times lands in the DLQ;
-ratings survive a worker crash mid-processing.
+**Milestone 5.3 — `RATING_UPDATED` push** (~1.5 h, owner's choice; previously SKIP).
 
-- `V7`: `processed_events (consumer, event_id)` PK; `rating_history (game_id, user_id)` PK
-  with before/after/delta — the structural backstop behind the dedupe table.
-- `rating` module: Elo (K = 32, expected score from both current ratings), `RatingConsumer`
-  (`@SqsListener` with **manual acknowledgement** — ADR-020 — one transaction per message: dedupe insert → lock both users `FOR
-  UPDATE` in id order → compute → update via `IdentityFacade` → history; delete message only
-  after commit), worker-role scheduling like the relay.
-- `IdentityFacade.applyRatingChanges(...)` — identity owns `users.rating`; rating never writes
-  it directly.
-- Tests with ElasticMQ: duplicate delivery (send the same envelope twice), poison message →
-  DLQ after 3 receives (short visibility timeout), crash between commit and delete →
-  redelivery ignored, two games of one player concurrently → no lost update.
-- Metrics: consumed, duplicates skipped, failures, DLQ depth.
-
-Then **5.3** — `RATING_UPDATED` over the Valkey user channel; the finished-game screen shows
-the change.
+- After `RatingService.apply` commits, publish an application event (`AFTER_COMMIT` — the
+  broadcast must not precede the commit) with both players' before/after; `realtime` sends
+  `RATING_UPDATED {gameId, rating, delta}` to each player through `UserNotifier` (the Valkey
+  user channel — the worker may be on a different instance from the players' sockets).
+- Client: the finished-game panel shows "Rating 1216 (+16)" when it arrives; if it never
+  does (fire-and-forget), the lobby shows the current rating from `/api/users/me` anyway.
+- Module check: `rating` publishes the event from its public package; `realtime` depends on
+  `rating`, not the reverse.
+- Then Phase 5 closeout: docs, time checkpoint, phase-boundary archive.
 
 ---
 
