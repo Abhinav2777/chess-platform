@@ -5,6 +5,46 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — 6.2: the second CI run found a real race
+
+The fix PR's run (99154576839): `frontend` green, `backend` red — the 20-player matchmaking test,
+`ALREADY_IN_GAME`, after passing every local run and CI's first. Not flaky test code: a real race.
+A seek read "no match yet"; a matchmaker paired the player and committed the game; the seek's
+active-game check then found it and refused a player who had just been matched.
+
+**Fixed** by re-reading the match key before refusing (sound by write order: key before commit).
+**Reproduced deterministically first** — a Mockito spy on `MatchQueue.matchOf` runs a tick right
+after the seek's first read — and seen failing with CI's exact error. A first hook, on
+`GameFacade.hasActiveGame`, failed for the wrong reason (the forced tick joined that read-only
+transaction and could not insert); caught by reading the failure message instead of trusting red.
+20-player test then passed 5 more runs; full suite 90 + 127 green. ADR-016 correction.
+
+**Lessons:** a concurrency test on one machine explores one machine's timing. And a test written
+to reproduce a bug must fail *with that bug's message*, or it has not reproduced anything.
+
+---
+
+## 2026-09-30 — 6.2: the first CI run ever
+
+The owner created `main` and made it the default branch; CI ran for the first time in the
+project's life (run 99141810504).
+
+- **`backend` green** — wrapper validation, pinned Gradle, unit (48 s) and the full
+  Testcontainers integration suite (2 m 21 s): its first run on any machine but the dev box.
+- **`frontend` green** — type-check and production build.
+- **`image` red** — Trivy exited in 5 s: `failed to parse the image name`. The job's `IMAGE` was
+  `ghcr.io/${{ github.repository_owner }}/…` = `ghcr.io/Abhinav2777/…`; docker/metadata-action
+  lowercases on its own, so the image had been built as `ghcr.io/abhinav2777/…`. Image names
+  must be lowercase. Invisible locally, where the image was `chess-platform:dev`.
+  **Fix:** a first step sets `IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/chess-platform`
+  (GitHub expressions have no `lower()`).
+
+**Lesson:** the pipeline's first run found a bug no local run could have: identity-dependent
+values (owner, repository, ref) only exist in the real environment. Expected — which is why the
+"done when" is a real run, not a lint.
+
+---
+
 ## 2026-09-29 — Milestone 6.2: the pipeline
 
 **Built:** `ci.yml` (backend, frontend, image with Trivy-before-push to GHCR), `e2e.yml`

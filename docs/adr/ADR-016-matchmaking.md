@@ -74,6 +74,25 @@ at this scale), the move pipeline must read PostgreSQL anyway for the optimistic
 a cache adds invalidation risk to the most correctness-critical path. Revisit only if Phase
 9 load tests show read pressure. Decided with the project owner, 2026-09-28.
 
+## Correction, 2026-09-30 — a seek racing its own pairing
+
+Found by CI (PR run 99154576839), after many local green runs: in the 20-player test a seek read
+"no match yet", a matchmaker then paired the player and committed the game, and the seek's
+active-game check found that game — answering **`ALREADY_IN_GAME` to a player who had just been
+matched**. In production: a double-click at the moment of pairing shows a false error.
+
+**Fix:** when the active-game check finds a game, re-read the match key before refusing. Sound
+because of the write order: `pair.lua` sets the key (PENDING) before the game row commits, and
+`recordMatch` replaces it with the game id after — so a game that came from matchmaking is
+visible through the key no later than in PostgreSQL. Only an acknowledged match (the player
+already opened the game) leaves the key empty, and then "finish your current game" is right.
+
+**Test:** made deterministic with a Mockito spy on `MatchQueue.matchOf` that runs a matchmaker
+tick right after the seek's first read. It failed on the old code with exactly CI's error, and
+passes with the fix; the 20-player test passed 5 further runs. (A first attempt hooked
+`GameFacade.hasActiveGame` — a read-only transaction, which the forced tick joined, so it failed
+for an unrelated reason. The failure message was checked, not assumed.)
+
 ## Alternatives considered
 
 | Alternative | Why not |
