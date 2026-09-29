@@ -38,7 +38,7 @@ springCloudAws       = "4.1.1"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x 
 awsSdk               = "2.55.6"   # BOM. SQS since Phase 5 (ADR-008); SDK direct, not Spring Cloud AWS (ADR-011).
 
 archunit             = "1.5.1"
-testcontainers       = "1.20.4"   # BOM
+testcontainers       = "2.0.5"   # BOM
 assertj              = "3.26.3"
 
 [libraries]
