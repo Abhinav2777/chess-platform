@@ -24,7 +24,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Valkey outage mid-game")
 class ValkeyOutageIntegrationTest {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
     static final GenericContainer<?> VALKEY =
             new GenericContainer<>("valkey/valkey:8-alpine").withExposedPorts(6379);
 
