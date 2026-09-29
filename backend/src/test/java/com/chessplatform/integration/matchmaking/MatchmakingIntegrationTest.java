@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.testcontainers.containers.GenericContainer;
@@ -40,9 +41,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -77,8 +80,6 @@ class MatchmakingIntegrationTest extends IntegrationTestBase {
     @Autowired
     private Matchmaker matchmaker;
     @Autowired
-    private MatchQueue queue;
-    @Autowired
     private StringRedisTemplate valkey;
     @Autowired
     private UserRegistrar registrar;
@@ -88,6 +89,15 @@ class MatchmakingIntegrationTest extends IntegrationTestBase {
     private GameRepository games;
     @Autowired
     private MoveRepository moves;
+    /**
+     * A pass-through spy, so one test can force an interleaving: a matchmaker tick right after
+     * the seek's first match-key read. Every other test sees the real bean unchanged. (A first
+     * attempt hooked GameFacade.hasActiveGame instead — but that runs in a read-only
+     * transaction, the forced tick joined it, and game creation failed: the test failed for a
+     * reason that had nothing to do with the race.)
+     */
+    @MockitoSpyBean
+    private MatchQueue queue;
 
     @AfterEach
     void cleanUp() {
@@ -187,6 +197,38 @@ class MatchmakingIntegrationTest extends IntegrationTestBase {
     @Nested
     @DisplayName("pairing")
     class Pairing {
+
+        /**
+         * Found by CI (PR run 99154576839), not locally: the 20-player test failed with
+         * ALREADY_IN_GAME. A seek read "no match yet", then — before its active-game check —
+         * a matchmaker paired the player and committed the game, and the check found it.
+         * The player had been matched; the seek said "finish your current game".
+         *
+         * Forced deterministically here: the spy runs a tick immediately after the seek's
+         * first match-key read ("no match yet"), before its active-game check — exactly
+         * where a concurrent matchmaker on another instance can land.
+         */
+        @Test
+        @DisplayName("a seek that races its own pairing is told MATCHED, not ALREADY_IN_GAME")
+        void seekRacingItsOwnPairing() {
+            User alice = player(1500);
+            User bob = player(1500);
+            matchmaking.seek(alice.id(), BLITZ);
+            matchmaking.seek(bob.id(), BLITZ);
+            AtomicBoolean first = new AtomicBoolean(true);
+            doAnswer(call -> {
+                Object noMatchYet = call.callRealMethod();
+                if (first.getAndSet(false)) {
+                    matchmaker.tick();        // another instance pairs them and commits the game
+                }
+                return noMatchYet;
+            }).when(queue).matchOf(alice.id());
+
+            SeekResult again = matchmaking.seek(alice.id(), BLITZ);   // e.g. a double-click
+
+            assertThat(again.status()).isEqualTo(SeekResult.Status.MATCHED);
+            assertThat(again.gameId()).isEqualTo(gameOf(alice).id());
+        }
 
         @Test
         @DisplayName("two compatible players become one game, and both are told the same game")
