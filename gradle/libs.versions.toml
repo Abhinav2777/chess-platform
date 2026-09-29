@@ -15,14 +15,14 @@
 # truth for the wrapper. The root build's `wrapper` task reads it, and
 # `verifyGradleVersion` fails the build if gradle-wrapper.properties has drifted from it.
 #
-# 9.7.1 is not arbitrary. It is the intersection of four constraints:
+# The floor is set by four constraints (9.7.1 was the first version meeting all of them):
 #   - Java 25 as the Gradle daemon JVM requires >= 9.1.0 (Gradle compatibility matrix)
 #   - Spring Boot 4.1's plugin requires 8.14+ or 9.x  (non-binding: 8.14 cannot run on 25)
 #   - 9.7.0 has a Kotlin DSL regression in Option annotation argument order; Gradle
 #     explicitly recommends 9.7.1
 #   - 9.3.0 fixed two repository-handling vulnerabilities
 # Full reasoning: docs/adr/ADR-011-java-spring-gradle.md
-gradle               = "9.7.1"    # verified 2026-09-06 (current stable, released 2026-08-20)
+gradle               = "9.8.0"    # verified 2026-09-30 (current stable, released 2026-09-24)
 
 springBoot           = "4.1.1"    # verified 2026-09-06 — CONFIRM LATEST PATCH
 springDepMgmt        = "1.1.7"
@@ -33,13 +33,16 @@ java                 = "25"
 # naming convention and is the tell. See the scoped repository in backend/build.gradle.kts.
 # Licence is Apache 2.0 (an earlier note in this repo said MIT — that was also wrong).
 chesslib             = "1.3.7"    # verified 2026-09-06 against the project README
-logstashEncoder      = "8.0"      # CONFIRM Boot 4 / Logback compatibility
+logstashEncoder      = "9.0"      # verified 2026-09-30: 9.x is on Jackson 3, the line Boot 4 uses; 8.x dragged Jackson 2 in
 springCloudAws       = "4.1.1"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x is Boot 3.5). Tested upstream on Boot 4.0.8.
-awsSdk               = "2.55.6"   # BOM. SQS since Phase 5 (ADR-008); SDK direct, not Spring Cloud AWS (ADR-011).
+awsSdk               = "2.55.6"   # BOM, imported after Spring Cloud AWS's so the SDK version is ours (ADR-020).
 
 archunit             = "1.5.1"
-testcontainers       = "1.20.4"   # BOM
-assertj              = "3.26.3"
+# Testcontainers and AssertJ are deliberately absent: the Spring Boot BOM manages both
+# (4.1.1: Testcontainers 2.0.5, AssertJ 3.27.7). Pinning them here fought the BOM — the
+# old 1.20.4 BOM left junit-jupiter/postgresql on 1.x while Boot lifted core to 2.0.5, a
+# mixed classpath; the AssertJ pin silently DOWNGRADED Boot's version. Found 2026-09-30
+# while triaging Dependabot. Rule: pin only what Boot does not manage.
 
 [libraries]
 # --- Spring starters (managed by the Boot BOM; no versions here) ---
@@ -111,13 +114,14 @@ chesslib             = { module = "com.github.bhlangonijr:chesslib", version.ref
 
 # --- Test ---
 archunit             = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
-assertj              = { module = "org.assertj:assertj-core", version.ref = "assertj" }
-testcontainers-bom       = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+assertj              = { module = "org.assertj:assertj-core" }
 aws-bom                  = { module = "software.amazon.awssdk:bom", version.ref = "awsSdk" }
 spring-cloud-aws-bom     = { module = "io.awspring.cloud:spring-cloud-aws-dependencies", version.ref = "springCloudAws" }
 spring-cloud-aws-sqs     = { module = "io.awspring.cloud:spring-cloud-aws-starter-sqs" }
-testcontainers-junit     = { module = "org.testcontainers:junit-jupiter" }
-testcontainers-postgres  = { module = "org.testcontainers:postgresql" }
+# Testcontainers 2.0 renamed every module with a `testcontainers-` prefix; the 1.x names
+# are not published for 2.x, which is why Dependabot's BOM-only bump could not resolve.
+testcontainers-junit     = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+testcontainers-postgres  = { module = "org.testcontainers:testcontainers-postgresql" }
 
 [bundles]
 observability = ["micrometer-prometheus", "logstash-encoder"]
