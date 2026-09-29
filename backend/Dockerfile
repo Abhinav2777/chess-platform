@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.7
+#
+# The chess platform backend. One image, three roles (ADR-001, Phase 6):
+#   API     — default
+#   worker  — SPRING_PROFILES_ACTIVE=worker   (outbox relay + rating consumer)
+#   migrate — SPRING_PROFILES_ACTIVE=migrate  (run Flyway, then exit)
+#
+# Build from the repository root (the Gradle wrapper and version catalog live there):
+#   docker build -f backend/Dockerfile -t chess-platform .
+# The build context is an allowlist: backend/Dockerfile.dockerignore.
+
+# ---------------------------------------------------------------- build
+FROM eclipse-temurin:25-jdk-noble AS build
+WORKDIR /workspace
+
+# Build scripts first, then dependencies, then sources: a code-only change reuses the
+# dependency layer — in CI too, where the layer cache is the only cache that travels.
+COPY gradlew settings.gradle.kts build.gradle.kts ./
+COPY gradle gradle
+COPY backend/build.gradle.kts backend/
+RUN ./gradlew :backend:resolveDependencies --no-daemon --quiet
+
+COPY backend/src/main backend/src/main
+RUN ./gradlew :backend:bootJar --no-daemon --quiet \
+ && java -Djarmode=tools -jar backend/build/libs/chess-platform.jar \
+        extract --layers --launcher --destination /extracted
+
+# ---------------------------------------------------------------- runtime
+# JRE, not JDK: no compiler in production. Ubuntu (noble), not Alpine: Netty's native
+# transport is built against glibc, and musl surprises are not a debugging session worth
+# having for ~40 MB.
+FROM eclipse-temurin:25-jre-noble
+
+# A fixed, non-root, non-login user. A compromised process should not own the container.
+RUN groupadd --system --gid 10001 chess \
+ && useradd --system --uid 10001 --gid chess --no-create-home --shell /usr/sbin/nologin chess
+
+WORKDIR /app
+# Boot's layers, least to most frequently changed, so a push after a code change uploads
+# the application layer (kilobytes) and not the dependencies (~100 MB).
+COPY --from=build /extracted/dependencies/ ./
+COPY --from=build /extracted/spring-boot-loader/ ./
+COPY --from=build /extracted/snapshot-dependencies/ ./
+COPY --from=build /extracted/application/ ./
+
+USER 10001:10001
+EXPOSE 8080
+
+# JDK_JAVA_OPTIONS, not JAVA_TOOL_OPTIONS: only the launcher variable accepts `--` options.
+#   MaxRAMPercentage       heap sized from the container's memory limit, not the host's
+#   ExitOnOutOfMemoryError die cleanly and let the orchestrator restart us, rather than
+#                          limp on in an undefined state
+#   enable-native-access   Netty's native loading (ADR-020); Java 25 warns, later blocks
+# Overridable per deployment: set JDK_JAVA_OPTIONS in the task definition.
+ENV JDK_JAVA_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED"
+
+# Exec form: the JVM is PID 1 and receives SIGTERM directly, so graceful shutdown
+# (server.shutdown=graceful) actually runs. A shell form would swallow the signal and the
+# orchestrator would SIGKILL us mid-request.
+#
+# No HEALTHCHECK: the JRE image has no curl, and ECS/Kubernetes probe
+# /actuator/health/liveness and /readiness themselves.
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

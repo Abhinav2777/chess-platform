@@ -381,6 +381,26 @@ The `local` profile raises auth limits (application-local.yml). If you still hit
 buckets live in Valkey as `rl:*` and expire within a minute; or
 `docker exec chess-valkey valkey-cli --scan --pattern 'rl:*' | xargs docker exec -i chess-valkey valkey-cli del`.
 
+### `docker build` fails: `UnknownHostException: services.gradle.org` (this dev machine)
+
+**Symptom:** the image build's Gradle step cannot resolve or reach anything; base image pulls
+work.
+**Cause:** machine configuration, not the project. `/etc/docker/daemon.json` sets
+`"dns": ["172.17.0.1"]` and nothing listens there; and with DNS fixed, TCP from the Docker
+bridge still timed out — outbound forwarding is blocked (host firewall). CI runners are
+unaffected.
+**Workarounds used to verify the image (Phase 6):** a temporary forwarder
+(`docker run -d --name tmp-dns --network host 4km3/dnsmasq --keep-in-foreground
+--listen-address=172.17.0.1 --bind-interfaces --no-resolv --server=<LAN resolver>`) plus
+`docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
+from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
+
+### A test run is killed with exit code 137
+
+The kernel's OOM killer. Seen when the full Testcontainers suite ran while the compose
+`--profile app` API and worker JVMs were also up on a 15 GB machine. Stop the app containers
+(`docker compose -f ops/docker/docker-compose.yml --profile app stop api worker`) first.
+
 ---
 
 ## Anticipated issues

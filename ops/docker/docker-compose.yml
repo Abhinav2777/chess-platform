@@ -53,5 +53,64 @@ services:
       - "9324:9324"   # SQS API
       - "9325:9325"   # web UI: queue depths, including the dead-letter queue
 
+  # ---------------------------------------------------------------------------------------
+  # The application itself, from the image (Phase 6). Off by default so that
+  # `docker compose up -d` still starts only the dependencies for bootRun development.
+  #   docker compose -f ops/docker/docker-compose.yml --profile app up -d --build
+  # Same order as a real deploy: migrate runs and exits 0, then API and worker start.
+  # Stop any bootRun on :8080 first.
+  # ---------------------------------------------------------------------------------------
+  migrate:
+    profiles: ["app"]
+    image: chess-platform:dev
+    build: { context: ../.., dockerfile: backend/Dockerfile }
+    environment: &app-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chess
+      SPRING_DATASOURCE_USERNAME: chess
+      SPRING_DATASOURCE_PASSWORD: chess          # local only — Secrets Manager in AWS
+      SPRING_DATA_REDIS_HOST: valkey
+      SPRING_CLOUD_AWS_SQS_ENDPOINT: http://elasticmq:9324
+      SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY: local
+      SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY: local
+      CHESS_MESSAGING_CREATE_QUEUES: "true"      # ElasticMQ; Terraform owns queues in AWS
+      # Two processes now: the worker's rating pushes must reach sockets held by the API.
+      CHESS_REALTIME_FANOUT: valkey
+      CHESS_AUTH_JWT_SECRET: dev-only-insecure-secret-change-me-32-bytes-min
+      # Development-sized auth limits (as application-local.yml): browser checks and Postman
+      # register and log in many users from one IP. Production limits (5 registrations/min)
+      # refused the third browser-check user — the limiter working, the stack mis-sized.
+      # JSON because map keys with dashes (register-ip) cannot be spelled as env var names.
+      SPRING_APPLICATION_JSON: >-
+        {"chess":{"ratelimit":{"policies":{
+          "login-ip":{"capacity":200,"period":"1m"},
+          "login-user":{"capacity":100,"period":"1m"},
+          "register-ip":{"capacity":100,"period":"1m"}}}}}
+      SPRING_PROFILES_ACTIVE: migrate
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    profiles: ["app"]
+    image: chess-platform:dev
+    environment:
+      <<: *app-env
+      SPRING_PROFILES_ACTIVE: ""
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    image: chess-platform:dev
+    environment:
+      <<: *app-env
+      SPRING_PROFILES_ACTIVE: worker
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_healthy }
+      elasticmq: { condition: service_started }
+
 volumes:
   postgres-data:

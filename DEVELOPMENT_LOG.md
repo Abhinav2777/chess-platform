@@ -5,6 +5,41 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-29 — Milestone 6.1: the container image
+
+**Decided (with the owner):** `main` + PRs; GHCR now, ECR in Phase 7; browser checks nightly +
+manual.
+
+**Found before building:** CI has never run. The workflow triggers on `main` and PRs; GitHub
+has one branch (`users/Abhinav/initial`, the default), no PRs, zero workflow runs. Phase 0's
+"CI confirmed working" was never backed by a run — the third green claim without evidence
+(after ArchUnit and the first concurrency test).
+
+**Built:** `backend/Dockerfile` + allowlist context, `resolveDependencies`, `worker` and
+`migrate` profiles, `MigrateAndExit`, compose `--profile app`. ADR-021.
+
+**Verified:** see ADR-021 — cold 142 s / cached 17.7 s, app layer 565 kB, uid 10001, migrate
+exit 0, Postman + `e2e:lobby` against containers (rating across containers in 799 ms), graceful
+stop with exit 143.
+
+**The scan did its job on the first run:** 3 CRITICAL in Tomcat 11.0.24, 2 HIGH in Jackson,
+all in Boot 4.1.1's managed versions, no Boot patch available. Overridden through Boot's own
+properties, suite green, rescan clean. The CI gate would have been red from day one — as it
+should.
+
+**Found along the way**
+- **This machine's containers have no internet:** daemon DNS points at an absent resolver on
+  172.17.0.1, and bridge egress is blocked. Not changed (system config, the owner's call);
+  verified with a temporary dnsmasq forwarder + `--network=host`, then removed.
+- **Production rate limits in a dev stack** refused the third browser-check registration — the
+  limiter right, the stack mis-sized; dev limits via `SPRING_APPLICATION_JSON` (dashed map keys
+  cannot be env var names).
+- **Exit 137** — the OOM killer, from the test suite running beside the app containers.
+
+**Hours:** ~3. Phase 6 at ~3 of 8–10.
+
+---
+
 ## 2026-09-29 — Milestone 5.3: rating changes pushed — Phase 5 complete
 
 **Built:** `RatingsChanged` (rating's public event, published in the rating transaction) →

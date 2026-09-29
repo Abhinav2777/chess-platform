@@ -45,6 +45,22 @@ repositories {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Security overrides of Boot-managed versions (Phase 6, found by the first Trivy scan).
+//
+// Boot 4.1.1 manages Tomcat 11.0.24 (3 CRITICAL CVEs, fixed in 11.0.25) and Jackson
+// 3.1.5 / 2.21.5 (HIGH, fixed in 3.1.6 / 2.21.6); no Boot 4.1.2 existed yet. Boot's own
+// property names, so the rest of its dependency management is untouched. Jackson 2 is here
+// only through logstash-logback-encoder.
+//
+// REMOVE each line when a Boot release manages that version or later — an override left
+// behind pins us to an old version the next time Boot moves on. The CI image scan is what
+// tells us when the next one is needed.
+// ---------------------------------------------------------------------------
+extra["tomcat.version"] = "11.0.25"
+extra["jackson-bom.version"] = "3.1.6"
+extra["jackson-2-bom.version"] = "2.21.6"
+
 dependencies {
     implementation(libs.spring.web)
     implementation(libs.spring.websocket)
@@ -171,4 +187,19 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.bootJar {
     archiveFileName = "chess-platform.jar"
+}
+
+// Downloads every dependency jar without compiling anything, so the Docker build can cache
+// them in their own layer (backend/Dockerfile). `./gradlew dependencies` would not do: the
+// report resolves the graph but does not fetch the artifacts.
+tasks.register("resolveDependencies") {
+    description = "Downloads compile and runtime dependencies (Docker layer caching)."
+    val compile = configurations.compileClasspath
+    val runtime = configurations.runtimeClasspath
+    val processors = configurations.annotationProcessor
+    doLast {
+        compile.get().files
+        runtime.get().files
+        processors.get().files
+    }
 }

@@ -97,6 +97,16 @@ edit — or make the edit fail loudly when its anchor is absent.
       without `default` fails to compile, which is the good outcome; a switch *statement*
       silently does nothing for the new value.
 
+## Container image and CVEs (added 2026-09-29, ADR-021)
+
+- [ ] **Boot-managed versions can carry CVEs before Boot ships a patch.** Override with
+      Boot's own property (`extra["tomcat.version"]`, `extra["jackson-bom.version"]`,
+      `extra["jackson-2-bom.version"]`) — never pin the artifact directly.
+- [ ] **On every Boot upgrade, remove the overrides it now covers.** A forgotten override
+      pins an old version the next time Boot moves on; the CI image scan finds the next one.
+- [ ] **`JDK_JAVA_OPTIONS`, not `JAVA_TOOL_OPTIONS`,** for launcher flags like
+      `--enable-native-access` — the latter rejects `--` options.
+
 ## Tests and scheduled jobs
 
 - [ ] **A `@Scheduled` job keeps running in every cached test context.** Disabling it with
