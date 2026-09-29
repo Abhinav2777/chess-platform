@@ -217,10 +217,10 @@ worker crash mid-processing.
 
 ---
 
-### Phase 6 — Docker + CI/CD · 8–10 h · Week 10 — **IN PROGRESS (~3 h)**
+### Phase 6 — Docker + CI/CD · 8–10 h · Week 10 — **IN PROGRESS (~5 h)**
 
 **Progress:** 6.1 image ✅ (ADR-021; Trivy found 3 CRITICAL + 2 HIGH in Boot-managed Tomcat/
-Jackson — overridden, rescanned clean) · 6.2 CI + Dependabot + `main`/PR flow · 6.3 done-when
+Jackson — overridden, rescanned clean) · 6.2 CI + Dependabot ✅ (written and linted; runs once `main` exists — owner's step) · 6.3 done-when
 (failing-test PR goes red; merge pushes a scanned image). **Changed from the plan (owner's
 choices):** images to **GHCR** now, ECR in Phase 7; browser checks **nightly + manual**.
 **Found:** CI had never run — 0 workflow runs; no `main` on GitHub.

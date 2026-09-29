@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-29 · **Updated at:** Phase 6 Milestone 6.1 (container image)
+**Last updated:** 2026-09-29 · **Updated at:** Phase 6 Milestone 6.2 (CI pipeline)
 
 
 ---
@@ -75,17 +75,32 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 6 — Docker + CI/CD |
-| **Phase status** | **6.1 green** (image): unit 90, integration 126; containerized stack passes Postman + `e2e:lobby`; Trivy 0 fixable HIGH/CRITICAL. **CI has never run** — fixed in 6.2. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~3 of 8–10 |
-| **Cumulative hours (estimated)** | ~79.5 of 135–175 |
+| **Phase status** | **6.2 written** (CI, e2e, Dependabot, protection-as-code; `actionlint` clean). **CI still has never run** — waits on the owner creating `main` (§10). |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~5 of 8–10 |
+| **Cumulative hours (estimated)** | ~81.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 6.2 — CI pipeline, Dependabot, `main` + PR flow (§10) |
+| **Next milestone** | 6.3 — owner creates `main`; failing-test PR goes red; merge publishes (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 6 — Milestone 6.2: the pipeline (2026-09-29, written + linted; not yet run)
+
+- `.github/workflows/ci.yml` (ADR-022): `backend`, `frontend` (new — the frontend was never in
+  CI), `image` (build → Trivy fixable HIGH/CRITICAL gate → push to GHCR on `main` only, SHA +
+  `main` tags). Least-privilege token; every action SHA-pinned (versions current as of
+  2026-09-29: checkout v7.0.1, setup-java v6.0.1, setup-node v7.0.0, upload-artifact v7.0.1,
+  gradle v6.4.0, buildx v4.4.1, build-push v7.4.0, login v4.6.0, metadata v6.2.0, trivy
+  v0.36.0).
+- `.github/workflows/e2e.yml`: nightly + manual; compose deps, bootRun, Vite, runner Chrome;
+  `e2e:lobby`, then Valkey fanout + `e2e:outage`; screenshots and logs as artifacts.
+- `.github/dependabot.yml`: gradle, npm, github-actions, docker.
+- `.github/branch-protection.json`: the three checks, strict, enforced for admins.
+- `actionlint` (with shellcheck): clean. **Not yet run on GitHub** — see §10.
+
 
 ### Phase 6 — Milestone 6.1: the container image (2026-09-29, verified)
 
@@ -607,6 +622,7 @@ Full reasoning in `docs/adr/`. Summary:
 | 019 | ElasticMQ, not LocalStack (now account-gated), as the SQS stand-in |
 | 020 | Spring Cloud AWS 4.1.1 for SQS (amends 011's SDK-direct); template never creates queues |
 | 021 | One image, three roles (API / worker / migrate); migrations a separate pre-rollout step |
+| 022 | CI: PR gate on backend/frontend/image; Trivy before push; SHA-pinned actions; GHCR (ECR in P7) |
 
 ---
 
@@ -639,21 +655,24 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Milestone 6.2 — CI, Dependabot, `main` + PR flow** (~3–4 h).
+**Milestone 6.3 — make CI real, then prove it** (owner's steps; GitHub auth required).
 
-- `.github/workflows/ci.yml`: jobs `backend` (wrapper validation, unit + ArchUnit,
-  integration, bootJar), `frontend` (`npm ci`, `tsc` + build), `image` (buildx with GHA layer
-  cache, Trivy `--exit-code 1` on fixable HIGH/CRITICAL, push to `ghcr.io/abhinav2777/chess-
-  platform` with the commit SHA + `main` tags on pushes to `main` only).
-- `.github/workflows/e2e.yml`: nightly + `workflow_dispatch`; compose deps, `bootRun`, Vite,
-  headless Chromium; `e2e:lobby` (and `e2e:outage` with fanout=valkey).
-- `.github/dependabot.yml`: gradle (version catalog), npm, github-actions, docker.
-- **Owner's steps (need GitHub auth):** create `main` from the current branch and push it; set
-  it as the default branch; branch protection requiring the three CI jobs. Exact commands to be
-  provided with 6.2.
+1. Commit 6.2 on `users/Abhinav/initial`.
+2. Create `main` from it and publish (local `main` is the stale first commit):
+   `git branch -f main HEAD && git push -u origin main`
+3. `gh auth login`, then make `main` the default:
+   `gh repo edit Abhinav2777/chess-platform --default-branch main`
+4. Wait for the first CI run on `main` to go green (`gh run watch`). The image appears at
+   `ghcr.io/abhinav2777/chess-platform`. If the package is private, make it public in its
+   settings (Phase 7 pulls it).
+5. Protect `main` (check names must exist, hence after step 4):
+   `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
+6. **Done-when:** a branch with a deliberately failing test, opened as a PR — `backend` must go
+   red and the PR must be unmergeable; then close it. Optionally run the browser checks once:
+   `gh workflow run e2e.yml`.
 
-Then **6.3** — the done-when: a PR with a deliberately failing test goes red; a merge to `main`
-produces a scanned, tagged image in GHCR with no manual steps.
+Then Phase 6 closeout (checkpoint, archive) and **Phase 7 — AWS** (open questions in §11:
+account, region, domain; budget alarm before the first `terraform apply`).
 
 ---
 

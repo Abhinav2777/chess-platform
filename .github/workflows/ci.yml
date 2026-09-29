@@ -1,9 +1,12 @@
 name: CI
 
+# Every PR, and every push to main. A PR must be green in all three jobs before it can merge
+# (branch protection); a push to main additionally publishes the image.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # A new push to the same branch cancels the previous run. Without this, a busy branch
 # queues builds for commits nobody is waiting on any more.
@@ -11,66 +14,145 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default: read the code, nothing else. The image job widens this for
+# itself only, and only uses it on main.
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs, not tags. A tag can be moved to point at different
+# code, and an action runs with this workflow's token — the tj-actions/changed-files
+# compromise (2025) worked exactly that way. Dependabot keeps the SHAs current.
+
 jobs:
-  build:
+  backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # gradle-wrapper.jar is a committed binary that executes on every build, on CI and
-      # on every contributor's machine. That makes it a supply-chain surface: a modified
-      # jar runs arbitrary code before any of our own code is compiled. This step
-      # checksums it against Gradle's published releases.
-      #
-      # Runs before setup-gradle, so nothing Gradle-related executes unvalidated.
-      # NOTE: setup-gradle may perform this check itself; kept explicit because the
-      # redundancy is free and the intent should be visible to a reviewer.
+      # gradle-wrapper.jar is a committed binary that executes on every build. Checksummed
+      # against Gradle's published releases before anything Gradle-related runs.
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '25'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
-          # Only write to the shared cache from main. PR branches read it but cannot
-          # poison it, which stops a broken dependency on one branch breaking every
-          # other branch's build.
+          # Only main writes the shared cache; PR branches read it but cannot poison it.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # Split into two steps deliberately, so the failure is legible at a glance:
-      # a red "Unit tests" step is a logic bug, a red "Integration tests" step is
-      # usually environmental. Debugging starts in a different place for each.
-      # Cheap and fails fast. Catches the case where someone regenerated the wrapper
-      # with an explicit --gradle-version and left libs.versions.toml behind, which
-      # would otherwise mean the pinned version is documentation rather than a constraint.
+      # Cheap, fails fast: the wrapper and libs.versions.toml must agree.
       - name: Verify pinned Gradle version
         run: ./gradlew verifyGradleVersion
 
+      # Separate steps so the failure is legible at a glance: red "Unit" is a logic bug,
+      # red "Integration" is often environmental. Debugging starts in a different place.
       - name: Unit tests and architecture rules
         run: ./gradlew :backend:test --stacktrace
 
-      - name: Integration tests
-        # Testcontainers uses the Docker daemon that is already present on the runner.
+      - name: Integration tests (Testcontainers)
         run: ./gradlew :backend:integrationTest --stacktrace
-
-      - name: Build jar
-        run: ./gradlew :backend:bootJar
 
       - name: Upload test reports
         if: always()   # the reports matter most when the build failed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-reports
+          name: backend-test-reports
           path: backend/build/reports/tests/
           retention-days: 7
 
-# Added in Phase 6: Docker build, Trivy image scan, push to ECR.
-# Deliberately not stubbed here — a commented-out pipeline stage is a lie about what
-# the build does.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # `npm ci`, not `npm install`: installs exactly the lockfile, fails if it disagrees
+      # with package.json.
+      - run: npm ci
+      # tsc -b then vite build. The dev server never type-checks — which is how a broken
+      # production build survived two milestones in Phase 2 (DEVELOPMENT_LOG, 3.2).
+      - run: npm run build
+
+  image:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write   # GHCR push; used only on main (see the push step's condition)
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/chess-platform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Tags: the full commit SHA (immutable — what Phase 7 deploys) and `main` (moving).
+      # PR builds are tagged too but never pushed.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+
+      # Build and load into the runner's Docker, so the scan sees exactly what would ship.
+      # The GitHub Actions cache holds the layers — including the ~88 MB dependency layer
+      # that a code-only change reuses (ADR-021).
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The gate. Fails on HIGH/CRITICAL vulnerabilities that have a fix available: an
+      # unfixable one is not actionable by us, and blocking on it would teach everyone to
+      # ignore the scan. The first local scan found 3 CRITICAL in Boot-managed Tomcat.
+      - name: Scan (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      # Only main publishes. Pull requests — including from forks — never get registry
+      # credentials, and nothing unreviewed reaches the registry.
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same inputs, same cache: this "build" is seconds, and pushes the scanned layers.
+      - name: Push
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

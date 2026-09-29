@@ -19,6 +19,17 @@ and so the cost-control rules are written down *before* anything can be provisio
 4. Every AWS component must be classified **Required / Useful / Optional / Too
    expensive** before it is added, with an estimated monthly cost.
 
+## CI/CD (Phase 6, ADR-022)
+
+Every PR and every push to `main`: `backend` (unit, ArchUnit, Testcontainers), `frontend`
+(type-check + build), `image` (build → Trivy → push). Only `main` pushes, to
+`ghcr.io/abhinav2777/chess-platform:<full-commit-sha>` and `:main`. `main` is protected
+(`.github/branch-protection.json`). Browser checks run nightly (`.github/workflows/e2e.yml`).
+
+A deployment runs the same image three ways (ADR-021): **`migrate` first** (one-off, must exit
+0), then roll out `api` and `worker`. Migrations must stay compatible with the version still
+running (expand → deploy → contract).
+
 ## Deployment paths
 
 | Path | Stack | Lifetime | Est. monthly cost |
