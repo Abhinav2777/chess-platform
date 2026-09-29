@@ -217,7 +217,7 @@ worker crash mid-processing.
 
 ---
 
-### Phase 6 — Docker + CI/CD · 8–10 h · Week 10 — **IN PROGRESS (~5 h)**
+### Phase 6 — Docker + CI/CD · 8–10 h · Week 10 — **COMPLETE (~6.5 h)**
 
 **Progress:** 6.1 image ✅ (ADR-021; Trivy found 3 CRITICAL + 2 HIGH in Boot-managed Tomcat/
 Jackson — overridden, rescanned clean) · 6.2 CI + Dependabot ✅ (written and linted; runs once `main` exists — owner's step) · 6.3 done-when
@@ -339,6 +339,16 @@ explaining one afterwards.
 | **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
 | **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
 | **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
+
+## Time checkpoint — end of Phase 6
+
+| | |
+|---|---|
+| **Estimated time used** | ~83 h (Phases 0–5 ~76.5, Phase 6 ~6.5) |
+| **Estimated remaining** | ~52–92 h of the 135–175 plan |
+| **Schedule status** | **On track** — Phase 6 under its 8–10 h, including two real bugs found by the first CI runs. The HARD PORTFOLIO DEADLINE (week 12) is Phase 7. |
+| **Scope status** | **On track, with recorded changes:** GHCR instead of ECR for now (ECR in Phase 7); browser checks nightly. Done-when met: a push to `main` produced a scanned, tagged, public image with no manual steps (run 36616824363); a PR went red on a failing test (PR #7, a real race). `main` protected after PR #7, so "red cannot merge" is configured, not yet exercised. |
+| **Recommended adjustment** | Before Phase 7: triage the 6 open Dependabot PRs (~1 h) — four are majors (Vite 8, TypeScript 7, plugin-react 6, Testcontainers 2.0, logstash-encoder 9); merge only what CI and a read of the changelogs support. |
 
 ## Time checkpoint — end of Phase 5 (Milestone 5.3)
 
