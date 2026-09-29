@@ -26,14 +26,18 @@ every machine and in CI.
 
 ## The Gradle wrapper
 
-`gradlew` and `gradle/wrapper/gradle-wrapper.properties` are in the repository, pinned to
-**Gradle 9.7.1**. `gradle-wrapper.jar` and `gradlew.bat` are not — see
-`gradle/wrapper/README-MISSING-JAR.md`. One command produces them:
+The wrapper (`gradlew`, `gradlew.bat`, `gradle/wrapper/*`) is committed, pinned to
+**Gradle 9.8.0** in `gradle/libs.versions.toml`. CI checksums `gradle-wrapper.jar` against
+Gradle's published releases. To change the version, edit the catalog, then:
 
 ```bash
 ./gradlew wrapper          # no --gradle-version flag; the root build reads the pin
+./gradlew wrapper          # twice: the second run uses the new version to write its own files
 ./gradlew verifyGradleVersion
 ```
+
+Never bump only `gradle-wrapper.properties` (Dependabot does exactly that):
+`verifyGradleVersion` fails the build on the drift.
 
 Commit all four files afterwards, including the jar. A clone without it cannot build.
 `git update-index --chmod=+x gradlew` if the executable bit does not survive.

@@ -8,6 +8,8 @@ async function user(name) {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 } });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`${name}: ${m.text()}`); });
+  // Chrome's console line for a failed load has no URL; this one does.
+  page.on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`${name}: ${r.status()} ${r.request().method()} ${r.url()}`); });
   await page.goto('http://localhost:5173');
   await page.getByRole('button', { name: 'Create an account' }).click();
   await page.getByPlaceholder('username').fill(name);

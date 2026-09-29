@@ -145,6 +145,22 @@ edit — or make the edit fail loudly when its anchor is absent.
 - [ ] **Mutation-check a new architecture or security rule once**: plant a violation, watch
       it go red, remove it. A test never seen failing has not been shown to test anything.
 
+## Dependency versions (added 2026-09-30, Dependabot triage)
+
+- [ ] **Pin only what Boot does not manage.** A version in the catalog for a Boot-managed
+      library (Testcontainers, AssertJ, JUnit, Jackson…) fights the BOM. We had Testcontainers
+      core 2.0.5 (Boot) next to modules at 1.20.4 (our BOM), and an AssertJ pin *below* Boot's.
+      Check: the Boot BOM's `<properties>` list, e.g.
+      `grep '<testcontainers.version>' ~/.gradle/caches/**/spring-boot-dependencies-*.pom`.
+- [ ] **Read the arrows**: `./gradlew :backend:dependencies --configuration testRuntimeClasspath`
+      — `a -> b` where b < a is a downgrade; one artifact family at two majors is a mixed classpath.
+- [ ] To override a Boot-managed version for a CVE, use **Boot's property**
+      (`extra["tomcat.version"]`), never a second BOM — and remove it when Boot catches up.
+- [ ] **Testcontainers 2.x**: modules are `testcontainers-<name>`; `PostgreSQLContainer` is
+      `org.testcontainers.postgresql.PostgreSQLContainer`, not generic.
+- [ ] **Gradle**: bump the catalog, then `./gradlew wrapper` (twice). Never the properties file
+      alone — `verifyGradleVersion` fails on that, as it did on Dependabot's PR.
+
 ## Debugging
 
 - [ ] Many tests failing at once with `DefaultCacheAwareContextLoaderDelegate` is **one**
