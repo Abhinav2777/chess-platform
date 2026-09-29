@@ -5,6 +5,27 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — 6.2: the first CI run ever
+
+The owner created `main` and made it the default branch; CI ran for the first time in the
+project's life (run 99141810504).
+
+- **`backend` green** — wrapper validation, pinned Gradle, unit (48 s) and the full
+  Testcontainers integration suite (2 m 21 s): its first run on any machine but the dev box.
+- **`frontend` green** — type-check and production build.
+- **`image` red** — Trivy exited in 5 s: `failed to parse the image name`. The job's `IMAGE` was
+  `ghcr.io/${{ github.repository_owner }}/…` = `ghcr.io/Abhinav2777/…`; docker/metadata-action
+  lowercases on its own, so the image had been built as `ghcr.io/abhinav2777/…`. Image names
+  must be lowercase. Invisible locally, where the image was `chess-platform:dev`.
+  **Fix:** a first step sets `IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/chess-platform`
+  (GitHub expressions have no `lower()`).
+
+**Lesson:** the pipeline's first run found a bug no local run could have: identity-dependent
+values (owner, repository, ref) only exist in the real environment. Expected — which is why the
+"done when" is a real run, not a lint.
+
+---
+
 ## 2026-09-29 — Milestone 6.2: the pipeline
 
 **Built:** `ci.yml` (backend, frontend, image with Trivy-before-push to GHCR), `e2e.yml`
