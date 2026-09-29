@@ -78,6 +78,20 @@ public class MatchmakingFacade {
         // they would then have two games, which the abort window cleans up. Not worth a
         // distributed transaction.
         if (games.hasActiveGame(userId)) {
+            // The game found may be the one this player was paired into a moment ago — after
+            // the match-key read above, by a matchmaker on any instance. Look again before
+            // refusing. Sound because of the order pairing writes in: pair.lua sets the key
+            // (PENDING) BEFORE the game row commits, and recordMatch replaces it with the game
+            // id after. So a game that came from matchmaking is always visible through the key
+            // by the time it is visible in PostgreSQL — unless the player has already opened it
+            // (acknowledged), in which case "finish your current game" is the right answer.
+            // Found by CI (PR run 99154576839): a double-click seek told a just-matched player
+            // to finish their current game.
+            Optional<SeekResult> matchedMeanwhile = valkey(() -> queue.matchOf(userId))
+                    .map(MatchmakingFacade::fromMatchValue);
+            if (matchedMeanwhile.isPresent()) {
+                return matchedMeanwhile.get();
+            }
             throw new DomainException.Rejected(ErrorCode.ALREADY_IN_GAME,
                     "Finish your current game before looking for another.");
         }

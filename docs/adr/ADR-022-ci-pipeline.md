@@ -63,8 +63,11 @@ docker (base images); weekly, minor + patch grouped.
   scan is what flags the next one.
 - A new GHCR package may start **private** even for a public repository; Phase 7 either makes
   it public or gives the pulling side credentials.
-- The first run on GitHub is the real verification; this ADR records the design as linted
-  (`actionlint`, including shellcheck), not yet as run.
+- **First run (2026-09-29, run 99141810504):** `backend` green (unit 48 s, integration 2 m 21 s —
+  the Testcontainers suite's first run anywhere but the dev machine) and `frontend` green; `image`
+  red — the Trivy target was `ghcr.io/Abhinav2777/…` while metadata-action had built
+  `ghcr.io/abhinav2777/…`. Image names must be lowercase; `github.repository_owner` is not.
+  Fixed with a bash-lowercased `IMAGE` set once for the job.
 
 ## Interview angle
 
