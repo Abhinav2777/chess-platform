@@ -368,6 +368,18 @@ rolls back, redelivery applies it once.
 
 ---
 
+## Milestone 5.3 — async result, realtime feedback
+
+### "How does a player see their rating change if rating is asynchronous?"
+The worker publishes an application event inside the rating transaction; an AFTER_COMMIT
+listener sends RATING_UPDATED through the Valkey user channel — because the worker is usually
+not the instance holding the player's socket. Duplicates publish nothing, so the dedupe also
+dedupes notifications. It's fire-and-forget; the lobby reads the rating from the database, so
+a lost push costs a moment, not correctness. Measured in a browser: 0.8 s from resignation to
+"Rating 1216 (+16)" on both screens — outbox, relay, queue, worker and push included.
+
+---
+
 ## To be added
 
 Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,

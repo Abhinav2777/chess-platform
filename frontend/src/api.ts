@@ -137,4 +137,7 @@ export const api = {
   myGames: () => request<GameSummary[]>('/api/games?page=0&size=20'),
 
   getGame: (gameId: string) => request<GameDetail>(`/api/games/${gameId}`),
+
+  /** The signed-in player, including their current rating — correct even if a push was missed. */
+  me: () => request<{ id: string; username: string; rating: number }>('/api/users/me'),
 };

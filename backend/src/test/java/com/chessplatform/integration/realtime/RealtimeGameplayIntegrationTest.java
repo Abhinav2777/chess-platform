@@ -1,6 +1,9 @@
 package com.chessplatform.integration.realtime;
 
 import com.chessplatform.chess.Side;
+import com.chessplatform.game.GameFinished;
+import com.chessplatform.game.GameResult;
+import com.chessplatform.game.Termination;
 import com.chessplatform.game.TimeControl;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
@@ -97,6 +100,8 @@ class RealtimeGameplayIntegrationTest {
     private UserRepository users;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private com.chessplatform.rating.internal.RatingService ratingService;
     @Autowired
     private org.springframework.data.redis.core.StringRedisTemplate valkey;
 
@@ -422,6 +427,46 @@ class RealtimeGameplayIntegrationTest {
             try (TestWebSocketClient client = connectedAndSubscribed(whiteToken)) {
                 client.send(ClientMessage.PING, null);
                 assertThat(client.await("PONG")).isNotNull();
+            }
+        }
+    }
+
+    /**
+     * Rating changes reach the players (Phase 5.3). The consumer is not running in this
+     * context, so the rating is applied by calling the service directly — the same call the
+     * SQS listener makes — and what is under test is the path from its commit to the sockets.
+     */
+    @Nested
+    @DisplayName("ratings")
+    class Ratings {
+
+        private TestWebSocketClient authenticated(String token) throws Exception {
+            TestWebSocketClient client = new TestWebSocketClient(json).connect(port);
+            client.send(ClientMessage.AUTH, new Payloads.Auth(token));
+            client.await("AUTH_OK");
+            return client;
+        }
+
+        @Test
+        @DisplayName("RATING_UPDATED reaches both players after the rating commits; a duplicate sends nothing")
+        void ratingUpdatedReachesBothPlayers() throws Exception {
+            GameFinished whiteWon = new GameFinished(GameFinished.SCHEMA_VERSION, game.id(),
+                    white.id(), black.id(), GameResult.WHITE_WIN, Termination.RESIGNATION);
+            UUID eventId = UUID.randomUUID();
+
+            try (TestWebSocketClient w = authenticated(whiteToken);
+                 TestWebSocketClient b = authenticated(blackToken)) {
+                ratingService.apply(eventId, whiteWon);
+
+                Map<String, Object> toWhite = w.payloadOf(w.await("RATING_UPDATED"));
+                Map<String, Object> toBlack = b.payloadOf(b.await("RATING_UPDATED"));
+                assertThat(toWhite).containsEntry("rating", 1216).containsEntry("delta", 16)
+                        .containsEntry("gameId", game.id().toString());
+                assertThat(toBlack).containsEntry("rating", 1184).containsEntry("delta", -16);
+
+                // At-least-once delivery must not become at-least-once notification.
+                ratingService.apply(eventId, whiteWon);
+                assertThat(w.typesUntilPong()).doesNotContain("RATING_UPDATED");
             }
         }
     }

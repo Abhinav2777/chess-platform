@@ -5,6 +5,29 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-29 — Milestone 5.3: rating changes pushed — Phase 5 complete
+
+**Built:** `RatingsChanged` (rating's public event, published in the rating transaction) →
+`RatingAnnouncer` (`AFTER_COMMIT`) → `UserNotifier` → `RATING_UPDATED`. Client shows the change
+on the finished-game panel; the lobby shows the current rating from `/api/users/me`.
+
+**Decided:** a separate `RATING_UPDATED` rather than a `ratingDelta` on `GAME_FINISHED` (the
+Phase 0 plan). The result is known at commit; the rating a second later, from another process.
+One message per fact.
+
+**Verified:** realtime integration test (both players, after commit; duplicate sends nothing);
+browser — `e2e:lobby` resigns the game and waits for both ratings: **0.8 s** end to end through
+outbox, relay, ElasticMQ, worker and push.
+
+**Minor:** an edit script (Python triple quotes around a Java text block) applied nothing —
+caught by the compiler, redone with direct edits. The browser check's 5 s sign-in wait failed
+once against a just-restarted backend; raised to 15 s. And PROJECT_STATE's cumulative-hours
+line had gone stale at ~67 h since Phase 4's follow-up — corrected to ~76.5 h.
+
+**Hours:** ~1.5. **Phase 5 complete at ~9 h** (10–14 planned).
+
+---
+
 ## 2026-09-29 — Milestone 5.2: the rating consumer
 
 **Built:** V7 (`processed_events`, `rating_history`); `rating` module (Elo, `RatingService`,

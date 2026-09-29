@@ -194,10 +194,10 @@ entries; `docker stop valkey` degrades to polling without any move being lost.
 
 ---
 
-### Phase 5 — Async Processing · 10–14 h (now ~12–15 h) · Weeks 8–10 — **IN PROGRESS (~7.5 h)**
+### Phase 5 — Async Processing · 10–14 h (now ~12–15 h) · Weeks 8–10 — **COMPLETE (~9 h)**
 
 **Progress:** 5.1 outbox + relay + SQS ✅ · 5.2 Elo consumer ✅ (all three done-when proven) ·
-5.3 `RATING_UPDATED` push. **Changed from the plan:** ElasticMQ instead of LocalStack, which
+5.3 `RATING_UPDATED` push ✅ (browser-verified, 0.8 s after the game ends). **Changed from the plan:** ElasticMQ instead of LocalStack, which
 now needs an account (ADR-019); Spring Cloud AWS 4.1.1 instead of the SDK directly (ADR-020); ratings pushed to players (owner's choice, ~1.5 h, previously
 SKIP).
 
@@ -333,6 +333,16 @@ explaining one afterwards.
 | **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
 | **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
 | **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
+
+## Time checkpoint — end of Phase 5 (Milestone 5.3)
+
+| | |
+|---|---|
+| **Estimated time used** | ~76.5 h (Phases 0–4 ~67.5, Phase 5 ~9) |
+| **Estimated remaining** | ~58–98 h of the 135–175 plan |
+| **Schedule status** | **On track, ahead on Phase 5** — ~9 h against 10–14 planned (12–15 revised), including the Spring Cloud AWS migration and the owner-added rating push. |
+| **Scope status** | **On track, with recorded changes:** ElasticMQ (ADR-019), Spring Cloud AWS 4.1.1 (ADR-020), rating push (previously SKIP). Done-when met: duplicate delivery rates once, three failures reach the DLQ, a crash mid-transaction is applied once. |
+| **Recommended adjustment** | None. Phase 6 (Docker + CI/CD, 8–10 h). The Dockerfile must pass `--enable-native-access=ALL-UNNAMED` (ADR-020) and the worker role needs its own run configuration (ADR-001). |
 
 ## Time checkpoint — end of Phase 4 (Milestone 4.3)
 

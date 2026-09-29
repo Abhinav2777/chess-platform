@@ -12,7 +12,7 @@ async function user(name) {
   await page.getByPlaceholder('username').fill(name);
   await page.getByPlaceholder('password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Register' }).click();
-  await page.getByText(`Hello, ${name}`).waitFor({ timeout: 5000 });
+  await page.getByText(`Hello, ${name}`).waitFor({ timeout: 15000 })   // generous: a cold backend's first bcrypt + JIT;
   return page;
 }
 const label = (p) => p.locator('.connection').innerText();

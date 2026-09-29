@@ -42,6 +42,13 @@ public enum ServerMessage {
      */
     MATCH_FOUND,
 
+    /**
+     * A finished game changed this player's rating (Phase 5.3). Arrives after
+     * {@code GAME_FINISHED} — ratings are applied asynchronously by the worker — typically
+     * within a second or two. Fire-and-forget: the lobby shows the current rating anyway.
+     */
+    RATING_UPDATED,
+
     /** A command was rejected. Carries the same {@code code} vocabulary as the REST API. */
     ERROR
 }

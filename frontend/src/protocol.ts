@@ -97,3 +97,14 @@ export interface MatchFound {
   initialSeconds: number;
   incrementSeconds: number;
 }
+
+/**
+ * A finished game changed this player's rating (Phase 5.3). Arrives after GAME_FINISHED —
+ * ratings are applied asynchronously — and may be lost like any push; the lobby reads the
+ * current rating from the server regardless.
+ */
+export interface RatingUpdated {
+  gameId: string;
+  rating: number;
+  delta: number;
+}

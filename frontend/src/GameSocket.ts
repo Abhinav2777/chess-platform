@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, type Envelope, type Failure, type GameFinished,
          type GameSnapshot, type MatchFound, type MoveMade, type PlayerPresence,
-         type SeekStatus } from './protocol';
+         type RatingUpdated, type SeekStatus } from './protocol';
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080/ws';
 
@@ -19,6 +19,7 @@ export interface GameSocketHandlers {
   onPresence?: (presence: PlayerPresence) => void;
   onSeekStatus?: (status: SeekStatus) => void;
   onMatchFound?: (match: MatchFound) => void;
+  onRatingUpdated?: (update: RatingUpdated) => void;
 }
 
 export interface MoveRequest {
@@ -132,6 +133,9 @@ export class GameSocket {
         break;
       case 'SEEK_STATUS':
         this.handlers.onSeekStatus?.(envelope.payload as SeekStatus);
+        break;
+      case 'RATING_UPDATED':
+        this.handlers.onRatingUpdated?.(envelope.payload as RatingUpdated);
         break;
       case 'MATCH_FOUND':
         this.handlers.onMatchFound?.(envelope.payload as MatchFound);
