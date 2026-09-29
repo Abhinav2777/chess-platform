@@ -1,0 +1,11 @@
+# The worker role (ADR-001): same image, same code, different switches.
+#   docker run -e SPRING_PROFILES_ACTIVE=worker chess-platform
+#
+# Runs the outbox relay and the rating consumer (Phase 5). Still serves HTTP — only so that
+# /actuator/health/liveness and /readiness can be probed; it is never placed behind the load
+# balancer, so no player traffic reaches it.
+chess:
+  messaging:
+    relay-enabled: true
+  rating:
+    consumer-enabled: true

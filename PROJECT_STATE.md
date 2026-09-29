@@ -11,7 +11,7 @@
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-29 · **Updated at:** Phase 5 Milestone 5.3 — **Phase 5 complete**
+**Last updated:** 2026-09-29 · **Updated at:** Phase 6 Milestone 6.1 (container image)
 
 
 ---
@@ -74,18 +74,41 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 5 — Async processing — **complete** |
-| **Phase status** | **Phase 5 complete**: unit 90, integration 126, Postman 132/132, `e2e:lobby` (now through the rating) + `e2e:outage` green. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done) |
-| **Cumulative hours (estimated)** | ~76.5 of 135–175 (this line had gone stale at ~67 through Phase 4's follow-up and 5.1–5.2; corrected at the Phase 5 boundary) |
+| **Current phase** | Phase 6 — Docker + CI/CD |
+| **Phase status** | **6.1 green** (image): unit 90, integration 126; containerized stack passes Postman + `e2e:lobby`; Trivy 0 fixable HIGH/CRITICAL. **CI has never run** — fixed in 6.2. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~3 of 8–10 |
+| **Cumulative hours (estimated)** | ~79.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 6 — Docker + CI/CD (§10) |
+| **Next milestone** | 6.2 — CI pipeline, Dependabot, `main` + PR flow (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 6 — Milestone 6.1: the container image (2026-09-29, verified)
+
+- **Decided with the owner:** `main` + PR flow; GHCR now, ECR in Phase 7; browser checks
+  nightly + manual.
+- **Found:** CI has never run (0 workflow runs; no `main` on GitHub; default branch
+  `users/Abhinav/initial`) — Phase 0's "CI confirmed working" had no run behind it.
+- `backend/Dockerfile` (ADR-021): multi-stage, dependency layer, layered jar, JRE noble,
+  uid 10001, `JDK_JAVA_OPTIONS`, exec entrypoint; allowlist `Dockerfile.dockerignore`;
+  `resolveDependencies` Gradle task. Roles: `application-worker.yml`,
+  `application-migrate.yml` + `MigrateAndExit`. Compose `--profile app` (migrate → api +
+  worker, Valkey fanout, dev rate limits via `SPRING_APPLICATION_JSON`).
+- **Verified:** cold build 142 s / code-only 17.7 s; app layer 565 kB of 400 MB; non-root;
+  migrate exit 0; Postman 132/132 and `e2e:lobby` against the containers (rating across
+  worker → API containers in 799 ms); graceful stop 2.5 s, exit 143.
+- **Trivy:** 3 CRITICAL (Tomcat 11.0.24) + 2 HIGH (Jackson 3.1.5 / 2.21.5) in Boot 4.1.1's
+  managed versions → overridden (`tomcat.version` 11.0.25, `jackson-bom.version` 3.1.6,
+  `jackson-2-bom.version` 2.21.6) → suite green → rescan 0.
+- **Environment:** this machine's containers cannot reach the internet (daemon DNS points at
+  an absent resolver; bridge egress blocked). Verified via a temporary forwarder + host
+  network, since removed (TROUBLESHOOTING). An OOM kill (137) came from running the suite
+  beside the app containers.
+
 
 ### Phase 5 — Milestone 5.3: rating changes pushed to players (2026-09-29) — **Phase 5 complete**
 
@@ -583,6 +606,7 @@ Full reasoning in `docs/adr/`. Summary:
 | 018 | One instance-wide circuit (`ValkeyGuard`) for every degradable Valkey call; 5 s window |
 | 019 | ElasticMQ, not LocalStack (now account-gated), as the SQS stand-in |
 | 020 | Spring Cloud AWS 4.1.1 for SQS (amends 011's SDK-direct); template never creates queues |
+| 021 | One image, three roles (API / worker / migrate); migrations a separate pre-rollout step |
 
 ---
 
@@ -615,19 +639,21 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-**Phase 5 is complete.** Before Phase 6:
+**Milestone 6.2 — CI, Dependabot, `main` + PR flow** (~3–4 h).
 
-1. Commit Milestone 5.3.
-2. Phase-boundary archive (§0): `git archive --format=tar.gz -o ../chess-platform-M5.3-2026-09-29.tar.gz HEAD`.
+- `.github/workflows/ci.yml`: jobs `backend` (wrapper validation, unit + ArchUnit,
+  integration, bootJar), `frontend` (`npm ci`, `tsc` + build), `image` (buildx with GHA layer
+  cache, Trivy `--exit-code 1` on fixable HIGH/CRITICAL, push to `ghcr.io/abhinav2777/chess-
+  platform` with the commit SHA + `main` tags on pushes to `main` only).
+- `.github/workflows/e2e.yml`: nightly + `workflow_dispatch`; compose deps, `bootRun`, Vite,
+  headless Chromium; `e2e:lobby` (and `e2e:outage` with fanout=valkey).
+- `.github/dependabot.yml`: gradle (version catalog), npm, github-actions, docker.
+- **Owner's steps (need GitHub auth):** create `main` from the current branch and push it; set
+  it as the default branch; branch protection requiring the three CI jobs. Exact commands to be
+  provided with 6.2.
 
-**Phase 6 — Docker + CI/CD (8–10 h), per ROADMAP.md.** Start with the design discussion:
-multi-stage build and layer caching (Boot's layered jars), a non-root runtime image, the JVM
-flags the image must carry (`--enable-native-access=ALL-UNNAMED` — ADR-020; container-aware
-memory), one image with two roles (API; worker = relay + rating consumer — ADR-001) and how
-each is started, health/readiness probes for both, and what CI must gate on (unit,
-integration with Testcontainers, ArchUnit, frontend build; the browser checks stay manual or
-become a nightly job — decide explicitly). Carry-overs worth folding in: an outbox purge job,
-and whether CI can run the Testcontainers suite within free-tier minutes.
+Then **6.3** — the done-when: a PR with a deliberately failing test goes red; a merge to `main`
+produces a scanned, tagged image in GHCR with no manual steps.
 
 ---
 

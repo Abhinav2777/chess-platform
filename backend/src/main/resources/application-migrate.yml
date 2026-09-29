@@ -1,0 +1,20 @@
+# The migrate role (Phase 6): run Flyway, then exit.
+#   docker run -e SPRING_PROFILES_ACTIVE=migrate chess-platform
+#
+# Run as a one-off step BEFORE a new version rolls out, so a failing migration stops the
+# deploy while the old version is still serving — instead of failing on the first new
+# instance mid-rollout. Consequence worth stating: migrations must be backward compatible
+# with the version still running (expand, deploy, contract), because during a rollout old
+# and new instances share the schema.
+#
+# Everything that is not the migration is switched off. The context still starts fully, so
+# Hibernate validates the entities against the migrated schema before the step reports
+# success.
+spring:
+  main:
+    web-application-type: none
+chess:
+  clock:
+    sweeper-enabled: false
+  matchmaking:
+    scheduler-enabled: false

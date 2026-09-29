@@ -71,6 +71,18 @@ is DOWN, the app is running but its dependencies are not — do not proceed.
 These credentials are for local development only and are intentionally weak. Production
 credentials come from AWS Secrets Manager and never appear in this repository.
 
+## Running the containerized stack (Phase 6)
+
+```bash
+docker build -f backend/Dockerfile -t chess-platform:dev .      # from the repo root
+docker compose -f ops/docker/docker-compose.yml --profile app up -d
+```
+
+Runs the same image three ways (ADR-021): `migrate` (Flyway, exits 0), then `api` on :8080 and
+`worker` (relay + rating consumer). Stop any `bootRun` first. Development-sized auth rate limits
+are set in the compose file. On a machine where containers cannot reach the internet, see
+TROUBLESHOOTING (“docker build fails: UnknownHostException”).
+
 ## API collection
 
 `docs/api/chess-platform.postman_collection.json`. Import into Postman and **Run

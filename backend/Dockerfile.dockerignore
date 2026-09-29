@@ -1,0 +1,9 @@
+# Allowlist: everything is excluded, then exactly what the build needs is let back in.
+# A denylist leaks whatever nobody thought to list — a .env, node_modules, a build dir.
+*
+!gradlew
+!gradle/
+!settings.gradle.kts
+!build.gradle.kts
+!backend/build.gradle.kts
+!backend/src/main/
