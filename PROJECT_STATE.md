@@ -7,11 +7,11 @@
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M5.3 (2026-09-29)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M6 (2026-09-30)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
-**Last updated:** 2026-09-29 · **Updated at:** Phase 6 Milestone 6.2 (CI pipeline)
+**Last updated:** 2026-09-30 · **Updated at:** Phase 6 complete
 
 
 ---
@@ -74,18 +74,30 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 6 — Docker + CI/CD |
-| **Phase status** | CI run 1 (`main`): image ❌ uppercase owner → fixed. PR run 2: backend ❌ — **a real matchmaking race** CI found → reproduced deterministically, fixed (ADR-016 correction). Unit 90, integration 127. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~5 of 8–10 |
-| **Cumulative hours (estimated)** | ~81.5 of 135–175 |
+| **Current phase** | Phase 6 — Docker + CI/CD — **complete** |
+| **Phase status** | **Phase 6 complete.** CI green on protected `main`; image published and public; unit 90, integration 127. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done) |
+| **Cumulative hours (estimated)** | ~83 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 6.3 — owner creates `main`; failing-test PR goes red; merge publishes (§10) |
+| **Next milestone** | Dependabot triage, then Phase 7 — AWS (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 6 — closeout (2026-09-30) — **Phase 6 complete**
+
+- `main` is the protected default branch (`backend`, `frontend`, `image` required, strict,
+  enforced for admins). Work lands through PRs.
+- Verified on GitHub (anonymously, public repo): run 36616824363 on `main` green;
+  `ghcr.io/abhinav2777/chess-platform` public, tagged `main` and `270c330…`.
+- The first CI runs found two real bugs: uppercase owner in the image name (run 1), and a
+  matchmaking race — a seek told a just-matched player `ALREADY_IN_GAME` (PR #7) — fixed with a
+  deterministic reproduction.
+- Dependabot is live: 6 PRs opened on its first run.
+
 
 ### Phase 6 — Milestone 6.2: the pipeline (2026-09-29, written + linted; not yet run)
 
@@ -655,18 +667,15 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-`main` exists and is the default branch; CI has run once (backend ✅, frontend ✅, image ❌ →
-fixed). Remaining, as the first real use of the PR flow:
-
-1. Commit the fix on `users/Abhinav/initial`, push it, open a PR into `main`:
-   `git push origin users/Abhinav/initial && gh pr create --base main --fill`
-   The PR run builds and scans the image but does not push.
-2. When all three checks are green, merge (`gh pr merge --merge`). The `main` run publishes
-   `ghcr.io/abhinav2777/chess-platform:<sha>` and `:main`. Make the package public if GHCR
-   created it private (Phase 7 pulls it).
-3. Protect `main`: `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
-4. **Done-when:** a PR with a deliberately failing test goes red and cannot merge; close it.
-5. Optional: `gh workflow run e2e.yml`.
+1. **Phase-boundary archive** (after this PR merges):
+   `git archive --format=tar.gz -o ../chess-platform-M6-2026-09-30.tar.gz origin/main`
+2. **Dependabot triage (~1 h)** — 6 open PRs, four majors. Each needs `@dependabot rebase` (they
+   predate the CI fixes), a green run, and a changelog read: Testcontainers 2.0 renamed modules
+   and packages; Vite 8 / TypeScript 7 / plugin-react 6 belong together; logstash-encoder 9 may
+   let the `jackson-2-bom.version` override go.
+3. **Phase 7 — AWS (14–18 h).** Starts with a design and cost discussion; the open questions in
+   §11 (account, region, domain) must be answered first, and the $20 budget alarm exists before
+   the first `terraform apply` (DEPLOYMENT.md rule 1).
 
 ---
 
