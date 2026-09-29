@@ -5,6 +5,23 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — Phase 6 complete
+
+PR #7 (the image-name fix and the matchmaking race fix) merged; the run on `main`
+(36616824363) was green end to end and published `ghcr.io/abhinav2777/chess-platform` tagged
+`main` and the commit SHA. The owner made the package public and protected `main` with the
+three checks. Verified anonymously through GitHub's API and the GHCR registry API.
+
+Done-when: a push to `main` → a scanned, tagged image with no manual steps ✅; a failing test
+turned a PR red ✅ (a real race, not a staged one — the owner chose not to stage another).
+Protection went on after that PR merged, so blocking a red PR is configured but not yet seen.
+
+Dependabot's first run opened 6 PRs, four of them major versions — triage before Phase 7.
+
+**Hours:** Phase 6 ~6.5 of 8–10.
+
+---
+
 ## 2026-09-30 — 6.2: the second CI run found a real race
 
 The fix PR's run (99154576839): `frontend` green, `backend` red — the 20-player matchmaking test,
