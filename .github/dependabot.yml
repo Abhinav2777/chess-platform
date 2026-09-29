@@ -1,0 +1,33 @@
+# Dependency updates (Phase 6). Closes the gap that produced three wrong version pins in
+# Phase 0, and the one Trivy found in 6.1 — though the Boot-managed CVE overrides in
+# backend/build.gradle.kts are plain properties Dependabot cannot see; the CI image scan is
+# what catches those.
+#
+# Weekly, minor and patch grouped into one PR per ecosystem so the queue stays reviewable;
+# majors arrive separately, because they are the ones that need reading (Boot 3 → 4 did).
+version: 2
+updates:
+  - package-ecosystem: gradle          # includes gradle/libs.versions.toml
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      gradle-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions  # keeps the SHA pins in .github/workflows current
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker          # the eclipse-temurin base images
+    directory: /backend
+    schedule: { interval: weekly }

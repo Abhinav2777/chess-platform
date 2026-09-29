@@ -1,0 +1,87 @@
+name: Browser checks
+
+# The headless-browser checks in frontend/e2e, against the real stack: compose dependencies,
+# the backend via bootRun, the Vite dev server. Nightly and on demand, not on every PR — they
+# take several minutes and exercise timing (clocks, a Valkey outage), so they belong beside
+# the PR gate rather than in it (Phase 6 decision).
+on:
+  schedule:
+    - cron: '30 2 * * *'   # 02:30 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The runner image ships Google Chrome; playwright-core drives it directly.
+      CHROMIUM_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Start dependencies (PostgreSQL, Valkey, ElasticMQ)
+        run: docker compose -f ops/docker/docker-compose.yml up -d --wait postgres valkey elasticmq
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Start frontend (Vite)
+        working-directory: frontend
+        run: |
+          nohup npx vite --port 5173 --strictPort > ../vite.log 2>&1 &
+          timeout 60 bash -c 'until curl -sf http://localhost:5173 > /dev/null; do sleep 1; done'
+
+      # In-JVM fanout: the matchmaking and rating path (API + worker roles in one process).
+      - name: Start backend (local profile)
+        run: |
+          nohup ./gradlew :backend:bootRun --args='--spring.profiles.active=local' > backend.log 2>&1 &
+          timeout 180 bash -c 'until curl -sf http://localhost:8080/actuator/health/readiness > /dev/null; do sleep 2; done'
+
+      - name: 'Check: matchmaking, play, rating push'
+        working-directory: frontend
+        run: npm run e2e:lobby
+
+      # The outage check only means something with Valkey fanout: in-JVM fanout carries no
+      # moves through Valkey, so there would be nothing to degrade.
+      - name: Restart backend with Valkey fanout
+        run: |
+          pkill -f 'ChessPlatformApplication' || true
+          timeout 30 bash -c 'while curl -sf http://localhost:8080/actuator/health > /dev/null; do sleep 1; done'
+          nohup ./gradlew :backend:bootRun --args='--spring.profiles.active=local --chess.realtime.fanout=valkey' > backend-valkey.log 2>&1 &
+          timeout 180 bash -c 'until curl -sf http://localhost:8080/actuator/health/readiness > /dev/null; do sleep 2; done'
+
+      - name: 'Check: play through a Valkey outage'
+        working-directory: frontend
+        run: npm run e2e:outage
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-checks
+          path: |
+            frontend/e2e/out/
+            backend.log
+            backend-valkey.log
+            vite.log
+          retention-days: 7

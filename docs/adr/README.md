@@ -28,3 +28,4 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 019 | ElasticMQ, not LocalStack, as the SQS stand-in | Accepted |
 | 020 | Spring Cloud AWS 4.x for SQS (amends 011) | Accepted |
 | 021 | One container image, three roles; migrations as a separate step | Accepted |
+| 022 | CI: PR gate, scan before push, SHA-pinned actions, GHCR | Accepted |

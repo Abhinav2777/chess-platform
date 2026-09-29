@@ -5,6 +5,27 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-29 — Milestone 6.2: the pipeline
+
+**Built:** `ci.yml` (backend, frontend, image with Trivy-before-push to GHCR), `e2e.yml`
+(nightly + manual browser checks against the real stack), `dependabot.yml`, and branch
+protection as a JSON file. ADR-022.
+
+**Decisions worth remembering**
+- **Scan before push** — build, load, scan, then push the same layers from cache.
+- **SHA-pinned actions** — every action moved one or more majors since Phase 0 (checkout
+  v4 → v7); tags are mutable, SHAs are not; Dependabot maintains them.
+- **The frontend enters CI** — it never was; its production build once stayed broken for two
+  milestones.
+- **Protection as code**, applied with `gh api`, enforced for admins.
+
+**Verified:** `actionlint` + shellcheck clean. **Not verified: a single run on GitHub** — CI
+needs `main`, which needs the owner's credentials. 6.3 is that run, and the failing-test PR.
+
+**Hours:** ~2. Phase 6 at ~5 of 8–10.
+
+---
+
 ## 2026-09-29 — Milestone 6.1: the container image
 
 **Decided (with the owner):** `main` + PRs; GHCR now, ECR in Phase 7; browser checks nightly +
