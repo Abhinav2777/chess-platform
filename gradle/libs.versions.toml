@@ -39,7 +39,7 @@ awsSdk               = "2.55.6"   # BOM. SQS since Phase 5 (ADR-008); SDK direct
 
 archunit             = "1.5.1"
 testcontainers       = "1.20.4"   # BOM
-assertj              = "3.26.3"
+assertj              = "3.27.7"
 
 [libraries]
 # --- Spring starters (managed by the Boot BOM; no versions here) ---
