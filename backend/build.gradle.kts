@@ -50,8 +50,9 @@ repositories {
 //
 // Boot 4.1.1 manages Tomcat 11.0.24 (3 CRITICAL CVEs, fixed in 11.0.25) and Jackson
 // 3.1.5 / 2.21.5 (HIGH, fixed in 3.1.6 / 2.21.6); no Boot 4.1.2 existed yet. Boot's own
-// property names, so the rest of its dependency management is untouched. Jackson 2 is here
-// only through logstash-logback-encoder.
+// property names, so the rest of its dependency management is untouched. (A Jackson 2
+// override also lived here until logstash-logback-encoder 9 moved to Jackson 3 and took
+// Jackson 2 databind off the classpath — 2026-09-30.)
 //
 // REMOVE each line when a Boot release manages that version or later — an override left
 // behind pins us to an old version the next time Boot moves on. The CI image scan is what
@@ -59,7 +60,6 @@ repositories {
 // ---------------------------------------------------------------------------
 extra["tomcat.version"] = "11.0.25"
 extra["jackson-bom.version"] = "3.1.6"
-extra["jackson-2-bom.version"] = "2.21.6"
 
 dependencies {
     implementation(libs.spring.web)
@@ -89,7 +89,6 @@ dependencies {
     testImplementation(libs.spring.security.test)
     testImplementation(libs.archunit)
     testImplementation(libs.assertj)
-    testImplementation(platform(libs.testcontainers.bom))
     testImplementation(libs.testcontainers.junit)
     testImplementation(libs.testcontainers.postgres)
 }
@@ -106,7 +105,9 @@ dependencies {
 // ---------------------------------------------------------------------------
 testing {
     suites {
-        val test by getting(JvmTestSuite::class) {
+        // named()/register() rather than `by getting`/`by registering`: the delegate
+        // forms are deprecated since Gradle 9.6.
+        named<JvmTestSuite>("test") {
             useJUnitJupiter()
             targets.all {
                 testTask.configure {
@@ -118,7 +119,7 @@ testing {
     }
 }
 
-val integrationTest by tasks.registering(Test::class) {
+val integrationTest = tasks.register<Test>("integrationTest") {
     description = "Runs integration tests (requires Docker)."
     group = "verification"
     testClassesDirs = sourceSets["test"].output.classesDirs
