@@ -75,17 +75,25 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 7 — AWS deployment (Path B, HTTP, us-east-1 — ADR-023) |
-| **Phase status** | 7.1–7.3 done. Bootstrap live; app stack written through the data tier, not applied. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~8.5 of 14–18 |
-| **Cumulative hours (estimated)** | ~93 of 135–175 |
+| **Phase status** | 7.1–7.4 done; the app stack is fully written and planned, not applied. 7.5 is the first apply. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~11.5 of 14–18 |
+| **Cumulative hours (estimated)** | ~96 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 7.4 — compute: ALB, ECS services + migrate task, IAM roles, logs (§10) |
+| **Next milestone** | 7.5 — first apply from zero, browser checks against the ALB, destroy, verify (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 7 — Milestone 7.4 (2026-10-01): compute, planned
+
+- ECS (Fargate + Spot), three task definitions, narrow execution role, worker-only task role,
+  migrate-before-rollout via `terraform_data`, ALB (health check on the management port).
+- Actuator moved to 8081 with health details off in the `aws` profile (was public on 8080).
+- Plan: 62 to add. Unit 90, integration 141.
+
 
 ### Phase 7 — Milestone 7.3 (2026-10-01): network + data tier, planned
 
@@ -705,15 +713,12 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Owner, after merging 7.3:** re-apply branch protection (adds `terraform (app)`):
-   `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
-2. **7.4 — compute:** ECS cluster; task definitions for api / worker / migrate (image by commit
-   SHA from ECR, secrets injected, `SPRING_PROFILES_ACTIVE=aws[,role]`, Valkey TLS on,
-   `CHESS_AUTH_REFRESH_COOKIE_SECURE=false`); execution role vs task role; ALB + target group
-   (readiness health check, WebSocket idle timeout vs heartbeat); log groups with retention.
-3. **7.5:** apply from zero → migrate → services → browser checks against the ALB → destroy →
-   verify nothing billable remains; DEPLOYMENT.md runbook final.
-4. **Owner:** MFA on IAM user `abhinav` (deferred).
+1. Merge 7.4; wait for the main run to push the new image to ECR (the first with the 8081 change).
+2. **7.5 — the first apply (spends money, ≈ $3.40/day while up):** owner approves → `terraform
+   apply -var image_tag=<sha>` → migrate → services healthy → browser checks against the ALB
+   (`APP_URL=http://<alb>`), including two API tasks → capture evidence (cost, timings, logs) →
+   `terraform destroy` → destroy checklist → confirm nothing billable remains. DEPLOYMENT.md final.
+3. **Owner:** MFA on IAM user `abhinav` (deferred).
 
 ---
 
