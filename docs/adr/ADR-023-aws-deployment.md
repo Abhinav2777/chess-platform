@@ -1,0 +1,108 @@
+# ADR-023: AWS deployment — one origin, plain HTTP behind an allowlist, create-measure-destroy
+
+**Status:** Accepted for 7.1 (application side); sections for 7.2–7.5 are added as they are
+built · **Date:** 2026-09-30
+**Builds on:** ADR-010 (AWS shape, no NAT), ADR-021 (one image, three roles), ADR-022 (CI).
+**Amends:** the roadmap's Phase 7 done-when ("public HTTPS + WSS").
+
+## Context
+
+Phase 7 deploys Path B — Terraform, VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, Secrets
+Manager, ECR — as a stack that is applied, measured and destroyed, never left running
+(DEPLOYMENT.md rule 2). Owner's decisions, 2026-09-30: existing account, `us-east-1`,
+**Path B only**, **no domain, HTTP only**.
+
+No domain means no HTTPS on the ALB: ACM will not issue a certificate for
+`*.elb.amazonaws.com`, which nobody but AWS controls. The only no-domain HTTPS option,
+CloudFront's default certificate, would add a service the roadmap skips and leave the
+CloudFront→ALB leg as plain HTTP anyway.
+
+## Decision
+
+### Scope change: HTTP, with ingress closed to an allowlist
+
+The done-when becomes: *`terraform apply` from zero produces a working HTTP + WS deployment
+reachable from the allowlisted addresses; `terraform destroy` leaves nothing billable.*
+Credentials over plaintext are acceptable only because nobody else can reach it: the ALB's
+security group admits `allowed_ingress_cidrs` (the owner's address), not `0.0.0.0/0`.
+HTTPS later = a domain, an ACM certificate, a 443 listener, and
+`CHESS_AUTH_REFRESH_COOKIE_SECURE` removed.
+
+### One origin: the SPA is baked into the image
+
+A Node stage in the Dockerfile builds the frontend into `classpath:/static`. The ALB serves
+page, API and socket from one hostname.
+
+- Without CloudFront, S3 could host the SPA only as an HTTP website on a *different* origin.
+  The refresh cookie is `SameSite=Strict`, so a cross-origin page would never get it back, and
+  CORS would have to list a hostname that does not exist until `apply`.
+- Same-origin needs no CORS and no configured origin: Spring's WebSocket handshake admits
+  same-origin requests before consulting `chess.realtime.allowed-origins`
+  (`BehindLoadBalancerIntegrationTest.socketOrigin`).
+- The frontend picks its URLs from `import.meta.env.DEV`: `localhost:8080` under the dev server
+  (cross-origin on purpose, so CORS stays exercised), its own origin in a production build.
+- Security opens exactly `GET /`, `/index.html`, `/assets/**` — not `/**`, which would make
+  every future endpoint public by default.
+- Cost: frontend and backend deploy together. Fine for a single-owner monolith; the moment they
+  need separate release cadences, the answer is CloudFront + S3 with a domain.
+
+### The `aws` profile: trust the ALB's X-Forwarded-For, and only the ALB's
+
+Behind the ALB, `getRemoteAddr()` is the ALB. Every per-IP rate limit (login, register) would
+be one bucket for all users — ten failed logins anywhere locks everyone out.
+`server.forward-headers-strategy=native` makes Tomcat's RemoteIpValve rewrite the address from
+`X-Forwarded-For`, **only** for connections from `internal-proxies` — narrowed to the VPC
+(`10.0.x.x`) from Tomcat's default of every private range — and reading from the right, so the
+entry used is the one the ALB appended. A client-written prefix is never reached. Tested both
+ways (trusted proxy: per-client buckets, spoofed prefix ignored; untrusted peer: header
+ignored) and mutation-checked (strategy off → the per-client test fails with 429).
+
+### The refresh cookie's `Secure` flag is configuration — defaulting to on
+
+Browsers drop a `Secure` cookie over HTTP: every reload would silently sign the user out.
+`chess.auth.refresh-cookie-secure` defaults to `true`; boxed, so a missing value means the safe
+one. Set to `false` only by the HTTP deployment's task definition, and the application logs a
+WARN at startup whenever it is off. `HttpOnly` and `SameSite=Strict` are unconditional.
+
+### Smaller items found on the way
+
+- **Banner off.** It printed seven non-JSON lines per start into a JSON log stream. One
+  non-JSON line remains — the JVM launcher's `Picked up JDK_JAVA_OPTIONS` notice, which cannot
+  be disabled. Accepted.
+- **Client errors were 500s.** `ApiExceptionHandler`'s `Exception` catch-all also caught Spring
+  MVC's own exceptions: malformed JSON, a non-UUID path variable, a wrong method, a missing
+  static file — all "Internal error" with an ERROR log. It now extends
+  `ResponseEntityExceptionHandler`, which maps each to its status as a `ProblemDetail`; the
+  catch-all sees only the unexpected. Pre-existing since Phase 1; surfaced by the first test of
+  a missing asset.
+
+## Alternatives considered
+
+| Alternative | Why not |
+|---|---|
+| **Buy a domain** (~$3–15/yr) | The better option and the recommended one; declined by the owner. Recorded as the path to HTTPS. |
+| **CloudFront default certificate** | HTTPS to the browser, plaintext CloudFront→ALB; adds a service the roadmap skips. |
+| **SPA on S3 website hosting** | HTTP-only, cross-origin: breaks the `SameSite=Strict` refresh cookie and brings CORS back. |
+| **Read X-Forwarded-For in the controller** | Any client can set it; takes the attacker's value unless every hop is validated — which is exactly what RemoteIpValve does. |
+| **Drop `Secure` unconditionally** | Weakens every environment for the sake of one. |
+
+## Consequences
+
+- The deployment is not publicly reachable; a demo means adding the viewer's address to
+  `allowed_ingress_cidrs`.
+- `internal-proxies` is coupled to the VPC CIDR (`10.0.0.0/16`); changing one means the other.
+- A frontend-only change rebuilds and redeploys the backend image.
+
+## Interview angle
+
+**Q:** "Your rate limit is per IP. What does it see behind a load balancer?"
+**A:** The load balancer's address — so at first, one bucket for everyone. I turned on Tomcat's
+forwarded-header handling but trust only the VPC's addresses, and it reads X-Forwarded-For from
+the right, so the address used is the one the ALB appended, not whatever the client wrote. I
+test it both ways and I watched the test fail with the setting off.
+
+**Q:** "Why is your deployment HTTP?"
+**A:** No domain — ACM can't issue a certificate for the ALB's hostname. I made it an explicit
+decision: the ALB only accepts my own address, the cookie's Secure flag is configuration that
+defaults to on and logs a warning when it's off, and HTTPS is a domain, a certificate and one
+listener away.

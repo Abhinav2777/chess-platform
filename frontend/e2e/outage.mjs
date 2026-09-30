@@ -1,4 +1,6 @@
 import { chromium } from 'playwright-core';
+// The Vite dev server by default; APP_URL=http://localhost:8080 for the image, the ALB's URL in AWS.
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173';
 import { execSync } from 'node:child_process';
 const SHOTS = process.argv[2] ?? 'e2e/out';
 import { mkdirSync } from 'node:fs';
@@ -7,7 +9,7 @@ const docker = (cmd) => execSync(`docker ${cmd} chess-valkey`, { stdio: 'pipe' }
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium', headless: true });
 async function user(name) {
   const page = await (await browser.newContext({ viewport: { width: 1100, height: 800 } })).newPage();
-  await page.goto('http://localhost:5173');
+  await page.goto(APP_URL);
   await page.getByRole('button', { name: 'Create an account' }).click();
   await page.getByPlaceholder('username').fill(name);
   await page.getByPlaceholder('password').fill('correct-horse-battery');

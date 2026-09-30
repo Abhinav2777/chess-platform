@@ -8,6 +8,20 @@
 # Build from the repository root (the Gradle wrapper and version catalog live there):
 #   docker build -f backend/Dockerfile -t chess-platform .
 # The build context is an allowlist: backend/Dockerfile.dockerignore.
+#
+# Since Phase 7 the image also serves the SPA (ADR-023): one origin for page, API and socket.
+
+# ---------------------------------------------------------------- frontend
+# Build-only: nothing from this stage but dist/ reaches the runtime image, so Node and
+# node_modules are neither shipped nor scanned. Lockfile first, so a source-only change
+# reuses the npm layer.
+FROM node:24-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
+COPY frontend/src src
+RUN npm run build
 
 # ---------------------------------------------------------------- build
 FROM eclipse-temurin:25-jdk-noble AS build
@@ -21,6 +35,9 @@ COPY backend/build.gradle.kts backend/
 RUN ./gradlew :backend:resolveDependencies --no-daemon --quiet
 
 COPY backend/src/main backend/src/main
+# Into the jar's classpath:/static — served by Spring's static resource handling, with "/"
+# forwarding to index.html. Lands in the application layer (kilobytes), after the sources.
+COPY --from=frontend /frontend/dist backend/src/main/resources/static
 RUN ./gradlew :backend:bootJar --no-daemon --quiet \
  && java -Djarmode=tools -jar backend/build/libs/chess-platform.jar \
         extract --layers --launcher --destination /extracted
@@ -30,6 +47,20 @@ RUN ./gradlew :backend:bootJar --no-daemon --quiet \
 # transport is built against glibc, and musl surprises are not a debugging session worth
 # having for ~40 MB.
 FROM eclipse-temurin:25-jre-noble
+
+# Security fixes Ubuntu has published but the base image does not have yet. Temurin rebuilds
+# its images on its own schedule; the first time it lagged (2026-09-30: OpenSSL, HIGH, fixed in
+# Ubuntu five days after the base image was built) the CI scan correctly refused to publish.
+#
+# OS_PATCH_DATE exists to break the layer cache. Without it this RUN line never changes, so
+# the cached layer — and whatever package versions it froze — is reused forever and later fixes
+# never arrive. CI passes today's date: at most one re-run per day. The cost is that layers
+# below it get new digests daily, so the first push of a day re-uploads the dependency layer.
+ARG OS_PATCH_DATE=unset
+RUN echo "OS packages patched as of ${OS_PATCH_DATE}" \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 
 # A fixed, non-root, non-login user. A compromised process should not own the container.
 RUN groupadd --system --gid 10001 chess \

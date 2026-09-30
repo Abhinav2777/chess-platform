@@ -1,6 +1,9 @@
 import type { GameStatus, Side } from './protocol';
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+// Dev server (5173) talks to the backend on 8080 — cross-origin on purpose, so CORS and the
+// socket's origin check are exercised locally. A production build is served BY the backend
+// (Phase 7, ADR-023), so it calls its own origin: relative paths, no CORS at all.
+const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8080' : '');
 
 /**
  * The access token lives here — a module variable — and nowhere else.

@@ -97,8 +97,13 @@ jobs:
       # lowercases its tags on its own, so the first CI run built ghcr.io/abhinav2777/… and
       # then asked Trivy to scan ghcr.io/Abhinav2777/… — an unparseable name, exit 1.
       # GitHub expressions have no lower(); bash does. Every later step uses this one value.
+      #
+      # OS_PATCH_DATE busts the Dockerfile's apt-get upgrade layer once a day (see there). Set
+      # once, so the Build and Push steps below pass the same value and Push reuses the cache.
       - name: Image name
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/chess-platform" >> "$GITHUB_ENV"
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/chess-platform" >> "$GITHUB_ENV"
+          echo "OS_PATCH_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -122,6 +127,7 @@ jobs:
           context: .
           file: backend/Dockerfile
           load: true
+          build-args: OS_PATCH_DATE=${{ env.OS_PATCH_DATE }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -158,6 +164,7 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: true
+          build-args: OS_PATCH_DATE=${{ env.OS_PATCH_DATE }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

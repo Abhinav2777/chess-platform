@@ -5,6 +5,61 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — 7.1 PR: the scan refused an OS package
+
+PR run 99554346549, `image` job red: Trivy, OpenSSL 3.0.13-0ubuntu3.15 (HIGH), fixed in 3.16.
+Every jar clean. The Temurin base image (built 2026-09-25) predates Ubuntu's fix; pulling it
+again confirmed the tag had not moved. The gate did exactly its job — on a PR that did not cause
+the problem, which is the argument for fixing the pipeline rather than suppressing the finding.
+
+Fix: a dated `apt-get upgrade` layer in the runtime stage (`OS_PATCH_DATE`, set by CI), because
+an undated one is cached forever and patches once. Verified locally: OpenSSL 3.16 in the image,
+the same Trivy invocation as CI exits 0, the API starts and serves `/`. ADR-021 amended.
+
+---
+
+## 2026-09-30 — 7.1: the app, ready to sit behind a load balancer
+
+**Phase 7 decisions (owner):** existing account (budget alarm at $20 already in place —
+verified via the Budgets API), `us-east-1`, Path B only, **no domain → HTTP**. The last one
+contradicts the roadmap's done-when; recorded as a scope change in ADR-023 with its
+compensations (ingress allowlist, cookie flag default-on + WARN) and its path back to HTTPS.
+
+**Built:**
+- SPA baked into the image (Node build stage → `classpath:/static`); frontend URLs from
+  `import.meta.env.DEV`; security opens `GET /`, `/index.html`, `/assets/**` only.
+- `aws` profile: `forward-headers-strategy: native`, trusted proxies narrowed to the VPC.
+  This was flagged in a Phase 4 comment ("Phase 7 enables…") — the comment did its job.
+- `chess.auth.refresh-cookie-secure` (boxed, null → true; WARN at startup when false).
+- Banner off (the Phase 6 dependency triage noticed it).
+- e2e scripts take `APP_URL`, so the same browser checks run against the dev server, the
+  image, and (7.5) the ALB.
+
+**Found: every client error was a 500.** The first test of a missing asset expected 404 and
+got 500. The `Exception` catch-all in `ApiExceptionHandler` had been catching Spring MVC's own
+exceptions since Phase 1 — malformed JSON, a non-UUID path variable, a wrong method: all
+"Internal error" with an ERROR log and stack trace. Four tests written first, all four red
+with 500; fixed by extending `ResponseEntityExceptionHandler` (validation handler became an
+override — two handlers for one type is a startup error); all four green. No earlier test sent
+malformed JSON; every test used well-formed requests.
+
+**Tests:** 11 new, against a real Tomcat (MockMvc skips the RemoteIpValve, the handshake
+origin check and static serving): per-client buckets behind a trusted proxy, spoofed prefix
+ignored, untrusted peer's header ignored, same-origin socket accepted / foreign refused,
+cookie flag both ways, SPA served while the API stays deny-by-default, the four client errors.
+Mutation-checked the forwarded-header test (strategy off → fails with 429).
+
+**Verified end to end:** image built locally (temporary DNS forwarder again —
+TROUBLESHOOTING), compose stack on it, `APP_URL=http://localhost:8080 npm run e2e:lobby` — the
+whole game flow from one origin, console errors none. Logs: 53 JSON lines, one non-JSON (the
+JVM launcher's `Picked up JDK_JAVA_OPTIONS` — cannot be disabled; accepted).
+
+Unit 90, integration 138.
+
+**Hours:** ~3.
+
+---
+
 ## 2026-09-30 — Dependabot triage: the pins were fighting the BOM
 
 Dependabot's first run opened six PRs; five were red. Triaged together on one branch rather
