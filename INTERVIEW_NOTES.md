@@ -406,6 +406,13 @@ branch; AWS STS exchanges it for one-hour credentials of a role whose trust poli
 exact repository and `main` — StringEquals, not a wildcard over the owner's repositories. The role
 can push to one ECR repository and nothing else. There is no key to leak or rotate.
 
+### "Your OIDC role was refused on the first run. How did you debug it?"
+The error only says "not authorized". CloudTrail records the failed AssumeRoleWithWebIdentity
+with the token's subject, and it wasn't the one I trusted: GitHub was sending the immutable
+format with numeric owner and repository IDs. I changed the trust to that exact string rather
+than a wildcard — it's the stronger form, because a name can be re-registered by someone else
+after a rename or delete, and an ID can't.
+
 ### "Where is your Terraform state, and how do you stop two applies colliding?"
 S3 — versioned, encrypted, TLS-only, public access blocked, and prevent_destroy on the bucket.
 Locking is S3's native lock file; the DynamoDB table everyone still writes about is deprecated

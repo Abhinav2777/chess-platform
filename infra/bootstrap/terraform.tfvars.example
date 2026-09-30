@@ -1,5 +1,9 @@
 # Copy to terraform.tfvars (gitignored) and fill in.
 budget_alert_emails = ["you@example.com"]
 
+# Your repository's OIDC subject prefix (a fork's IDs differ):
+#   gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+# github_sub_prefix = "repo:<owner>@<owner-id>/<repo>@<repo-id>"
+
 # To adopt a budget created by hand, use its exact name and import it (DEPLOYMENT.md).
 # budget_name = "My Monthly Cost Budget"
