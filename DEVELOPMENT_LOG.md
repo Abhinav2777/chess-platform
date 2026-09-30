@@ -5,6 +5,25 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.2 on main: OIDC refused, and why that was the right answer
+
+The first main run after the merge failed at `AWS credentials (OIDC)`: "Not authorized to
+perform sts:AssumeRoleWithWebIdentity", twelve retries. The message names no condition.
+CloudTrail does: the failed event's `userIdentity.userName` is the token's sub —
+`repo:Abhinav2777@113631636/chess-platform@1369658999:ref:refs/heads/main`. The repository uses
+GitHub's immutable subject format (`gh api …/actions/oidc/customization/sub`); the trust policy
+expected the name-only form.
+
+Fixed by trusting the immutable form exactly (`github_sub_prefix`), not by widening to a
+wildcard — the ID form is the stronger one. Plan: one in-place change, the sub condition.
+Applied; no drift. Re-ran the failed job: OIDC, ECR login, push all green; ECR holds
+`b9a051f…` as a single OCI manifest (provenance off, as intended), basic scan 0 findings.
+
+Lesson: an IAM "not authorized" for web identity is a claim mismatch until proven otherwise,
+and CloudTrail records the claims. Read them; don't guess.
+
+---
+
 ## 2026-10-01 — 7.2: the first AWS resources
 
 `infra/bootstrap` applied: budget (adopted), state bucket, ECR repository, GitHub OIDC

@@ -4,10 +4,23 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "github_repository" {
-  description = "owner/name of the only repository whose CI may push images. Case-sensitive: it is compared with the OIDC token's sub claim."
+variable "github_sub_prefix" {
+  description = <<-EOT
+    The start of the OIDC token's sub claim for the one repository whose CI may push images,
+    up to (not including) ":ref:". This repository uses GitHub's immutable subject format,
+    which embeds the numeric owner and repository IDs:
+      repo:<owner>@<owner-id>/<repo>@<repo-id>
+    Read yours with:
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+    Not secret — both IDs are public.
+  EOT
   type        = string
-  default     = "Abhinav2777/chess-platform"
+  default     = "repo:Abhinav2777@113631636/chess-platform@1369658999"
+
+  validation {
+    condition     = can(regex("^repo:[^:*]+$", var.github_sub_prefix))
+    error_message = "Starts with repo:, no wildcard, no :ref: suffix (the trust policy appends it)."
+  }
 }
 
 variable "budget_name" {
