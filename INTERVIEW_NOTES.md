@@ -398,6 +398,29 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 7.2 — Terraform bootstrap and CI credentials
+
+### "How does your CI authenticate to AWS?"
+It doesn't hold credentials. The job asks GitHub for an OIDC token naming the repository and
+branch; AWS STS exchanges it for one-hour credentials of a role whose trust policy requires that
+exact repository and `main` — StringEquals, not a wildcard over the owner's repositories. The role
+can push to one ECR repository and nothing else. There is no key to leak or rotate.
+
+### "Where is your Terraform state, and how do you stop two applies colliding?"
+S3 — versioned, encrypted, TLS-only, public access blocked, and prevent_destroy on the bucket.
+Locking is S3's native lock file; the DynamoDB table everyone still writes about is deprecated
+for the S3 backend. The chicken-and-egg: the bootstrap stack creates the bucket with local
+state, then migrates its own state into it.
+
+### "Tell me about a Terraform plan you didn't apply."
+Importing my hand-made budget, the first plan said "1 to change". The change was removing a
+filter that excludes credits — with credits counted, the budget would show zero while a
+forgotten stack spent, and the alarm would never fire. I put the filter in code and re-planned
+until the only diff was tags. An import's first plan is a list of places where your code
+disagrees with reality.
+
+---
+
 ## Phase 7.1 — the app behind a load balancer
 
 ### "Your rate limit is per IP. What does it see behind a load balancer?"

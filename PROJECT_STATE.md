@@ -75,17 +75,26 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 7 — AWS deployment (Path B, HTTP, us-east-1 — ADR-023) |
-| **Phase status** | 7.1 done (app deployable; 4xx bug fixed); unit 90, integration 138. 7.2 next — first AWS resources. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~3 of 14–18 |
-| **Cumulative hours (estimated)** | ~87.5 of 135–175 |
+| **Phase status** | 7.1–7.2 done. Bootstrap stack live (~$0.05/mo est.); app stack not yet written. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~6 of 14–18 |
+| **Cumulative hours (estimated)** | ~90.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 7.2 — bootstrap stack: budget, state bucket, ECR, GitHub OIDC (§10) |
+| **Next milestone** | 7.3 — network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 7 — Milestone 7.2 (2026-10-01): bootstrap stack — first AWS resources
+
+- `infra/bootstrap` applied: budget adopted (credit/refund filter preserved — caught in plan
+  review), state bucket (versioned, SSE, TLS-only, prevent_destroy, S3-native locking; own state
+  migrated in), ECR (immutable, scan on push, keep 3), GitHub OIDC role scoped to `main`.
+- CI pushes the SHA tag to ECR via OIDC when `AWS_ECR_PUSH_ROLE_ARN` is set.
+- Owner removed the IAM user's access key; now `aws login`. MFA still to enable.
+
 
 ### Phase 7 — Milestone 7.1 (2026-09-30): deployable application
 
@@ -688,11 +697,14 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **7.2 — bootstrap stack** (`infra/bootstrap`, local state): adopt the existing budget,
-   state bucket (versioned, encrypted, public access blocked), ECR with keep-last-3, GitHub
-   OIDC provider + a push role scoped to this repository's `main`; CI pushes to ECR as well as
-   GHCR. First real AWS resources — plan reviewed before apply.
-2. 7.3–7.5 per ROADMAP Phase 7 table.
+1. **Owner, before merging the 7.2 PR:** `gh variable set AWS_ECR_PUSH_ROLE_ARN …`
+   (DEPLOYMENT.md, Bootstrap step 3); after the merge, confirm the main run pushed to ECR.
+2. **Owner:** enable MFA on IAM user `abhinav` (AdministratorAccess, console sign-in).
+3. **7.3 — network + data** (`infra/app`, state in the bootstrap bucket): VPC (2 AZs, public +
+   isolated subnets, no NAT), security groups, RDS PostgreSQL (managed master password in
+   Secrets Manager), ElastiCache Valkey, SQS + DLQ, JWT secret. Plan reviewed; applied only when
+   7.4 is ready, so the data tier does not bill idle.
+4. 7.4–7.5 per ROADMAP Phase 7 table.
 
 ---
 
