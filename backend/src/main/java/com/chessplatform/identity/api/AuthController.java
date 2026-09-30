@@ -11,6 +11,8 @@ import com.chessplatform.identity.internal.AuthProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -46,6 +48,7 @@ import java.time.Duration;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
     private static final String REFRESH_COOKIE = "refresh_token";
 
     private final AuthenticationService auth;
@@ -58,6 +61,13 @@ public class AuthController {
         this.auth = auth;
         this.properties = properties;
         this.rateLimiter = rateLimiter;
+        if (!properties.refreshCookieSecure()) {
+            // Once per instance, at startup: loud enough to be found in the logs of any
+            // environment that has it, and a reminder of what turning it back on requires.
+            log.warn("Refresh cookie is NOT Secure (chess.auth.refresh-cookie-secure=false). "
+                    + "Acceptable only while this deployment is plain HTTP; serve HTTPS and "
+                    + "remove the override.");
+        }
     }
 
     @PostMapping("/register")
@@ -137,15 +147,16 @@ public class AuthController {
     private ResponseCookie.ResponseCookieBuilder baseCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)      // unreadable by script: survives XSS
-                .secure(true)        // HTTPS only; browsers accept Secure on localhost
+                .secure(properties.refreshCookieSecure())  // true unless deployed on plain HTTP
                 .sameSite("Strict")  // withheld cross-site: closes CSRF on this cookie
                 .path("/api/auth");  // sent only to the endpoints that need it
     }
 
     /**
      * The connecting address. Behind a load balancer this is the balancer's, and the client's
-     * is in {@code X-Forwarded-For} — which any client can also set. Phase 7 enables
-     * {@code server.forward-headers-strategy=native} with only the ALB trusted; reading the
+     * is in {@code X-Forwarded-For} — which any client can also set. The {@code aws} profile
+     * turns on {@code server.forward-headers-strategy=native}, trusting only the VPC's
+     * addresses, so Tomcat rewrites this value from the header the ALB appended. Reading the
      * header here directly would let an attacker choose their own bucket.
      */
     private static String clientAddress(HttpServletRequest http) {
