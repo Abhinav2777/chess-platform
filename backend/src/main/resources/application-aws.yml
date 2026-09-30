@@ -17,3 +17,16 @@ server:
       # Trust only the VPC (10.0.0.0/16, infra/app). Tomcat's default also trusts every other
       # private range; narrower is better. Must change if the VPC CIDR does.
       internal-proxies: '10\.0\.\d{1,3}\.\d{1,3}'
+
+management:
+  # Actuator on its own port. The ALB forwards only 8080, so nothing under /actuator is
+  # reachable from outside the VPC: not the health details, and not /actuator/prometheus,
+  # which on 8080 any signed-in player could read. The ALB health-checks 8081 directly; metrics
+  # scraping (Phase 9) will too, from inside the VPC.
+  server:
+    port: 8081
+  endpoint:
+    health:
+      # Status only. The ALB needs the HTTP code; nobody outside needs to learn the database
+      # product or the Valkey version.
+      show-details: never
