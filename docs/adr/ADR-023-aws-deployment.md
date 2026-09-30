@@ -144,6 +144,42 @@ prevent.
 - **Estimated cost of this tier while applied:** RDS ~$0.016/h + storage, Valkey ~$0.013/h, two
   secrets — **≈ $0.03/h, ≈ $0.80/day** (us-east-1 on-demand, published prices; not yet measured).
 
+## 7.4 — Compute (written and planned 2026-10-01; applied in 7.5)
+
+- **Actuator moved to port 8081 in the `aws` profile, health details off.** Found while wiring
+  the health check: on 8080, `/actuator/health` listed every component, and
+  `/actuator/prometheus` was readable by *any signed-in player* (security required only
+  "authenticated"). The ALB forwards 8080 only and health-checks 8081 directly; Phase 9's
+  scraper will reach 8081 from inside the VPC. Three tests, including one that pins the profile
+  file itself — the others run the management server on a random port and would pass anyway.
+- **Execution role vs task role.** Execution (ECS starting the task): pull *this* image, write
+  *these* log groups, read *these two* secrets — written out instead of the managed
+  `AmazonECSTaskExecutionRolePolicy`, which covers every repository and log group. Task role
+  (the running app): **none** for api and migrate — they call no AWS API — and two queues for the
+  worker. Trust conditioned on `aws:SourceAccount` (confused deputy).
+- **Secrets injected by reference** (`valueFrom`, `:password::` picks the JSON field); the task
+  definition holds ARNs, not values.
+- **Migrate before rollout, enforced by the graph.** `terraform_data.migrate` runs the migrate task
+  via `scripts/run-migrate.sh` (run-task, wait, fail unless exit 0) whenever the migrate task
+  definition changes — every new image — and both services depend on it. A failed migration stops
+  the apply with the previous version serving. Needs the AWS CLI where `apply` runs.
+- **Services:** api ×2 on Fargate (the smallest count that proves cross-instance fan-out), worker ×1
+  on **Fargate Spot** (interruption-tolerant: outbox in PostgreSQL, SQS redelivery). Circuit breaker
+  with rollback; `wait_for_steady_state` so `apply` succeeds only when tasks are healthy; 180 s
+  health-check grace for JVM start on 0.5 vCPU. x86 — CI builds amd64; Graviton would need an
+  emulated multi-arch build.
+- **ALB:** idle timeout 60 s against the client's 25 s PING; `drop_invalid_header_fields`;
+  deregistration delay 30 s (default 300 s) to match graceful shutdown — WebSockets cut at the end
+  reconnect and resync (ADR-007).
+- **JDBC `sslmode=require`:** encrypted, fails rather than falling back to plaintext; does not verify
+  the server certificate (that needs the RDS CA bundle in the image). Accepted inside the VPC.
+- **Not built:** container health check for the worker (the JRE image has no curl; a hung worker is
+  not detected until Phase 9's alarms), ECS Exec, ALB access logs.
+
+**Estimated cost while applied** (us-east-1 on-demand; Fargate from the Pricing API, others
+published list prices; not yet measured): ALB ~$0.03/h, api 2 × $0.0247/h, worker on Spot
+~$0.005/h, 5 public IPv4 × $0.005/h, data tier ~$0.03/h — **≈ $0.14/h, ≈ $3.40/day.**
+
 ## Alternatives considered
 
 | Alternative | Why not |
