@@ -76,6 +76,36 @@ WARN at startup whenever it is off. `HttpOnly` and `SameSite=Strict` are uncondi
   catch-all sees only the unexpected. Pre-existing since Phase 1; surfaced by the first test of
   a missing asset.
 
+## 7.2 — Bootstrap stack (applied 2026-10-01)
+
+Two Terraform stacks, not one. `infra/bootstrap` is permanent and nearly free (budget, state
+bucket, ECR, GitHub OIDC role); `infra/app` is applied and destroyed per session. One stack
+would force a choice between destroying the state bucket and the registry CI pushes to every
+day, or a "destroy" that leaves things behind — which is the failure DEPLOYMENT.md exists to
+prevent.
+
+- **Budget adopted, not recreated** (`terraform import`). The first plan after import wanted to
+  drop the console budget's filter excluding credits and refunds — with credits counted, spend
+  reads ~$0 while real credit burns and the alarm stays quiet. Caught in plan review; the filter
+  is now in code. Lesson: an import's first plan is a diff between intent and reality, and every
+  "~" in it is a question.
+- **State:** S3, versioned, SSE-S3 (a KMS key is $1/month for nothing a single owner needs),
+  public access blocked, TLS-only policy, `prevent_destroy`; **`use_lockfile`** instead of a
+  DynamoDB table — deprecated for the S3 backend since Terraform 1.11. The stack's own state
+  was migrated into the bucket after the first apply. The bucket name (it contains the account
+  ID) is given at `init` time, not committed.
+- **ECR:** immutable tags (CI pushes the commit SHA only), scan on push, keep the newest 3.
+  CI pushes with `provenance: false` so the lifecycle policy never sees attestation manifests
+  it could expire from under a kept image.
+- **GitHub OIDC, no keys in GitHub:** trust is `StringEquals` on both `aud` and
+  `sub = repo:Abhinav2777/chess-platform:ref:refs/heads/main` — not `StringLike` on
+  `repo:owner/*`, the common mistake that trusts every repository of the owner. Permissions:
+  `GetAuthorizationToken` (not scopable) plus push actions on one repository. No thumbprint —
+  AWS verifies GitHub's issuer against its own CA store.
+- **Verified live, not from the code:** public access block, versioning, encryption, ownership,
+  TLS-only policy; anonymous HTTP and HTTPS both 403; the role's trust conditions; ECR
+  immutability; `plan -destroy` refused by `prevent_destroy`.
+
 ## Alternatives considered
 
 | Alternative | Why not |
