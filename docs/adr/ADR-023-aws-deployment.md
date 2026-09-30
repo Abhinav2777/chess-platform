@@ -111,6 +111,39 @@ prevent.
   TLS-only policy; anonymous HTTP and HTTPS both 403; the role's trust conditions; ECR
   immutability; `plan -destroy` refused by `prevent_destroy`.
 
+## 7.3 — Network and data (written and planned 2026-10-01; applied with 7.4)
+
+- **VPC 10.0.0.0/16, two AZs, two tiers, no NAT.** Public subnets for the ALB and tasks (tasks
+  get public IPs for egress); isolated subnets with *no route out* for RDS and ElastiCache — so
+  the data tier's isolation does not depend on a security group being right. Two AZs because the
+  ALB and both subnet groups require them, not for availability. The CIDR is coupled to
+  `internal-proxies` in `application-aws.yml`; a variable validation enforces it.
+- **Security groups by reference, one rule per resource.** ALB ← allowlist:80; api ← ALB:8080;
+  worker ← nothing; db ← api/worker:5432; cache ← api/worker:6379; tasks → 443 anywhere (AWS APIs
+  via the internet gateway — interface endpoints would cost more than the NAT we avoided). The
+  VPC's default group is taken over with no rules. Terraform-created groups start with no egress,
+  so the data tier has none.
+- **RDS PostgreSQL 16** (the tested major), db.t4g.micro, gp3, encrypted, private, single-AZ.
+  Own parameter group: `log_min_duration_statement=250`, `rds.force_ssl=1`,
+  `idle_in_transaction_session_timeout=60s`. Logs exported to a log group **Terraform creates
+  first** — one RDS creates on its own has no retention and outlives `destroy`. Destroy-by-design:
+  no final snapshot, no deletion protection, automated backups deleted with the instance.
+- **Passwords never in state.** The master password is RDS-managed (Secrets Manager). The JWT key
+  is an *ephemeral* `random_password` written through `secret_string_wo`: in AWS, not in the plan
+  or the state file (verified in the plan output). Secrets use `recovery_window_in_days = 0` so the
+  next apply can reuse the name.
+- **Known limitation — rotation.** RDS rotates the managed master secret every 7 days; tasks read it
+  at start. Longer than this stack lives; a long-lived deployment would use a separate app user or a
+  driver that re-reads the secret.
+- **Valkey 8.2** (the tested major), one cache.t4g.micro node, no replica, no snapshots (ADR-004: not
+  a source of truth), encrypted at rest and **TLS in transit, required** — the app enables its client
+  TLS by environment in 7.4.
+- **SQS** `game-events` + `game-events-dlq` exactly as `SqsQueues` creates them locally
+  (maxReceiveCount 3, visibility 30 s), long polling, SSE, and a redrive-allow policy so only
+  `game-events` may dead-letter into the DLQ.
+- **Estimated cost of this tier while applied:** RDS ~$0.016/h + storage, Valkey ~$0.013/h, two
+  secrets — **≈ $0.03/h, ≈ $0.80/day** (us-east-1 on-demand, published prices; not yet measured).
+
 ## Alternatives considered
 
 | Alternative | Why not |
@@ -120,6 +153,7 @@ prevent.
 | **SPA on S3 website hosting** | HTTP-only, cross-origin: breaks the `SameSite=Strict` refresh cookie and brings CORS back. |
 | **Read X-Forwarded-For in the controller** | Any client can set it; takes the attacker's value unless every hop is validated — which is exactly what RemoteIpValve does. |
 | **Drop `Secure` unconditionally** | Weakens every environment for the sake of one. |
+| **ElastiCache Serverless for Valkey** (raised by the owner, 7.3) | Cheaper: 100 MB minimum × $0.084/GB-h = $0.0084/h vs $0.0128/h for cache.t4g.micro; ECPUs ~$0 at our volume (Pricing API, 2026-10-01). Saves ~$0.10/day applied — ~$0.50 over Phases 7–9. But Serverless is cluster-mode: `seek.lua` touches four slots and `pair.lua`/`cancel.lua` derive keys at runtime (ADR-016), so matchmaking would fail with CROSSSLOT in AWS while every single-node Testcontainers test passed. Making it safe — one `{mm}` hash tag for all matchmaking keys, a cluster-mode client, a clustered Valkey in tests — is ~4–6 h. Poor ROI; revisit only if the cache becomes long-lived. |
 
 ## Consequences
 

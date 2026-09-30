@@ -62,6 +62,22 @@ On any later machine: `terraform init -backend-config="bucket=chess-platform-tfs
 it would lose the record of what the app stack created. If this account is being retired:
 empty the app stack first, then remove `prevent_destroy`, then destroy.
 
+## App stack (`infra/app`, Milestones 7.3–7.5) — apply, measure, destroy
+
+Not yet applied. Network, data tier, queues and secrets are written (7.3); compute (ALB, ECS) is
+7.4. The full apply/destroy procedure lands with 7.5.
+
+```bash
+cd infra/app
+cp terraform.tfvars.example terraform.tfvars   # allowed_ingress_cidrs = ["<your IP>/32"]
+terraform init -backend-config="bucket=chess-platform-tfstate-<account-id>"
+terraform plan
+```
+
+Estimated while applied (us-east-1, published on-demand prices): data tier ≈ $0.03/h
+(RDS db.t4g.micro + 20 GB gp3, Valkey cache.t4g.micro, two secrets); ALB, Fargate and public
+IPv4 addresses come with 7.4.
+
 ## CI/CD (Phase 6, ADR-022)
 
 Every PR and every push to `main`: `backend` (unit, ArchUnit, Testcontainers), `frontend`
