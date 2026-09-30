@@ -5,6 +5,32 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.3: network and data, planned not applied
+
+`infra/app` (state: `app/terraform.tfstate` in the bootstrap bucket): VPC with public and
+isolated subnets in two AZs, no NAT; five security groups wired by reference; RDS PostgreSQL 16;
+ElastiCache Valkey 8.2 with TLS required; SQS queue + DLQ mirroring `SqsQueues`; JWT secret.
+`terraform plan`: 42 to add. **Not applied** — the data tier would bill ~$0.80/day (estimated)
+with nothing using it; it goes up with 7.4.
+
+Versions checked against AWS, not memory: PostgreSQL 16.15 is the newest 16.x (17.11 exists; 16
+is what every migration is tested on); Valkey 9.1 exists, 8.2 matches the tested major.
+
+**Decisions worth defending** (ADR-023 §7.3): isolation by routing, not only by security group;
+the RDS log group created by Terraform so it has retention and dies with the stack; passwords
+kept out of state entirely — RDS-managed master password, and an ephemeral + write-only JWT key
+(the plan shows `(write-only attribute)`); `recovery_window_in_days = 0`, without which the
+second apply of the week fails on a name still "scheduled for deletion".
+
+**Found in the design, before any code:** RDS rotates its managed secret every 7 days while ECS
+reads it once at task start. Accepted for a stack that lives days; recorded.
+
+CI: the `terraform` job's matrix gains `app`; `terraform (app)` added to the required checks.
+
+**Hours:** ~2.5.
+
+---
+
 ## 2026-10-01 — 7.2 on main: OIDC refused, and why that was the right answer
 
 The first main run after the merge failed at `AWS credentials (OIDC)`: "Not authorized to

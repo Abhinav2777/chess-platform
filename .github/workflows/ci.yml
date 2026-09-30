@@ -93,7 +93,7 @@ jobs:
     timeout-minutes: 5
     strategy:
       matrix:
-        stack: [bootstrap]
+        stack: [bootstrap, app]
     defaults:
       run:
         working-directory: infra/${{ matrix.stack }}
