@@ -35,6 +35,18 @@ each item below cost a round trip.
 - [ ] `AccessDecisionManager` — **moved** to `spring-security-access`.
 - [ ] Most Security examples online predate all of the above and will not compile.
 
+## Web MVC error handling (added 2026-09-30, Phase 7.1)
+
+- [ ] **An `@ExceptionHandler(Exception.class)` catch-all swallows Spring MVC's own
+      exceptions** (malformed JSON, type mismatch, 405, missing static resource) and turns
+      client mistakes into 500s. Extend `ResponseEntityExceptionHandler`; customise by
+      overriding its methods (`handleMethodArgumentNotValid`), never by adding a second
+      `@ExceptionHandler` for a type it already handles — that fails at startup.
+- [ ] Test at least one malformed request per API. Well-formed requests never exercise this.
+- [ ] Behind a proxy: `server.forward-headers-strategy=native` and a **narrow**
+      `server.tomcat.remoteip.internal-proxies`. Test through a real server
+      (`RANDOM_PORT`), not MockMvc — the valve is in Tomcat.
+
 ## JPA / Hibernate
 
 - [ ] **Write entity and migration from the type table in `ARCHITECTURE.md` §4.2.1.**
