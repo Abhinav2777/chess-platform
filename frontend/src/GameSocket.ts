@@ -2,7 +2,11 @@ import { PROTOCOL_VERSION, type Envelope, type Failure, type GameFinished,
          type GameSnapshot, type MatchFound, type MoveMade, type PlayerPresence,
          type RatingUpdated, type SeekStatus } from './protocol';
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080/ws';
+// Same reasoning as api.ts BASE. WebSocket URLs must be absolute, so the production value is
+// built from the page's own origin — ws: under http:, wss: under https:.
+const WS_URL = import.meta.env.VITE_WS_URL ?? (import.meta.env.DEV
+    ? 'ws://localhost:8080/ws'
+    : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'closed';
 

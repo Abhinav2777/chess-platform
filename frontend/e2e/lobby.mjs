@@ -1,4 +1,6 @@
 import { chromium } from 'playwright-core';
+// The Vite dev server by default; APP_URL=http://localhost:8080 for the image, the ALB's URL in AWS.
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173';
 const SHOTS = process.argv[2] ?? 'e2e/out';
 import { mkdirSync } from 'node:fs';
 mkdirSync(SHOTS, { recursive: true });
@@ -10,7 +12,7 @@ async function user(name) {
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`${name}: ${m.text()}`); });
   // Chrome's console line for a failed load has no URL; this one does.
   page.on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`${name}: ${r.status()} ${r.request().method()} ${r.url()}`); });
-  await page.goto('http://localhost:5173');
+  await page.goto(APP_URL);
   await page.getByRole('button', { name: 'Create an account' }).click();
   await page.getByPlaceholder('username').fill(name);
   await page.getByPlaceholder('password').fill('correct-horse-battery');
