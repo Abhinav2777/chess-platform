@@ -75,17 +75,25 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 7 — AWS deployment (Path B, HTTP, us-east-1 — ADR-023) |
-| **Phase status** | 7.1–7.2 done. Bootstrap stack live (~$0.05/mo est.); app stack not yet written. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~6 of 14–18 |
-| **Cumulative hours (estimated)** | ~90.5 of 135–175 |
+| **Phase status** | 7.1–7.3 done. Bootstrap live; app stack written through the data tier, not applied. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~8.5 of 14–18 |
+| **Cumulative hours (estimated)** | ~93 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 7.3 — network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets (§10) |
+| **Next milestone** | 7.4 — compute: ALB, ECS services + migrate task, IAM roles, logs (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 7 — Milestone 7.3 (2026-10-01): network + data tier, planned
+
+- `infra/app`: VPC (public + isolated, 2 AZs, no NAT), security groups by reference, RDS
+  PostgreSQL 16 (own parameter group, managed master password, TF-owned log group), Valkey 8.2
+  (TLS required), SQS + DLQ, JWT secret (ephemeral, write-only — not in state).
+- Plan: 42 to add, clean. Deliberately not applied until 7.4 (idle data tier ≈ $0.80/day est.).
+
 
 ### Phase 7 — Milestone 7.2 (2026-10-01): bootstrap stack — first AWS resources
 
@@ -697,14 +705,15 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Owner, before merging the 7.2 PR:** `gh variable set AWS_ECR_PUSH_ROLE_ARN …`
-   (DEPLOYMENT.md, Bootstrap step 3); after the merge, confirm the main run pushed to ECR.
-2. **Owner:** enable MFA on IAM user `abhinav` (AdministratorAccess, console sign-in).
-3. **7.3 — network + data** (`infra/app`, state in the bootstrap bucket): VPC (2 AZs, public +
-   isolated subnets, no NAT), security groups, RDS PostgreSQL (managed master password in
-   Secrets Manager), ElastiCache Valkey, SQS + DLQ, JWT secret. Plan reviewed; applied only when
-   7.4 is ready, so the data tier does not bill idle.
-4. 7.4–7.5 per ROADMAP Phase 7 table.
+1. **Owner, after merging 7.3:** re-apply branch protection (adds `terraform (app)`):
+   `gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`
+2. **7.4 — compute:** ECS cluster; task definitions for api / worker / migrate (image by commit
+   SHA from ECR, secrets injected, `SPRING_PROFILES_ACTIVE=aws[,role]`, Valkey TLS on,
+   `CHESS_AUTH_REFRESH_COOKIE_SECURE=false`); execution role vs task role; ALB + target group
+   (readiness health check, WebSocket idle timeout vs heartbeat); log groups with retention.
+3. **7.5:** apply from zero → migrate → services → browser checks against the ALB → destroy →
+   verify nothing billable remains; DEPLOYMENT.md runbook final.
+4. **Owner:** MFA on IAM user `abhinav` (deferred).
 
 ---
 

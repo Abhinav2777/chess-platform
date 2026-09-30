@@ -241,7 +241,7 @@ steps, and the pipeline fails on a deliberately introduced failing test.
 
 ---
 
-### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12 — **IN PROGRESS (7.1–7.2 done, ~6 h)**
+### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12 — **IN PROGRESS (7.1–7.3 done, ~8.5 h)**
 
 **MU:** VPC subnet/route-table design · why NAT Gateway costs more than the compute ·
 security groups vs NACLs · IAM task roles vs instance roles · RDS parameter groups ·
@@ -268,7 +268,7 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 |---|---|---|
 | 7.1 | Deployable app: SPA in the image (one origin), `aws` profile (forwarded headers), cookie flag, banner off; 4xx fix | ✅ ~3 h |
 | 7.2 | Bootstrap stack: budget, state bucket, ECR, GitHub OIDC role; CI pushes to ECR | ✅ ~3 h (applied 2026-10-01) |
-| 7.3 | Network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets | |
+| 7.3 | Network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets | ✅ written + planned (42 resources), ~2.5 h; applied with 7.4 |
 | 7.4 | Compute: ALB, ECS services + migrate task, IAM roles, logs | |
 | 7.5 | Apply from zero, browser checks against the ALB, destroy, verify; runbook | |
 
