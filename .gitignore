@@ -46,16 +46,22 @@ frontend/e2e/out/
 # ---------------------------------------------------------------------------
 # Terraform (Phase 7)
 #
-# State is remote (S3 + DynamoDB locking), but a stray local state file would contain
-# RDS endpoints and generated passwords in plaintext. Ignored defensively.
+# State is remote (S3, S3-native locking — ADR-023), but a stray local state file would
+# contain resource IDs and, for some resources, secrets in plaintext. Ignored defensively.
+#
+# .terraform.lock.hcl is NOT ignored: it pins provider versions and checksums, so every init
+# installs the provider that was reviewed — the job gradle-wrapper validation does for Gradle.
+# (Ignored here from Phase 0 until 7.2.)
+# *.tfvars hold per-person values (alert emails, an allowlisted IP); the .example is committed.
 # ---------------------------------------------------------------------------
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*.tfplan
 tfplan
+crash.log
 crash.log
 
 # ---------------------------------------------------------------------------

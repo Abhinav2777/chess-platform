@@ -5,6 +5,43 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.2: the first AWS resources
+
+`infra/bootstrap` applied: budget (adopted), state bucket, ECR repository, GitHub OIDC
+provider and push role — 12 added, 1 changed. ~$0.05/month, estimated.
+
+**Inventory first.** Read-only look at the account before writing Terraform: the budget's exact
+alerts, no OIDC provider, no ECR, no buckets — and an IAM user with AdministratorAccess, no MFA
+and long-lived access keys. The owner deleted the key and moved to `aws login` (short-lived,
+console-backed); confirmed zero access keys remain. Terraform's AWS provider reads the
+`login_session` profile directly. MFA on the user: still open.
+
+**The plan review that mattered.** After `terraform import` of the console budget, the plan
+showed "1 to change". The change was not cosmetic: dropping the filter that excludes credits
+and refunds. On an account with credits, that budget reads ~$0 while the stack spends — the
+alarm this project's cost rules depend on would have been disabled by the change meant to manage
+it. Filter written into code; re-plan showed tags only. Applied from the saved plan file.
+
+**State migrated** into the bucket the stack created; plan against remote state: no changes;
+local copies removed. Bucket name passed at init (account ID not committed).
+
+**Verified live:** public access block, versioning, SSE, ownership, TLS-only policy; anonymous
+HTTP and HTTPS 403; role trust = this repo's `main` only; ECR immutable + scan on push;
+`plan -destroy` refused by `prevent_destroy`.
+
+**CI:** image job gains `id-token: write`, OIDC credentials, ECR login, and pushes the SHA tag
+to ECR on main — skipped when `AWS_ECR_PUSH_ROLE_ARN` is unset. First real exercise: the merge
+of this PR. New `terraform` job (fmt, `init -backend=false -lockfile=readonly`, validate — no AWS
+access), added to the required checks.
+
+**Found:** the Phase 0 root `.gitignore` ignored `.terraform.lock.hcl`. Committing it is what
+makes every `init` install the reviewed provider build; CI now refuses a lock file that does not
+match (`-lockfile=readonly`). Fixed; the comment's "DynamoDB locking" corrected too.
+
+**Hours:** ~3.
+
+---
+
 ## 2026-09-30 — 7.1 PR: the scan refused an OS package
 
 PR run 99554346549, `image` job red: Trivy, OpenSSL 3.0.13-0ubuntu3.15 (HIGH), fixed in 3.16.
