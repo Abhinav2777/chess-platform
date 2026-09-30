@@ -241,7 +241,7 @@ steps, and the pipeline fails on a deliberately introduced failing test.
 
 ---
 
-### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12
+### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12 — **IN PROGRESS (7.1 done, ~3 h)**
 
 **MU:** VPC subnet/route-table design · why NAT Gateway costs more than the compute ·
 security groups vs NACLs · IAM task roles vs instance roles · RDS parameter groups ·
@@ -258,6 +258,19 @@ already owned · WAF · multi-region.
 **Done when:** `terraform apply` from zero produces a working public HTTPS + WSS
 deployment; `terraform destroy` leaves no billable resources; DEPLOYMENT.md is accurate
 enough for a stranger to follow.
+
+**Scope decisions (owner, 2026-09-30 — ADR-023):** Path B only (no always-on Path A);
+`us-east-1`; **no domain → HTTP + WS**, ALB ingress limited to an allowlist. The done-when's
+"HTTPS + WSS" becomes "HTTP + WS from allowlisted addresses". State locking uses S3's native
+lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
+
+| # | Milestone | Status |
+|---|---|---|
+| 7.1 | Deployable app: SPA in the image (one origin), `aws` profile (forwarded headers), cookie flag, banner off; 4xx fix | ✅ ~3 h |
+| 7.2 | Bootstrap stack: budget, state bucket, ECR, GitHub OIDC role; CI pushes to ECR | |
+| 7.3 | Network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets | |
+| 7.4 | Compute: ALB, ECS services + migrate task, IAM roles, logs | |
+| 7.5 | Apply from zero, browser checks against the ALB, destroy, verify; runbook | |
 
 ---
 
