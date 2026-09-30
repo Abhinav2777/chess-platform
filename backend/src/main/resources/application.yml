@@ -108,7 +108,7 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always     # locked down in Phase 7 — this leaks infrastructure detail
+      show-details: always     # local and tests only: the aws profile says never, on port 8081
       # Readiness vs liveness are different questions (ADR: Phase 8).
       # Liveness = "is the JVM alive". Readiness = "can I serve traffic", which includes
       # dependencies. Conflating them makes Kubernetes restart a healthy pod because the
