@@ -5,11 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.net.URI;
 import java.time.Instant;
@@ -37,9 +40,18 @@ import java.util.Map;
  * DEBUG, because a wrong password is not an incident and a thousand of them per hour
  * should not look like one. Unexpected exceptions log at ERROR with the full trace and a
  * correlation id the user can quote.
+ *
+ * <h2>Why it extends {@link ResponseEntityExceptionHandler}</h2>
+ *
+ * <p>Spring MVC's own exceptions — malformed JSON, a path variable of the wrong type, an
+ * unsupported method, a missing static file — already know their status. The base class maps
+ * each to a {@code ProblemDetail} with it. Without it, the {@code Exception} catch-all below
+ * caught them all: every client mistake was a 500 with an ERROR log (found in Phase 7.1,
+ * {@code ClientErrorStatusIntegrationTest}). Spring picks the most specific handler, so the
+ * catch-all now sees only what is genuinely unexpected.
  */
 @RestControllerAdvice
-public class ApiExceptionHandler {
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final String TYPE_PREFIX = "https://chess-platform.dev/errors/";
@@ -77,10 +89,18 @@ public class ApiExceptionHandler {
 
     /**
      * Bean-validation failures, reported per field so a form can highlight the offending
-     * input rather than showing one generic message above everything.
+     * input rather than showing one generic message above everything. An override, not an
+     * {@code @ExceptionHandler}: the base class already handles this exception, and two
+     * handlers for one type is an ambiguity Spring refuses at startup.
      */
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidation(MethodArgumentNotValidException exception) {
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException exception, HttpHeaders headers,
+            HttpStatusCode status, WebRequest request) {
+        return ResponseEntity.badRequest().body(validationProblem(exception));
+    }
+
+    private static ProblemDetail validationProblem(MethodArgumentNotValidException exception) {
         Map<String, String> fieldErrors = new HashMap<>();
         exception.getBindingResult().getFieldErrors().forEach(error ->
                 fieldErrors.putIfAbsent(error.getField(), error.getDefaultMessage()));

@@ -1,6 +1,11 @@
 spring:
   application:
     name: chess-platform
+  main:
+    # The banner is printed to stdout, outside Logback: seven lines of ASCII art in an
+    # otherwise one-JSON-object-per-line stream, which CloudWatch Insights would ingest as
+    # seven unparseable events per start.
+    banner-mode: off
 
   # Spring Cloud AWS (ADR-020). In AWS the region and credentials come from the task's
   # environment and role; nothing secret is configured here. The static region only stops
@@ -136,6 +141,11 @@ chess:
     # make this long because the token is single-use and rotates: a stolen one stops
     # working the moment either party refreshes, and reuse revokes the whole family.
     refresh-token-ttl: 14d
+
+    # The refresh cookie's Secure flag. Stays true everywhere except a deployment served
+    # over plain HTTP (browsers drop Secure cookies there), which sets
+    # CHESS_AUTH_REFRESH_COOKIE_SECURE=false and gets a startup WARN for it (ADR-023).
+    refresh-cookie-secure: true
 
   realtime:
     # How long a socket may stay open without authenticating. The pre-auth window is

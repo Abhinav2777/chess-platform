@@ -2,6 +2,7 @@ package com.chessplatform.platform.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -56,6 +57,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login",
                                          "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
+                        // The SPA, baked into the image (Phase 7): the one origin serves the
+                        // page, the API and the socket. Named files only, GET only — not a
+                        // blanket "/**", which would open every future endpoint by default.
+                        // index.html is listed because "/" is served by forwarding to it, and
+                        // the forward passes through this chain again.
+                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/**").permitAll()
                         // The WebSocket handshake carries no credential and cannot: the
                         // browser API will not set an Authorization header on it. The
                         // socket authenticates in its first frame instead (ADR-009), so
