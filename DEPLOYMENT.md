@@ -35,7 +35,7 @@ into the bucket it created.
 
 ```bash
 cd infra/bootstrap
-cp terraform.tfvars.example terraform.tfvars      # set budget_alert_emails (gitignored)
+cp terraform.tfvars.example terraform.tfvars      # budget_alert_emails; github_sub_prefix for a fork (gitignored)
 
 # 1. First apply, local state (backend.tf must not exist yet — move it aside on a fresh clone)
 mv backend.tf backend.tf.later
