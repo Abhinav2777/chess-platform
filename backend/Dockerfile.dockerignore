@@ -7,3 +7,10 @@
 !build.gradle.kts
 !backend/build.gradle.kts
 !backend/src/main/
+# The SPA (Phase 7). Named files: not node_modules, not dist, not e2e.
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/src/

@@ -398,6 +398,29 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 7.1 — the app behind a load balancer
+
+### "Your rate limit is per IP. What does it see behind a load balancer?"
+The load balancer's address — one bucket for every user. I enable Tomcat's forwarded-header
+handling, trust only the VPC's addresses as proxies, and it reads X-Forwarded-For from the
+right, so the address used is the one the ALB appended rather than anything the client wrote.
+Tested against a real Tomcat both ways, and I watched it fail with the setting off.
+
+### "How do you serve the frontend?"
+Baked into the backend image, so page, API and WebSocket share one origin. No CORS in
+production, the SameSite=Strict refresh cookie just works, and the socket's origin check passes
+without configuring a hostname that doesn't exist until apply. The trade-off is that frontend
+and backend deploy together — fine for one team; CloudFront + S3 when they need to diverge.
+
+### "Tell me about a bug that had been there since the start."
+Every client error was a 500. My catch-all exception handler caught Spring's own exceptions —
+malformed JSON, a bad UUID in a path — and reported them as internal errors with ERROR logs,
+which in production would page someone for a client's typo. No test sent a malformed request, so
+nothing noticed until a Phase 7 test expected a 404 for a missing file. I wrote four failing
+tests first, then fixed it by extending Spring's ResponseEntityExceptionHandler.
+
+---
+
 ## Dependency updates — the pins that fought the BOM
 
 ### "How do you keep dependencies up to date?"

@@ -87,6 +87,10 @@ Runs the same image three ways (ADR-021): `migrate` (Flyway, exits 0), then `api
 are set in the compose file. On a machine where containers cannot reach the internet, see
 TROUBLESHOOTING (“docker build fails: UnknownHostException”).
 
+The image also serves the frontend (ADR-023): open **http://localhost:8080** — one origin,
+exactly as behind the ALB. The browser checks run against it with
+`APP_URL=http://localhost:8080 npm run e2e:lobby` (from `frontend/`).
+
 ## API collection
 
 `docs/api/chess-platform.postman_collection.json`. Import into Postman and **Run

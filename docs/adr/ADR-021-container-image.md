@@ -60,6 +60,22 @@ already done it only validates.
   (`tomcat.version`, `jackson-bom.version`, `jackson-2-bom.version`); full suite green; rescan:
   **0 fixable HIGH/CRITICAL**, exit code 0.
 
+## Amendment, 2026-09-30 — OS packages patched at build time
+
+PR run 99554346549: the scan refused the image for OpenSSL 3.0.13-0ubuntu3.15 (HIGH), fixed in
+Ubuntu's archive but not yet in `eclipse-temurin:25-jre-noble` (built 2026-09-25). Nothing in
+our code had changed; the base image had aged past a published fix.
+
+The runtime stage now runs `apt-get upgrade`, keyed on a build argument `OS_PATCH_DATE` that
+CI sets to the current date. Without the key the RUN line never changes, its cached layer is
+reused indefinitely, and the upgrade would patch exactly once. With it: at most one re-run per
+day. Cost: layers below it get new digests daily, so the first push of a day re-uploads the
+dependency layer; builds are less byte-reproducible (the date is in the image's build args).
+
+**Not chosen:** a `.trivyignore` entry. Defensible for this CVE — the JRE implements TLS itself
+and does not load system OpenSSL, and we use no DTLS — but a suppression list is where a gate
+goes to die. Waiting for Temurin: blocks every merge for an unknown number of days, and recurs.
+
 ## Alternatives considered
 
 | Alternative | Why not (yet) |
