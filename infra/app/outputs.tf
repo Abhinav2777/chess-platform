@@ -19,3 +19,8 @@ output "cache_endpoint" {
 output "game_events_queue_url" {
   value = aws_sqs_queue.game_events.url
 }
+
+output "app_url" {
+  description = "Open this — from an address in allowed_ingress_cidrs."
+  value       = "http://${aws_lb.main.dns_name}"
+}
