@@ -395,6 +395,22 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### CI: `Not authorized to perform sts:AssumeRoleWithWebIdentity`
+
+**Seen:** 2026-10-01, first main run after the bootstrap stack. **Cause:** the role's trust
+policy did not match the token's claims — here the `sub`: the repository uses GitHub's immutable
+subject format (`repo:<owner>@<id>/<repo>@<id>:…`), the policy expected `repo:<owner>/<repo>:…`.
+**Find the actual claim, don't guess:**
+```bash
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --max-results 3 --query 'Events[].CloudTrailEvent' --output text | grep -o '"userName":"[^"]*"'
+gh api repos/<owner>/<repo>/actions/oidc/customization/sub     # what GitHub will send
+```
+Fix the trust policy (`github_sub_prefix` in `infra/bootstrap`) to match exactly. Other causes
+with the same message: `aud` not `sts.amazonaws.com`; the job lacks `permissions: id-token:
+write` (then the action fails earlier, fetching the token); a run from a branch or PR the policy
+deliberately excludes.
+
 ### CI `image` job: Trivy fails on an OS package (`ubuntu` row), not a jar
 
 **Seen:** 2026-09-30, `libssl3t64`/`openssl` HIGH with a "Fixed Version" — on a PR that changed

@@ -31,10 +31,15 @@ data "aws_iam_policy_document" "ci_trust" {
     # Exact match on repository AND branch: a pull request, a fork, another branch or another
     # repository in the same account gets a token whose sub differs, and is refused. The most
     # common mistake here is StringLike with "repo:owner/*" — every repository of the owner.
+    #
+    # The sub is GitHub's immutable form, with numeric owner and repository IDs. A name-only sub
+    # ("repo:owner/name:…") would be matched by a *new* repository created under the same name
+    # after this one is deleted or renamed; IDs are never reused. The first CI run used the
+    # name-only form and was refused — CloudTrail showed the sub GitHub actually sent.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = ["${var.github_sub_prefix}:ref:refs/heads/main"]
     }
   }
 }
