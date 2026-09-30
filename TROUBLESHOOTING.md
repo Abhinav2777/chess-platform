@@ -395,6 +395,15 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### CI `image` job: Trivy fails on an OS package (`ubuntu` row), not a jar
+
+**Seen:** 2026-09-30, `libssl3t64`/`openssl` HIGH with a "Fixed Version" — on a PR that changed
+no dependency. **Cause:** Ubuntu published a fix after the Temurin base image was built. The
+Dockerfile's dated `apt-get upgrade` (ADR-021 amendment) picks it up; locally, pass
+`--build-arg OS_PATCH_DATE=$(date -u +%F)` or the cached layer is reused. Check with
+`docker run --rm --entrypoint dpkg-query <image> -W <package>`.
+If the fix is not yet in Ubuntu's archive either, `--ignore-unfixed` already skips it.
+
 ### A test run is killed with exit code 137
 
 The kernel's OOM killer. Seen when the full Testcontainers suite ran while the compose
