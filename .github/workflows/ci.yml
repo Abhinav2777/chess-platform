@@ -85,6 +85,29 @@ jobs:
       # production build survived two milestones in Phase 2 (DEVELOPMENT_LOG, 3.2).
       - run: npm run build
 
+  # Infrastructure code gets the same gate as application code (Phase 7.2). No AWS access:
+  # init without a backend, so a PR — including a fork's — can check formatting and validity
+  # but never read state or plan against the account. Plans stay a human step (DEPLOYMENT.md).
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        stack: [bootstrap]
+    defaults:
+      run:
+        working-directory: infra/${{ matrix.stack }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+      - run: terraform fmt -check -diff
+      # -lockfile=readonly: the committed .terraform.lock.hcl must already match, so CI never
+      # silently accepts a provider nobody reviewed.
+      - run: terraform init -backend=false -input=false -lockfile=readonly
+      - run: terraform validate
+
   image:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
@@ -92,6 +115,7 @@ jobs:
     permissions:
       contents: read
       packages: write   # GHCR push; used only on main (see the push step's condition)
+      id-token: write   # the OIDC token AWS trades for ECR push credentials (Phase 7.2)
     steps:
       # Image names must be lowercase and the owner is "Abhinav2777". metadata-action
       # lowercases its tags on its own, so the first CI run built ghcr.io/abhinav2777/… and
@@ -156,7 +180,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ECR (Phase 7.2, infra/bootstrap): what ECS pulls from. No stored AWS key — the job's
+      # OIDC token is exchanged for one-hour credentials of a role that only this repository's
+      # main branch can assume, and that can only push to one repository. Skipped when the
+      # variable is unset (forks; any clone before its bootstrap stack exists).
+      - name: AWS credentials (OIDC)
+        if: github.ref == 'refs/heads/main' && vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Log in to ECR
+        id: ecr
+        if: github.ref == 'refs/heads/main' && vars.AWS_ECR_PUSH_ROLE_ARN != ''
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # ECR tags are immutable (infra/bootstrap/ecr.tf), so it gets the commit SHA only — never
+      # the moving `main`, which an immutable repository would refuse the second time.
+      - name: ECR tag
+        if: steps.ecr.outputs.registry != ''
+        run: echo "ECR_TAG=${{ steps.ecr.outputs.registry }}/chess-platform:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
       # Same inputs, same cache: this "build" is seconds, and pushes the scanned layers.
+      # provenance: false — a plain image manifest, no attestation manifests beside it. ECR's
+      # lifecycle policy counts and expires manifests; attestations are untagged children it
+      # could expire out from under a kept image.
       - name: Push
         if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -164,7 +213,10 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: true
+          provenance: false
           build-args: OS_PATCH_DATE=${{ env.OS_PATCH_DATE }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ env.ECR_TAG }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

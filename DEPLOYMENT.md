@@ -1,9 +1,10 @@
 # DEPLOYMENT
 
-**Nothing is currently deployed. No AWS resources exist. AWS spend to date: $0.00.**
+**Running now (permanent):** the bootstrap stack only — budget, Terraform state bucket, ECR
+repository, GitHub OIDC role (`infra/bootstrap`, ~$0.05/month, estimated). **The app stack
+(`infra/app`) is not deployed.** Measured AWS spend: see `PROJECT_STATE.md` §12.
 
-This document is filled in during Phase 7. It is stubbed now so the structure exists
-and so the cost-control rules are written down *before* anything can be provisioned.
+Filled in through Phase 7 (ADR-023).
 
 ---
 
@@ -19,12 +20,59 @@ and so the cost-control rules are written down *before* anything can be provisio
 4. Every AWS component must be classified **Required / Useful / Optional / Too
    expensive** before it is added, with an estimated monthly cost.
 
+## Prerequisites
+
+- Terraform ≥ 1.11 (1.16.4 used), AWS CLI v2 signed in to the target account
+  (`aws login`, `aws configure sso` or equivalent; no long-lived keys needed), `gh` for the
+  one repository variable.
+- `aws sts get-caller-identity` shows the account you mean. Everything is `us-east-1`.
+
+## Bootstrap — once per account (`infra/bootstrap`, Milestone 7.2)
+
+Permanent, and nearly free: the cost alarm, the state bucket every other stack uses, the ECR
+repository, and the role CI assumes to push to it. Its own state starts local and is then moved
+into the bucket it created.
+
+```bash
+cd infra/bootstrap
+cp terraform.tfvars.example terraform.tfvars      # set budget_alert_emails (gitignored)
+
+# 1. First apply, local state (backend.tf must not exist yet — move it aside on a fresh clone)
+mv backend.tf backend.tf.later
+terraform init
+#    Already have a budget from the console? Adopt it instead of creating a second:
+#    set budget_name in terraform.tfvars to its exact name, then
+#    terraform import aws_budgets_budget.monthly "<account-id>:<budget name>"
+terraform plan -out=bootstrap.tfplan               # READ IT: expect only creations
+terraform apply bootstrap.tfplan
+
+# 2. Move this stack's state into the bucket it just made
+mv backend.tf.later backend.tf
+terraform init -migrate-state -backend-config="bucket=$(terraform output -raw state_bucket)"
+terraform plan                                     # must say: No changes
+rm -f terraform.tfstate terraform.tfstate.backup   # the empty local file and the old copy
+
+# 3. Let CI push to ECR (the ARN is not a secret — useless without a matching OIDC token)
+gh variable set AWS_ECR_PUSH_ROLE_ARN --body "$(terraform output -raw ci_role_arn)"
+```
+
+On any later machine: `terraform init -backend-config="bucket=chess-platform-tfstate-<account-id>"`.
+
+**Never destroyed.** The state bucket has `prevent_destroy` (a destroy plan fails); destroying
+it would lose the record of what the app stack created. If this account is being retired:
+empty the app stack first, then remove `prevent_destroy`, then destroy.
+
 ## CI/CD (Phase 6, ADR-022)
 
 Every PR and every push to `main`: `backend` (unit, ArchUnit, Testcontainers), `frontend`
 (type-check + build), `image` (build → Trivy → push). Only `main` pushes, to
-`ghcr.io/abhinav2777/chess-platform:<full-commit-sha>` and `:main`. `main` is protected
-(`.github/branch-protection.json`). Browser checks run nightly (`.github/workflows/e2e.yml`).
+`ghcr.io/abhinav2777/chess-platform:<full-commit-sha>` and `:main`, and — once the bootstrap
+stack exists and `AWS_ECR_PUSH_ROLE_ARN` is set — to ECR as `chess-platform:<full-commit-sha>`
+only (immutable tags), authenticated by OIDC. `main` is protected
+(`.github/branch-protection.json`; re-apply after changing it:
+`gh api -X PUT repos/Abhinav2777/chess-platform/branches/main/protection --input .github/branch-protection.json`).
+A fourth job, `terraform`, runs `fmt -check` / `init -backend=false -lockfile=readonly` /
+`validate` per stack — no AWS access; plans and applies stay a reviewed human step. Browser checks run nightly (`.github/workflows/e2e.yml`).
 
 A deployment runs the same image three ways (ADR-021): **`migrate` first** (one-off, must exit
 0), then roll out `api` and `worker`. Migrations must stay compatible with the version still
