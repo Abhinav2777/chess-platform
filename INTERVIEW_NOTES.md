@@ -398,6 +398,18 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 7.3 — the data tier
+
+### "Why not ElastiCache Serverless? It's cheaper."
+It is — about $0.004 an hour cheaper at our size. But Serverless is cluster mode, and my
+matchmaking Lua scripts touch keys in several hash slots, so they'd fail with CROSSSLOT — and only
+in AWS, because my tests run a single-node Valkey. Making them cluster-safe means putting all
+matchmaking keys under one hash tag, switching the client to cluster mode and testing against a
+cluster: several hours to save about fifty cents over the project. If the cache were long-lived
+I'd do it, starting with the tests.
+
+---
+
 ## Phase 7.2 — Terraform bootstrap and CI credentials
 
 ### "How does your CI authenticate to AWS?"
