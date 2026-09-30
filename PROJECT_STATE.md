@@ -74,18 +74,27 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 6 — Docker + CI/CD — **complete** |
-| **Phase status** | **Phase 6 complete.** CI green on protected `main`; image published and public; unit 90, integration 127. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5 |
-| **Cumulative hours (estimated)** | ~84.5 of 135–175 |
+| **Current phase** | Phase 7 — AWS deployment (Path B, HTTP, us-east-1 — ADR-023) |
+| **Phase status** | 7.1 done (app deployable; 4xx bug fixed); unit 90, integration 138. 7.2 next — first AWS resources. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~3 of 14–18 |
+| **Cumulative hours (estimated)** | ~87.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 7 — AWS: design + cost decisions first (§10, §11) |
+| **Next milestone** | 7.2 — bootstrap stack: budget, state bucket, ECR, GitHub OIDC (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 7 — Milestone 7.1 (2026-09-30): deployable application
+
+- SPA in the image (one origin); `aws` profile with forwarded headers trusted from the VPC
+  only; configurable refresh-cookie `Secure` (default on, WARN when off); banner off.
+- Bug fixed: client errors (malformed JSON, bad path variable, 405, missing file) were 500s.
+- 11 new real-server integration tests; unit 90, integration 138. Browser check passes against
+  the image on :8080. Decisions and scope change: ADR-023.
+
 
 ### Dependabot triage (2026-09-30)
 
@@ -679,23 +688,18 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase-boundary archive** (after this PR merges):
-   `git archive --format=tar.gz -o ../chess-platform-M6-2026-09-30.tar.gz origin/main`
-2. ~~Dependabot triage~~ — done 2026-09-30 (§2). Close PRs #1–#6 if Dependabot has not.
-3. **Phase 7 — AWS (14–18 h).** Starts with a design and cost discussion; the open questions in
-   §11 (account, region, domain) must be answered first, and the $20 budget alarm exists before
-   the first `terraform apply` (DEPLOYMENT.md rule 1).
+1. **7.2 — bootstrap stack** (`infra/bootstrap`, local state): adopt the existing budget,
+   state bucket (versioned, encrypted, public access blocked), ECR with keep-last-3, GitHub
+   OIDC provider + a push role scoped to this repository's `main`; CI pushes to ECR as well as
+   GHCR. First real AWS resources — plan reviewed before apply.
+2. 7.3–7.5 per ROADMAP Phase 7 table.
 
 ---
 
 ## 11. Open questions for the project owner
 
-- Is a domain name available for the Phase 7 demo, or should it run on the raw ALB
-  hostname? (Affects whether Route 53 + ACM are in scope.)
-- Preferred AWS region. `us-east-1` is assumed for all cost estimates; an ap-south-1
-  deployment would be lower-latency from Hyderabad but slightly more expensive.
-- Is there an existing AWS account with billing alerts configured, or does one need
-  creating?
+Answered 2026-09-30 (ADR-023): existing account with a $20 budget alarm; `us-east-1`; no
+domain — HTTP only; Path B only. None open.
 
 ---
 
