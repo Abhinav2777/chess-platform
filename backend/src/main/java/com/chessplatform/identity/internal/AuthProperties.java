@@ -31,13 +31,19 @@ import java.time.Duration;
  * @param accessTokenTtl  Short by design. A stolen access token cannot be revoked
  *                        (ADR-009), so its lifetime *is* the exposure window.
  * @param refreshTokenTtl How long a user stays signed in without re-entering a password.
+ * @param refreshCookieSecure Whether the refresh cookie carries {@code Secure}. Absent means
+ *                        {@code true}: turning it off must be a visible, deliberate act. Off
+ *                        only for a deployment served over plain HTTP, where browsers drop a
+ *                        {@code Secure} cookie and every reload would sign the user out
+ *                        (Phase 7, HTTP-only by the owner's choice — ADR-023).
  */
 @ConfigurationProperties(prefix = "chess.auth")
 @Validated
 public record AuthProperties(
         @NotBlank String jwtSecret,
         Duration accessTokenTtl,
-        Duration refreshTokenTtl) {
+        Duration refreshTokenTtl,
+        Boolean refreshCookieSecure) {
 
     private static final int MIN_SECRET_BYTES = 32;
 
@@ -56,6 +62,11 @@ public record AuthProperties(
         }
         requirePositive(accessTokenTtl, "chess.auth.access-token-ttl");
         requirePositive(refreshTokenTtl, "chess.auth.refresh-token-ttl");
+        // A primitive would default to false when the property is missing — fail-open for
+        // a security flag. Boxed, so "missing" can mean the safe value.
+        if (refreshCookieSecure == null) {
+            refreshCookieSecure = Boolean.TRUE;
+        }
     }
 
     private static void requirePositive(Duration value, String property) {

@@ -8,6 +8,20 @@
 # Build from the repository root (the Gradle wrapper and version catalog live there):
 #   docker build -f backend/Dockerfile -t chess-platform .
 # The build context is an allowlist: backend/Dockerfile.dockerignore.
+#
+# Since Phase 7 the image also serves the SPA (ADR-023): one origin for page, API and socket.
+
+# ---------------------------------------------------------------- frontend
+# Build-only: nothing from this stage but dist/ reaches the runtime image, so Node and
+# node_modules are neither shipped nor scanned. Lockfile first, so a source-only change
+# reuses the npm layer.
+FROM node:24-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
+COPY frontend/src src
+RUN npm run build
 
 # ---------------------------------------------------------------- build
 FROM eclipse-temurin:25-jdk-noble AS build
@@ -21,6 +35,9 @@ COPY backend/build.gradle.kts backend/
 RUN ./gradlew :backend:resolveDependencies --no-daemon --quiet
 
 COPY backend/src/main backend/src/main
+# Into the jar's classpath:/static — served by Spring's static resource handling, with "/"
+# forwarding to index.html. Lands in the application layer (kilobytes), after the sources.
+COPY --from=frontend /frontend/dist backend/src/main/resources/static
 RUN ./gradlew :backend:bootJar --no-daemon --quiet \
  && java -Djarmode=tools -jar backend/build/libs/chess-platform.jar \
         extract --layers --launcher --destination /extracted
