@@ -398,6 +398,27 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 7.4 — compute
+
+### "Execution role versus task role?"
+The execution role is what ECS needs to start my container: pull the image, read the secrets it
+injects, write logs. The task role is what my code can do once it's running. My API has no task
+role at all — it calls no AWS API — so a remote-code-execution bug in it gets no AWS credentials.
+The worker can use two SQS queues and nothing else.
+
+### "How do you run database migrations on ECS?"
+As a one-off task from the same image, before the services roll. Terraform runs it and waits for
+exit 0, and both services depend on that step, so a failed migration stops the deploy with the
+old version still serving. Migrations have to stay compatible with the running version for the
+length of the rollout — expand, deploy, contract.
+
+### "What did you expose that you shouldn't have?"
+Actuator on the public port: health details, and Prometheus metrics readable by any logged-in
+user. In AWS it's on a separate port now; the load balancer health-checks that port and never
+forwards it.
+
+---
+
 ## Phase 7.3 — the data tier
 
 ### "Why not ElastiCache Serverless? It's cheaper."

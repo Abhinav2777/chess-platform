@@ -41,3 +41,25 @@ variable "cache_node_type" {
   type        = string
   default     = "cache.t4g.micro"
 }
+
+variable "image_tag" {
+  description = "Full commit SHA of the image in ECR to deploy. CI pushes only SHAs there (immutable tags); `git rev-parse origin/main` after a green main run."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.image_tag))
+    error_message = "A full 40-character commit SHA — never a moving tag like main."
+  }
+}
+
+variable "api_desired_count" {
+  description = "API tasks. Two by default: the smallest number that proves cross-instance WebSocket fan-out (ADR-002) on real infrastructure."
+  type        = number
+  default     = 2
+}
+
+variable "worker_use_spot" {
+  description = "Run the worker on Fargate Spot. It is interruption-tolerant by design: the outbox is in PostgreSQL and SQS redelivers (ADR-008)."
+  type        = bool
+  default     = true
+}
