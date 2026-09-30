@@ -98,8 +98,13 @@ prevent.
   CI pushes with `provenance: false` so the lifecycle policy never sees attestation manifests
   it could expire from under a kept image.
 - **GitHub OIDC, no keys in GitHub:** trust is `StringEquals` on both `aud` and
-  `sub = repo:Abhinav2777/chess-platform:ref:refs/heads/main` — not `StringLike` on
-  `repo:owner/*`, the common mistake that trusts every repository of the owner. Permissions:
+  `sub = repo:Abhinav2777@113631636/chess-platform@1369658999:ref:refs/heads/main` — not
+  `StringLike` on `repo:owner/*`, the common mistake that trusts every repository of the owner.
+  The sub is GitHub's **immutable** form (numeric owner and repository IDs; the repository has
+  `use_immutable_subject`). The first version trusted the name-only form and the first main run
+  was refused; CloudTrail's failed `AssumeRoleWithWebIdentity` event recorded the sub GitHub sent.
+  Kept strict rather than loosened: a name-only trust is inherited by any *new* repository that
+  later takes the same name; IDs are never reused. Permissions:
   `GetAuthorizationToken` (not scopable) plus push actions on one repository. No thumbprint —
   AWS verifies GitHub's issuer against its own CA store.
 - **Verified live, not from the code:** public access block, versioning, encryption, ownership,
