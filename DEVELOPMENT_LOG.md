@@ -5,6 +5,19 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-09-30 — 7.1 PR: the scan refused an OS package
+
+PR run 99554346549, `image` job red: Trivy, OpenSSL 3.0.13-0ubuntu3.15 (HIGH), fixed in 3.16.
+Every jar clean. The Temurin base image (built 2026-09-25) predates Ubuntu's fix; pulling it
+again confirmed the tag had not moved. The gate did exactly its job — on a PR that did not cause
+the problem, which is the argument for fixing the pipeline rather than suppressing the finding.
+
+Fix: a dated `apt-get upgrade` layer in the runtime stage (`OS_PATCH_DATE`, set by CI), because
+an undated one is cached forever and patches once. Verified locally: OpenSSL 3.16 in the image,
+the same Trivy invocation as CI exits 0, the API starts and serves `/`. ADR-021 amended.
+
+---
+
 ## 2026-09-30 — 7.1: the app, ready to sit behind a load balancer
 
 **Phase 7 decisions (owner):** existing account (budget alarm at $20 already in place —
