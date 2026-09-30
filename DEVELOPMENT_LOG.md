@@ -5,6 +5,32 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.4: compute, and actuator off the public port
+
+**Found first:** wiring the ALB health check exposed that actuator shared the application port.
+`/actuator/health` showed every component's details (the YAML comment said "locked down in Phase
+7"), and `/actuator/prometheus` was readable by any signed-in player. The `aws` profile now puts
+actuator on 8081 with `show-details: never`; the ALB health-checks 8081 and never forwards it.
+Test-first: two runtime tests plus one pinning the profile file — the runtime tests alone passed
+before the change, because the test support already moved the management server to a random port.
+
+**Built** (`infra/app`, plan 62 to add): ECS cluster (Fargate + Fargate Spot), three task
+definitions from one image, execution role written out narrowly (one repo, three log groups,
+two secrets), worker task role with two queues, **no task role at all for api and migrate**, log
+groups with 7-day retention, ALB + target group + listener, api ×2 and worker ×1 (Spot).
+
+**Migrate ordering:** `terraform_data.migrate` runs `scripts/run-migrate.sh` (run-task → wait →
+exit code) when the migrate task definition changes; both services depend on it. First real run: 7.5.
+
+**Next apply needs a new image:** ECR's `b9a051f` predates the 8081 change; the image CI builds
+when this merges is the first deployable one.
+
+Unit 90, integration 141.
+
+**Hours:** ~3.
+
+---
+
 ## 2026-10-01 — 7.3: network and data, planned not applied
 
 `infra/app` (state: `app/terraform.tfstate` in the bootstrap bucket): VPC with public and
