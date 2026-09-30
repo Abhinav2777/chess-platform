@@ -41,6 +41,8 @@ abstract class DeploymentTestSupport {
         registry.add("spring.data.redis.port", () -> VALKEY.getMappedPort(6379));
         registry.add("chess.clock.sweeper-enabled", () -> "false");
         registry.add("chess.matchmaking.scheduler-enabled", () -> "false");
+        // The aws profile moves actuator to its own port (8081); random here, like the server.
+        registry.add("management.server.port", () -> "0");
     }
 
     private final HttpClient http = HttpClient.newHttpClient();

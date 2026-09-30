@@ -1,7 +1,7 @@
 # Who may talk to whom — by security group reference, not by address, so the rules keep
 # holding as tasks come and go with new IPs.
 #
-#   allowlist --80--> alb --8080--> api --5432--> db
+#   allowlist --80--> alb --8080/8081--> api --5432--> db
 #                                   api/worker --6379--> cache
 #                                   api/worker --443--> AWS APIs, ECR (via the internet gateway)
 #
@@ -35,6 +35,16 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_api" {
   to_port                      = 8080
 }
 
+# The ALB health-checks the management port (actuator moved there in the aws profile, 7.4).
+resource "aws_vpc_security_group_egress_rule" "alb_to_api_management" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "To API tasks: health checks on the management port"
+  referenced_security_group_id = aws_security_group.api.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8081
+  to_port                      = 8081
+}
+
 resource "aws_security_group" "api" {
   name        = "${var.name}-api"
   description = "API tasks: reachable from the ALB only"
@@ -49,6 +59,15 @@ resource "aws_vpc_security_group_ingress_rule" "api_from_alb" {
   ip_protocol                  = "tcp"
   from_port                    = 8080
   to_port                      = 8080
+}
+
+resource "aws_vpc_security_group_ingress_rule" "api_management_from_alb" {
+  security_group_id            = aws_security_group.api.id
+  description                  = "Health checks from the ALB on the management port"
+  referenced_security_group_id = aws_security_group.alb.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8081
+  to_port                      = 8081
 }
 
 # Worker and the one-off migrate task: nothing calls them.

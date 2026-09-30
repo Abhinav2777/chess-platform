@@ -64,19 +64,19 @@ empty the app stack first, then remove `prevent_destroy`, then destroy.
 
 ## App stack (`infra/app`, Milestones 7.3–7.5) — apply, measure, destroy
 
-Not yet applied. Network, data tier, queues and secrets are written (7.3); compute (ALB, ECS) is
-7.4. The full apply/destroy procedure lands with 7.5.
+Not yet applied. Everything is written (7.3 data tier, 7.4 compute); the first apply, the
+verification and the destroy are 7.5, which finalises this section.
 
 ```bash
 cd infra/app
 cp terraform.tfvars.example terraform.tfvars   # allowed_ingress_cidrs = ["<your IP>/32"]
 terraform init -backend-config="bucket=chess-platform-tfstate-<account-id>"
-terraform plan
+terraform plan -var image_tag=<full SHA of a green main run>   # needs the AWS CLI (migrate step)
 ```
 
-Estimated while applied (us-east-1, published on-demand prices): data tier ≈ $0.03/h
-(RDS db.t4g.micro + 20 GB gp3, Valkey cache.t4g.micro, two secrets); ALB, Fargate and public
-IPv4 addresses come with 7.4.
+Estimated while applied (us-east-1 on-demand): **≈ $0.14/h, ≈ $3.40/day** — ALB ~$0.03/h,
+Fargate api 2 × $0.0247/h, worker on Spot ~$0.005/h, 5 public IPv4 × $0.005/h, data tier
+~$0.03/h (ADR-023 §7.4). A forgotten weekend ≈ $10; the forecast budget alert catches it first.
 
 ## CI/CD (Phase 6, ADR-022)
 
