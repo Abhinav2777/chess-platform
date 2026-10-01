@@ -5,6 +5,27 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.5, attempt 2: the server was right; the browser refused
+
+Apply with image `df3df89` succeeded: migrate (tainted step re-ran), api ×2 healthy in two AZs,
+worker on Fargate Spot. External checks all as designed (actuator not routed, 8081 and direct task
+IPs closed, 400 for malformed JSON, cookie without Secure).
+
+`e2e:lobby` against the ALB: paired in 4.8 s, then timed out waiting for `e4`. The API logged no
+error; the sweeper then aborted the game for no first move — so the move never arrived. A probe
+capturing every socket frame showed it: no `MOVE` was ever sent. `isSecureContext` on the ALB
+page: false; `crypto.randomUUID`: undefined. The click handler threw before `send`.
+
+Every local run was on localhost, a secure context — this could only appear on a plain-HTTP
+origin. Fixed with a `getRandomValues`-based v4 UUID (`frontend/src/uuid.ts`), checked in the live
+insecure page. The e2e scripts now report `pageerror`; the probe's console listener could not see
+an exception thrown in a handler.
+
+Note: the probe printed truncated access tokens of two throwaway test users to the local terminal
+(redaction regex missed truncated lines); 15-minute tokens, test accounts, allowlisted deployment.
+
+---
+
 ## 2026-10-01 — 7.5, attempt 1: the migrations worked; the migrate task didn't
 
 The owner ran `terraform apply first.tfplan` (an apply is gated by Claude Code's permission
