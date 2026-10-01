@@ -241,7 +241,7 @@ steps, and the pipeline fails on a deliberately introduced failing test.
 
 ---
 
-### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12 — **IN PROGRESS (7.1–7.4 done, ~11.5 h)**
+### Phase 7 — AWS Deployment · 14–18 h · Weeks 11–12 — **COMPLETE (~15.5 h)**
 
 **MU:** VPC subnet/route-table design · why NAT Gateway costs more than the compute ·
 security groups vs NACLs · IAM task roles vs instance roles · RDS parameter groups ·
@@ -270,7 +270,7 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 | 7.2 | Bootstrap stack: budget, state bucket, ECR, GitHub OIDC role; CI pushes to ECR | ✅ ~3 h (applied 2026-10-01) |
 | 7.3 | Network + data: VPC, SGs, RDS, ElastiCache, SQS + DLQ, secrets | ✅ written + planned (42 resources), ~2.5 h; applied with 7.4 |
 | 7.4 | Compute: ALB, ECS services + migrate task, IAM roles, logs | ✅ written + planned (62 resources total), ~3 h; actuator moved to 8081 |
-| 7.5 | Apply from zero, browser checks against the ALB, destroy, verify; runbook | |
+| 7.5 | Apply from zero, browser checks against the ALB, destroy, verify; runbook | ✅ ~4 h — three applies, two production-only bugs fixed |
 
 ---
 
@@ -352,6 +352,17 @@ explaining one afterwards.
 | **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
 | **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
 | **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
+
+## Time checkpoint — end of Phase 7
+
+| | |
+|---|---|
+| **Estimated time used** | ~100 h (Phases 0–6 ~83, Dependabot triage ~1.5, Phase 7 ~15.5) |
+| **Estimated remaining** | ~35–75 h of the 135–175 plan |
+| **Schedule status** | **On track** — Phase 7 inside its 14–18 h. The HARD PORTFOLIO DEADLINE is met: the system has run on AWS, end to end, in a browser. |
+| **Scope status** | **On track, with recorded changes (ADR-023):** HTTP behind an allowlist instead of public HTTPS (no domain); Path B only. Done-when met in that amended form: apply from zero → working HTTP + WS deployment; destroy → nothing billable (verified per service). |
+| **What production found** | Three bugs no local test could see — a migrate step depending on the cache, one Valkey timeout doing two jobs, a secure-context-only browser API — plus actuator exposed on the public port. Each now has a test or a check. |
+| **Recommended adjustment** | Phase 8 should stay mostly local (kind); an EKS window only if it buys a specific interview answer. Phase 9 inherits measured problems (JVM start on fractional vCPU, socket-to-task attribution) instead of hypothetical ones. |
 
 ## Time checkpoint — end of Phase 6
 

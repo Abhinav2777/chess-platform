@@ -395,6 +395,15 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### `terraform destroy`: `api error RequestExpired: Request has expired`
+
+**Seen:** 2026-10-01, the last calls of a 10-minute destroy. Clock was within 1 s of AWS (NTP
+synced) and credentials worked right after, so the cause was not established (candidates: requests
+held behind dependency waits past the 5-minute signature window; the `aws login` session refreshing
+under a long-running process). **Fix:** run `terraform destroy` again — it is idempotent; the
+second run finished. Then verify with direct service queries (DEPLOYMENT.md checklist), not the
+tagging API, which keeps listing deleted resources for a while.
+
 ### Deployed (plain HTTP): a click does nothing — no request, no console error
 
 **Seen:** 2026-10-01, moves on the ALB. **Cause:** a secure-context-only browser API

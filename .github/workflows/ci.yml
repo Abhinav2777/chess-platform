@@ -1,7 +1,11 @@
 name: CI
 
-# Every PR, and every push to main. A PR must be green in all three jobs before it can merge
+# Every PR, and every push to main. A PR must be green in all required jobs before it can merge
 # (branch protection); a push to main additionally publishes the image.
+#
+# Docs-only changes (*.md, docs/**, SNAPSHOT) skip everything but the `changes` job. A skipped
+# job reports success to branch protection, so a docs PR merges after ~10 s instead of a full
+# build — and main stays protected, rather than opened to direct pushes "for docs".
 on:
   push:
     branches: [main]
@@ -24,7 +28,41 @@ permissions:
 # compromise (2025) worked exactly that way. Dependabot keeps the SHAs current.
 
 jobs:
+  # Decides whether anything but documentation changed. Fails safe: a new branch, a manual run,
+  # an empty or unreadable diff — all count as code.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            pull_request) range="$PR_BASE...$PR_HEAD" ;;
+            push)         range="$PUSH_BEFORE..$GITHUB_SHA" ;;
+            *)            range="" ;;
+          esac
+          code=true
+          if [[ -n "$range" && "$range" != 0000000* ]] && files=$(git diff --name-only "$range") && [[ -n "$files" ]]; then
+            echo "Changed files:"; echo "$files"
+            if ! grep -qvE '^(.*\.md|docs/.*|SNAPSHOT)$' <<< "$files"; then
+              code=false
+            fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -66,6 +104,8 @@ jobs:
           retention-days: 7
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -88,15 +128,18 @@ jobs:
   # Infrastructure code gets the same gate as application code (Phase 7.2). No AWS access:
   # init without a backend, so a PR — including a fork's — can check formatting and validity
   # but never read state or plan against the account. Plans stay a human step (DEPLOYMENT.md).
-  terraform:
+  #
+  # Two jobs, not a matrix: a SKIPPED matrix job reports under its unexpanded name, so the
+  # required checks "terraform (bootstrap)" / "terraform (app)" would wait forever on a docs PR.
+  terraform-bootstrap:
+    name: terraform (bootstrap)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    strategy:
-      matrix:
-        stack: [bootstrap, app]
     defaults:
       run:
-        working-directory: infra/${{ matrix.stack }}
+        working-directory: infra/bootstrap
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -108,8 +151,29 @@ jobs:
       - run: terraform init -backend=false -input=false -lockfile=readonly
       - run: terraform validate
 
+  terraform-app:
+    name: terraform (app)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: infra/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+      - run: terraform fmt -check -diff
+      - run: terraform init -backend=false -input=false -lockfile=readonly
+      - run: terraform validate
+
   image:
-    needs: [backend, frontend]
+    needs: [changes, backend, frontend]
+    # success() explicitly: a custom if replaces the implicit one, and a failed backend must
+    # still stop the image.
+    if: success() && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
