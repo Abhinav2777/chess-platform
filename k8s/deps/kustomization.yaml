@@ -1,0 +1,12 @@
+# Local stand-ins for RDS, ElastiCache and SQS — kind only. Single replica, emptyDir: data does not
+# survive a pod restart, which is fine for a cluster that exists for an afternoon. A real cluster
+# points chess-config at managed services and does not include this directory.
+namespace: chess
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: chess-platform
+      app.kubernetes.io/component: dependency
+resources:
+  - postgres.yaml
+  - valkey.yaml
+  - elasticmq.yaml

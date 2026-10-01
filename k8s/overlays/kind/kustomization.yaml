@@ -1,0 +1,34 @@
+# The kind environment: the app (base) + in-cluster dependencies + local configuration.
+resources:
+  - ../../base
+  - ../../deps
+
+namespace: chess
+
+# Generated with a content hash in the name, and every reference rewritten to match: changing a
+# value rolls the pods that use it. A hand-written ConfigMap changes underneath running pods and
+# nothing restarts.
+configMapGenerator:
+  - name: chess-config
+    literals:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/chess
+      - SPRING_DATA_REDIS_HOST=valkey
+      - SPRING_CLOUD_AWS_SQS_ENDPOINT=http://elasticmq:9324
+      - SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY=local   # ElasticMQ ignores them; the SDK wants some
+      - SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY=local
+      - CHESS_MESSAGING_CREATE_QUEUES=true              # ElasticMQ; Terraform owns queues in AWS
+      # Heap from the container limit. 60 %, not the image's 75 %: in 640 Mi, metaspace, code
+      # cache, thread stacks and Netty's direct buffers need the rest — 75 % risked OOMKilled.
+      - JDK_JAVA_OPTIONS=-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED
+      # Load-test-sized auth limits (Phase 8.3 registers many users from one address).
+      - 'SPRING_APPLICATION_JSON={"chess":{"ratelimit":{"policies":{"login-ip":{"capacity":2000,"period":"1m"},"login-user":{"capacity":100,"period":"1m"},"register-ip":{"capacity":2000,"period":"1m"}}}}}'
+
+# DEVELOPMENT VALUES, committed on purpose: they protect a throwaway local cluster and nothing
+# else (the same values as ops/docker/docker-compose.yml). A real environment gets this Secret
+# from a secret manager (External Secrets / Sealed Secrets), never from the repository.
+secretGenerator:
+  - name: chess-secrets
+    literals:
+      - SPRING_DATASOURCE_USERNAME=chess
+      - SPRING_DATASOURCE_PASSWORD=chess
+      - CHESS_AUTH_JWT_SECRET=dev-only-insecure-secret-change-me-32-bytes-min

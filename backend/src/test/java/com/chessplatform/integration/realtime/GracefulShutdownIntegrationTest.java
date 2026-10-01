@@ -85,6 +85,9 @@ class GracefulShutdownIntegrationTest {
         drain.stop();
 
         assertThat(availability.getReadinessState()).isEqualTo(ReadinessState.REFUSING_TRAFFIC);
+        // What a load balancer or kubelet actually sees — not the in-memory state. A readiness
+        // group that lists only dependencies drops readinessState, and this stays 200.
+        assertThat(readinessStatus()).as("readiness probe while draining").isEqualTo(503);
         for (TestWebSocketClient client : new TestWebSocketClient[] {seeker, idle}) {
             CloseStatus status = client.awaitCloseStatus(2_000);
             assertThat(status.getCode()).isEqualTo(CloseStatus.GOING_AWAY.getCode());
@@ -118,6 +121,13 @@ class GracefulShutdownIntegrationTest {
         CloseStatus status = client.awaitCloseStatus(5_000);
         assertThat(status.getCode()).isEqualTo(CloseStatus.GOING_AWAY.getCode());
         assertThat(status.getReason()).contains("reconnect");
+    }
+
+    private int readinessStatus() throws Exception {
+        return java.net.http.HttpClient.newHttpClient().send(
+                java.net.http.HttpRequest.newBuilder(
+                        java.net.URI.create("http://localhost:" + port + "/actuator/health/readiness")).GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode();
     }
 
     private User register() {

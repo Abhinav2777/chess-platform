@@ -1,0 +1,23 @@
+# Running in Kubernetes (Phase 8, ADR-024). Combined with the role:
+#   api     SPRING_PROFILES_ACTIVE=k8s
+#   worker  SPRING_PROFILES_ACTIVE=k8s,worker
+#   migrate SPRING_PROFILES_ACTIVE=k8s,migrate
+# The same two concerns as the aws profile, for a different proxy and network.
+
+server:
+  # ingress-nginx terminates the client connection; per-IP rate limits must see the client
+  # (see application-aws.yml for the full reasoning). Trust forwarded headers only from the pod
+  # network, where the ingress controller runs: 10.244.0.0/16 is kind's default pod CIDR.
+  # A different cluster sets SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES to its own.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: '10\.244\.\d{1,3}\.\d{1,3}'
+
+management:
+  # Probes and (Phase 9) metrics on their own port, which no Service or Ingress exposes.
+  server:
+    port: 8081
+  endpoint:
+    health:
+      show-details: never

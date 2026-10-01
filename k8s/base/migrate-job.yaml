@@ -1,0 +1,47 @@
+# Flyway, then exit (ADR-021). deploy.sh deletes the previous Job (a Job's pod template is
+# immutable), applies this, waits for completion, and only then rolls the Deployments — the same
+# migrate-before-rollout gate as terraform_data.migrate on ECS.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  labels:
+    app.kubernetes.io/name: migrate
+spec:
+  # Retries with exponential back-off (10 s, 20 s, 40 s, …). On kind this also covers PostgreSQL
+  # still starting when the Job is created; a managed database would already be up.
+  backoffLimit: 4
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: chess-platform:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: chess-config }
+            - secretRef: { name: chess-secrets }
+          env:
+            # No CHESS_REALTIME_FANOUT: a migration must not depend on Valkey (Phase 7.5).
+            - { name: SPRING_PROFILES_ACTIVE, value: "k8s,migrate" }
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
