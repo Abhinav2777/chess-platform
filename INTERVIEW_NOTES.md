@@ -398,6 +398,28 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 9.2–9.3 — load testing
+
+### "What was your bottleneck?"
+Two, in sequence. At about 1,460 moves a second the connection pool saturated — 10 per pod, up to
+170 moves waiting. That alone just slows things down. What turned it into an outage was memory: the
+container limit didn't cover the JVM's worst case — heap max plus 212 MB of measured non-heap plus
+native — so once the heap had grown, the kernel OOM-killed both pods within three seconds. It was
+history-dependent; the same test on fresh pods survived. I made it deterministic by pre-touching the
+heap: the old budget couldn't even start. Then I sized it from the measurement, and the same stress
+gave zero restarts.
+
+### "Did your optimisation make it faster?"
+No, and I don't claim it did — throughput was identical, because the pool is still the limit. It
+removed a crash mode. The pool is the next change, measured separately so each result is
+attributable.
+
+### "How do you know k6 wasn't the bottleneck?"
+I sample its process: under one core of sixteen and 445 MB at a thousand sockets. And I compare k6's
+latency with the server's own histogram — they differ by a millisecond or two.
+
+---
+
 ## Phase 9.1 — tracing
 
 ### "How do you trace across a message queue — and an outbox?"

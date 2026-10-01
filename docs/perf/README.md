@@ -17,3 +17,5 @@ Each report must state:
 ## Reports
 
 - [2026-10-01 — rolling deploy under live games, kind](2026-10-01-rolling-deploy-kind.md) (Phase 8.3)
+- [Baseline — 100 / 500 / 1,000 connections, kind](baseline.md) (Phase 9.2)
+- [Optimisation 01 — a memory budget that holds its own worst case](optimisation-01.md) (Phase 9.3)
