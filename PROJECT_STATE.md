@@ -74,18 +74,25 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 8 — Kubernetes — **complete** (next: Phase 9 — tracing, load testing, optimisation) |
-| **Phase status** | **Phase 8 complete.** Rolling deploy under live games measured on kind: zero lost games. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done) |
-| **Cumulative hours (estimated)** | ~114 of 135–175 |
+| **Current phase** | Phase 9 — tracing, load testing, optimisation |
+| **Phase status** | 9.1 done (tracing end to end). Next: the baseline. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~3.5 of 10–14 |
+| **Cumulative hours (estimated)** | ~117.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 9 — design first (§10) |
+| **Next milestone** | 9.2 — baseline at 100 / 500 / 1,000 connections (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 9 — Milestone 9.1 (2026-10-01): tracing
+
+- Boot 4 native OTel (ADR-026); WS frame observations; traceparent through outbox (V8) + SQS;
+  Grafana LGTM locally. One trace from resign to rating, verified by test (mutation-checked) and
+  live. Finding: ~1 s of the rating push is the relay's poll interval.
+
 
 ### Interlude — frontend UI pass (2026-10-01, owner's request, ADR-025)
 
@@ -758,15 +765,13 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase-boundary archive** after the 8.x PRs merge:
-   `git archive --format=tar.gz -o ../chess-platform-M8-2026-10-01.tar.gz origin/main`
-2. **Free memory:** `kind delete cluster --name chess` when not testing (~5 GB); recreating takes
-   ~2 min (`k8s/cluster-up.sh` + `k8s/deploy.sh <tag>`).
-3. **Phase 9 — tracing, load testing, optimisation (10–14 h):** design first. Measured questions
-   already waiting: per-pod CPU under load (what scaled the HPA), JVM start on small CPU,
-   socket-to-pod attribution, capacity on kind; then decide whether one AWS load-test session
-   (apply → measure → destroy) is worth its few dollars.
-4. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
+1. **9.2 — baseline:** k6 games at 100 / 500 / 1,000 connections on kind (HPA off, replicas fixed),
+   with server-side `chess.ws.message` histograms and Hikari/JVM metrics in Grafana alongside k6;
+   load-generator headroom recorded → `docs/perf/baseline.md`.
+2. **9.3 — one optimisation:** whichever bottleneck 9.2 finds (candidates already visible: Hikari
+   pool size 10; the relay's 1 s poll for rating latency) → `docs/perf/optimisation-01.md`.
+3. **9.4 — AWS session:** re-apply ECS, run k6 as a one-off task inside the VPC, compare, destroy.
+4. Owner: MFA (deferred). Cost Explorer for the 7.5 session (§12).
 
 ---
 
