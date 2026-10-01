@@ -109,15 +109,22 @@ management:
   endpoint:
     health:
       show-details: always     # local and tests only: the aws profile says never, on port 8081
-      # Readiness vs liveness are different questions (ADR: Phase 8).
-      # Liveness = "is the JVM alive". Readiness = "can I serve traffic", which includes
-      # dependencies. Conflating them makes Kubernetes restart a healthy pod because the
-      # database blipped.
+      # Readiness vs liveness are different questions (ADR-024).
+      # Liveness = "is the JVM alive": livenessState only, never a dependency — otherwise the
+      # orchestrator restarts healthy processes because the database blipped.
+      # Readiness = "send me traffic":
+      #   readinessState — the application's own verdict; SocketDrain sets it to
+      #     REFUSING_TRAFFIC on shutdown. Listing a group's members REPLACES the default, so
+      #     until 8.2 this was missing and the drain never reached the probe.
+      #   db — without PostgreSQL nothing can be served.
+      #   NOT redis — the app keeps games going without Valkey (ADR-018). With it here, a Valkey
+      #     outage made every instance unready at once and the load balancer answered 503 to
+      #     everything: a degraded feature turned into a total outage.
       probes:
         enabled: true
       group:
         readiness:
-          include: db,redis
+          include: readinessState,db
   metrics:
     tags:
       application: chess-platform

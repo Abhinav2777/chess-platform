@@ -1,0 +1,135 @@
+# The API: HTTP + WebSocket. Everything here exists for one property — a rolling deploy under live
+# games loses nothing (the Phase 8 done-when). ADR-024.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    chess.dev/gated: "true"   # applied only after the migrate Job completes (deploy.sh)
+spec:
+  replicas: 2   # the HPA owns this after creation; 2 is also its floor
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # never below the current count: capacity holds while sockets move
+      maxSurge: 1         # one new pod at a time — the memory budget on kind, and a gentle herd
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      # SIGTERM → preStop sleep (10 s) → SIGTERM to the JVM → SocketDrain + graceful shutdown
+      # (≤ 30 s per phase) → exit. 45 s covers it; after that the kubelet sends SIGKILL.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001        # the image's user (ADR-021)
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: chess-platform:local   # deploy.sh substitutes the real tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 8081 }   # probes only; no Service exposes it
+          envFrom:
+            - configMapRef: { name: chess-config }
+            - secretRef: { name: chess-secrets }
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: k8s }
+            - { name: CHESS_REALTIME_FANOUT, value: valkey }   # >1 pod (ADR-002)
+          resources:
+            # CPU: a request (scheduling + the HPA's denominator), NO limit. A CPU limit is
+            # enforced by CFS throttling in 100 ms periods; a JVM's GC and JIT threads burst, get
+            # throttled, and latency spikes while the node has idle cores. Memory: limit =
+            # request — memory is not compressible, and an overcommitted node OOM-kills.
+            requests: { cpu: 250m, memory: 640Mi }
+            limits: { memory: 640Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }   # Tomcat's work dir; the root FS is read-only
+          # Probes on the management port (k8s profile). Three questions, three probes:
+          #   startup   — "has it finished booting?" Gates the other two. 30 × 5 s = 150 s: JVM
+          #               start measured 60–122 s on fractional vCPU (Phase 7). Without it,
+          #               liveness would have to tolerate boot time forever, or kill slow boots.
+          #   liveness  — "is the JVM alive?" livenessState only: never a dependency, or a
+          #               database blip restarts every pod.
+          #   readiness — "send me traffic?" readinessState + db (application.yml). SocketDrain
+          #               flips it on shutdown; Valkey is deliberately not in it (ADR-018).
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: management }
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: management }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: management }
+            periodSeconds: 5
+            failureThreshold: 2
+          lifecycle:
+            # Deleting a pod starts two things at once: endpoint removal (propagates to the
+            # ingress) and the termination sequence. Without a pause the JVM could stop
+            # accepting while the ingress still routes here — dropped requests on every deploy.
+            # Native sleep (no shell in the command, none needed in the image).
+            preStop:
+              sleep: { seconds: 10 }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - { name: http, port: 80, targetPort: http }   # 8081 is not here, so nothing can route to it
+---
+# Voluntary disruptions (node drain, cluster upgrade) never take the last API pod. Rolling updates
+# are governed by maxUnavailable above; the PDB covers everything else that evicts.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+---
+# CPU-based autoscaling, with its limitation stated: a WebSocket server's load is connections and
+# messages, and an idle socket costs memory, not CPU. CPU catches move-processing bursts; the
+# better signal (active connections per pod — the app already exports chess.ws.connections.active)
+# needs a custom-metrics adapter. Phase 9 discussion, not built.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api }
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }   # of the 250m request
+  behavior:
+    scaleDown:
+      # Scaling down IS a pod shutdown: every socket on the removed pod reconnects. Wait 5 min of
+      # sustained low load first, so a lull between games does not churn connections.
+      stabilizationWindowSeconds: 300

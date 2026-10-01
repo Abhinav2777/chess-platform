@@ -5,6 +5,43 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 8.2: on kind, and what the probes had been hiding
+
+**Before any cluster existed**, reading the probe configuration found two bugs that also apply to
+ECS: the readiness group listed `db,redis`, which (a) replaced Spring's `readinessState` member — so
+8.1's drain never reached the HTTP probe; my 8.1 test had asserted the in-memory state — and (b)
+made Valkey a readiness dependency, so a Valkey outage would mark every instance unready together
+and the load balancer would 503 everything, contradicting ADR-018. Tests written over HTTP first
+(drain: expected 503, got 200; Valkey paused: expected 200, got 503); fixed with
+`readinessState,db`.
+
+**Built:** `k8s/` — kind cluster (v1.37.0 pinned), vendored ingress-nginx + metrics-server, base
+manifests (probes on 8081 via a new `k8s` profile, preStop sleep, CPU request without limit,
+maxUnavailable 0, PDB, HPA, hardened pods), in-cluster dependencies, kind overlay with generated
+config/secrets, `cluster-up.sh`, `deploy.sh` (migrate Job gates the rollout).
+
+**Memory first:** 2 GB available at the start (Chromium 11 GB, swap full); the owner freed it to
+6.5 GB. Stopping my own Gradle daemon recovered ~1 GB.
+
+**First browser run: a blank page.** The module script got 403. Host :8000 mapped to nginx's :80;
+nginx said `X-Forwarded-Port: 80`; Tomcat believed it; the page's own Origin (`localhost:8000`)
+looked foreign to Spring's CORS check. Tried an app-side fix (`port-header: ""`) with a test — still
+red; the bytecode showed Boot passes the value straight through, and Tomcat's RemoteIpValve resets
+the port to the scheme's default whenever `X-Forwarded-Proto` is present. Reverted both: the
+forwarded port must describe the client's view, so the fix belongs to the proxy — map 80 → 80.
+Cluster recreated from scratch (70 s) + deploy (65 s), then green.
+
+**Measured:** browser flow green (pair 0.79 s, rating push 1.33 s); idle memory api ~373 Mi / 640 Mi;
+a socket held through `kubectl rollout restart`: 1001 with the reconnect reason, live on a new pod
+0.5 s later; ready endpoints never below 2. The migrate Job's first attempt failed (PostgreSQL still
+starting) and the retry succeeded, as designed.
+
+Unit 90, integration 146.
+
+**Hours:** ~4.5.
+
+---
+
 ## 2026-10-01 — 8.1: the drain (and the client needed nothing)
 
 Phase 8 decisions: kind only, Kustomize (ADR-024).

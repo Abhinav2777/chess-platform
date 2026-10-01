@@ -73,6 +73,20 @@ class ManagementPortIntegrationTest extends DeploymentTestSupport {
         });
     }
 
+    /** The k8s profile (Phase 8) makes the same promise: probes on 8081, nothing behind the Service. */
+    @Test
+    @DisplayName("the k8s profile puts actuator on 8081 and hides health details")
+    void k8sProfileDeclaresIt() throws Exception {
+        var sources = new YamlPropertySourceLoader()
+                .load("k8s", new ClassPathResource("application-k8s.yml"));
+
+        assertThat(sources).singleElement().satisfies(source -> {
+            assertThat(source.getProperty("management.server.port")).hasToString("8081");
+            assertThat(source.getProperty("management.endpoint.health.show-details")).hasToString("never");
+            assertThat(source.getProperty("server.forward-headers-strategy")).hasToString("native");
+        });
+    }
+
     private String register(String username) throws Exception {
         HttpResponse<String> response = postJson("/api/auth/register", """
                 {"username":"%s","email":"%s@example.com","password":"correct-horse-battery"}

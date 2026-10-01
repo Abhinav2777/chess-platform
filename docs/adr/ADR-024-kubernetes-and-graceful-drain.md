@@ -1,6 +1,6 @@
 # ADR-024: Kubernetes on kind, and a graceful WebSocket drain
 
-**Status:** Accepted for 8.1 (the drain); sections for 8.2–8.3 are added as they are built ·
+**Status:** Accepted for 8.1–8.2; the 8.3 section is added when it is built ·
 **Date:** 2026-10-01
 **Builds on:** ADR-007 (snapshot recovery), ADR-009 (socket auth), ADR-016 (seeks), ADR-021
 (one image, three roles), ADR-023 (the ECS deployment this mirrors).
@@ -43,6 +43,55 @@ removed → the seek is cancelled.
 **What it does not do:** stagger the closes server-side (client jitter spreads the reconnects), or
 resubmit a move that was in flight — the client never resends automatically (a move chosen against
 a stale board must not be replayed); the snapshot shows the truth and the player moves again.
+
+## 8.2 — The cluster and the manifests
+
+**Layout** (`k8s/`): `kind-cluster.yaml` (one node, v1.37.0 pinned); `addons/` (ingress-nginx
+controller-v1.15.1 and metrics-server v0.9.0, vendored); `base/` (the app); `deps/` (in-cluster
+PostgreSQL, Valkey, ElasticMQ — kind only); `overlays/kind/`; `cluster-up.sh`, `deploy.sh`.
+
+**Decisions:**
+- **Probes on the management port** (new `k8s` profile, as `aws`): startup 30 × 5 s (sized from the
+  60–122 s JVM starts measured on Fargate), liveness = livenessState only, readiness =
+  readinessState + db.
+- **preStop sleep 10 s** (native `sleep` action): endpoint removal and SIGTERM start together;
+  without the pause the JVM could stop accepting while the ingress still routes to it.
+  `terminationGracePeriodSeconds: 45` covers sleep + drain + graceful shutdown.
+- **CPU request, no CPU limit; memory limit = request** (640 Mi). CFS throttling stalls a JVM's
+  GC/JIT bursts while the node idles. Heap at 60 % of the limit (the image's 75 % left too little
+  for metaspace, code cache, stacks, direct buffers).
+- **`maxUnavailable: 0, maxSurge: 1`**, PDB `minAvailable: 1`, HPA on CPU 70 % (2–4) with a 5-min
+  scale-down window — scaling down *is* a shutdown that reconnects every socket on the pod. CPU is a
+  weak signal for a socket server; connections per pod (already exported) needs a custom-metrics
+  adapter — Phase 9 discussion.
+- **Migrate Job gates the rollout** (`deploy.sh`): delete the old Job (immutable template), apply
+  everything but the `chess.dev/gated` Deployments, wait for Complete (stop on Failed), then roll.
+  On first deploy the Job's first pod failed — PostgreSQL still starting — and the back-off retry
+  completed, as designed.
+- **Hardened pods:** non-root 10001, read-only root FS (`/tmp` emptyDir), no privilege escalation,
+  all capabilities dropped, RuntimeDefault seccomp.
+- **Generated ConfigMap/Secret** (content-hashed names): a config change rolls the pods using it.
+  The kind Secret holds development values, committed on purpose and labelled; a real cluster gets
+  it from a secret manager.
+- **Images preloaded** with `kind load` (this machine's containers have no egress); add-on images
+  pulled by digest on the host, then tagged — the pin moves to the load step.
+
+**Found while building:**
+1. **The drain never reached the probe.** `group.readiness.include: db,redis` *replaces* the
+   default member `readinessState`, so SocketDrain's REFUSING_TRAFFIC left the endpoint at 200.
+   8.1's test had checked the in-memory state. Now asserted over HTTP (503 while draining).
+2. **Readiness included Valkey** — contradicting ADR-018. A Valkey outage would have made every
+   instance unready together: 503 for everything from the ALB or ingress. Asserted over HTTP (200
+   with Valkey paused). Both apply to the ECS deployment as well.
+3. **403 on the SPA's own script on kind** (host :8000 → node :80): the forwarded port was the
+   proxy's, not the browser's. Fixed at the proxy layer (80 → 80); an app-side change was tried,
+   reverted — Tomcat derives the port from the scheme once `X-Forwarded-Proto` is set.
+
+**Verified on kind:** deploy from zero ~1 min (cluster ~1–2 min); browser game flow through
+ingress-nginx green (pair 0.79 s, rating push 1.33 s); `/actuator` not routed; probes `UP` with no
+details; idle memory api 372–375 Mi of 640 Mi, worker 358 Mi. **Rolling restart with a live socket:**
+closed `1001 "Server restarting, please reconnect"`, live again on a new pod 0.5 s later; ready
+endpoints never below 2 (17 samples).
 
 ## Interview angle
 
