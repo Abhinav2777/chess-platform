@@ -60,6 +60,22 @@ services:
   # Same order as a real deploy: migrate runs and exits 0, then API and worker start.
   # Stop any bootRun on :8080 first.
   # ---------------------------------------------------------------------------------------
+  # Traces + metrics, locally (Phase 9, ADR-026): Grafana, Tempo, Prometheus and an
+  # OpenTelemetry collector in one container. Opt-in: --profile observability.
+  # Grafana http://localhost:3000 (admin/admin). OTLP http://localhost:4318.
+  # Point the app at it with
+  #   MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+  #   MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true
+  #   MANAGEMENT_OTLP_METRICS_EXPORT_URL=http://localhost:4318/v1/metrics
+  lgtm:
+    image: grafana/otel-lgtm:0.34.0
+    container_name: chess-lgtm
+    profiles: ["observability"]
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+
   migrate:
     profiles: ["app"]
     image: chess-platform:dev

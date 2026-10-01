@@ -23,6 +23,8 @@ import com.chessplatform.realtime.protocol.PresencePayloads;
 import com.chessplatform.realtime.protocol.ServerMessage;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -90,6 +92,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private final PresenceTracker presence;
     private final MatchmakingFacade matchmaking;
     private final RateLimiter rateLimiter;
+    private final ObservationRegistry observations;
     private final SocketDrain drain;
 
     /**
@@ -108,7 +111,8 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                                  IdentityFacade identity, GameFacade gameFacade,
                                  RealtimeProperties properties, GameEventPublisher publisher,
                                  PresenceTracker presence, MatchmakingFacade matchmaking,
-                                 RateLimiter rateLimiter, SocketDrain drain, MeterRegistry metrics) {
+                                 RateLimiter rateLimiter, SocketDrain drain, MeterRegistry metrics,
+                                 ObservationRegistry observations) {
         this.registry = registry;
         this.sender = sender;
         this.identity = identity;
@@ -119,6 +123,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         this.matchmaking = matchmaking;
         this.rateLimiter = rateLimiter;
         this.drain = drain;
+        this.observations = observations;
 
         Gauge.builder("chess.ws.connections.active", registry,
                         GameSessionRegistry::localConnectionCount)
@@ -196,7 +201,14 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
             if (state.userId() != null) {
                 MDC.put("userId", state.userId().toString());
             }
-            dispatch(session, state, type, envelope);
+            // One observation per inbound frame (Phase 9, ADR-026): a span named for the message
+            // type — the parent of the JDBC and Valkey spans the command causes — and the
+            // chess.ws.message timer, the server-side latency set against k6's client-side view.
+            // HTTP gets this from Spring MVC; nothing instruments WebSocket frames for us.
+            Observation.createNotStarted("chess.ws.message", observations)
+                    .contextualName("ws " + type.name())
+                    .lowCardinalityKeyValue("type", type.name())
+                    .observe(() -> dispatch(session, state, type, envelope));
         } catch (DomainException rejected) {
             // Expected outcomes travel over the socket with the same code vocabulary the
             // REST API uses, so a client has one error model rather than two.

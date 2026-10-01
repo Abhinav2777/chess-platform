@@ -18,6 +18,9 @@ spring:
         # Listener containers must never create a queue: it would have no dead-letter policy.
         # Queues come from SqsQueues (ElasticMQ) or Terraform (AWS). ADR-020.
         queue-not-found-strategy: fail
+        # Producer and consumer observations: the listener continues the trace carried in the
+        # message's `traceparent` attribute (the relay sets it from the outbox row — ADR-026).
+        observation-enabled: true
 
   # Authentication is JWT-only (SecurityConfig: stateless, httpBasic and formLogin off),
   # so Boot's default in-memory user — one account, random password printed at startup —
@@ -125,7 +128,28 @@ management:
       group:
         readiness:
           include: readinessState,db
+  # Tracing (Phase 9, ADR-026). Spans are produced always; they are EXPORTED only when an
+  # OTLP endpoint is configured (MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT, e.g.
+  # http://lgtm:4318/v1/traces) — Boot 4 creates no exporter without one, so tests and CI stay
+  # quiet. Sampling 100 % by default: portfolio-scale traffic; a busy production would lower it
+  # (and sample by parent, which is the default sampler, so a trace is kept or dropped whole).
+  tracing:
+    sampling:
+      probability: ${CHESS_TRACING_SAMPLING:1.0}
+  otlp:
+    metrics:
+      export:
+        # On by default in Boot, pushing to localhost:4318 every minute and logging the failure
+        # where no collector runs. Metrics are scraped from /actuator/prometheus; the local
+        # Grafana stack turns this on explicitly (MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED).
+        enabled: false
   metrics:
+    distribution:
+      # Histograms, not just averages, for the latencies Phase 9 measures: a mean hides the
+      # tail that players feel.
+      percentiles-histogram:
+        chess.ws.message: true
+        http.server.requests: true
     tags:
       application: chess-platform
   observations:
