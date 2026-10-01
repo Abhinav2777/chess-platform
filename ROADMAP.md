@@ -303,6 +303,13 @@ or corrupted clocks — demonstrated with a k6 run across the deploy.
 
 ---
 
+### Interlude — Frontend UI pass · 6–8 h box · **COMPLETE (~4 h)** — ADR-025
+
+Owner's request after Phase 8. App shell, redesigned sign-in / lobby / game, SVG pieces, board
+highlights incl. check, game-over dialog, phone layout. No UI libraries; browser checks kept green.
+
+---
+
 ### Phase 9 — Tracing, Load Testing & Optimisation · 10–14 h · Weeks 14–15
 
 **MU:** trace context propagation across async boundaries · p50/p95/p99 and why means

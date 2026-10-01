@@ -1,15 +1,23 @@
 # Chess Platform
 
-A production-grade real-time multiplayer chess platform. Java 21 · Spring Boot ·
+A production-grade real-time multiplayer chess platform. Java 25 · Spring Boot 4 ·
 PostgreSQL · Valkey · WebSockets · AWS · Docker · Kubernetes.
 
 The interesting engineering here is not chess. It is making a turn-based mutation of
 shared state correct under concurrency, network failure, pod death, and rolling
 deployment — with a clock that decides outcomes and therefore cannot be wrong.
 
+![Lobby](docs/screenshots/lobby.png)
+
+| Game (check after Qh5+) | Game over, rating updated | Phone |
+|---|---|---|
+| ![Game](docs/screenshots/game.png) | ![Game over](docs/screenshots/game-over.png) | ![Phone](docs/screenshots/mobile-game.png) |
+
 ## Status
 
-**Phase 0 — Architecture & Setup.** No application code yet.
+**Phases 1–8 complete** — gameplay with a server-authoritative clock, realtime over WebSockets,
+matchmaking, asynchronous ratings, CI/CD, deployed and verified on AWS ECS, and a rolling deploy on
+Kubernetes measured to lose zero games under live load. Next: Phase 9 (tracing, load testing).
 See [`PROJECT_STATE.md`](PROJECT_STATE.md) for the authoritative current state.
 
 ## Documentation
