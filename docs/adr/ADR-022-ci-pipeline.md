@@ -69,6 +69,20 @@ docker (base images); weekly, minor + patch grouped.
   `ghcr.io/abhinav2777/…`. Image names must be lowercase; `github.repository_owner` is not.
   Fixed with a bash-lowercased `IMAGE` set once for the job.
 
+## Amendment, 2026-10-01 — docs-only changes skip the build
+
+Raised by the owner: a docs PR ran the full pipeline (~5 min) for markdown. Pushing docs straight
+to `main` was considered and rejected — protection is `enforce_admins`, so it would mean weakening
+it for every change, "docs-only" is not something GitHub can enforce on a push, and a push to
+`main` triggers the full run (image build + ECR push) anyway.
+
+Instead a `changes` job diffs the PR (or push) and, if every file is `*.md`, `docs/**` or
+`SNAPSHOT`, the other jobs are skipped — GitHub reports a skipped job as success to branch
+protection. It fails safe (new branch, manual run, empty or unreadable diff → full run), and a
+change to the workflow itself is code. The Terraform matrix became two named jobs: a skipped
+matrix job reports under its unexpanded name, which would leave `terraform (bootstrap)` /
+`terraform (app)` pending forever. Checked against real ranges from this repo's history.
+
 ## Interview angle
 
 **Q:** "What does your pipeline do, and what does it refuse?"

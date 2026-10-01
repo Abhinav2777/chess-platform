@@ -1,11 +1,14 @@
-snapshot:  M6
-date:      2026-09-30
-contains:  Phases 1-6 complete: gameplay + clock + realtime, matchmaking, rate limiting,
-           outbox + SQS + exactly-once Elo + push, container image, CI/CD
+snapshot:  M7
+date:      2026-10-01
+contains:  Phases 1-7 complete: gameplay + clock + realtime, matchmaking, rate limiting,
+           outbox + SQS + exactly-once Elo + push, container image, CI/CD, AWS deployment
 migrations: V1 .. V7
-image:     ghcr.io/abhinav2777/chess-platform:<commit-sha> (public), one image / three roles
-           (api, worker, migrate) - ADR-021
-ci:        protected main; backend + frontend + image (Trivy before push) required - ADR-022;
-           nightly browser checks; Dependabot live (6 PRs open, 4 majors)
-verified:  2026-09-30 - main run 36616824363 green; unit 90, integration 127.
-next:      Phase 7 - AWS (PROJECT_STATE §10); Dependabot triage done 2026-09-30
+aws:       infra/bootstrap LIVE (budget, state bucket, ECR, GitHub OIDC; ~$0.05/mo est.)
+           infra/app DESTROYED (applied + verified + destroyed 2026-10-01) - ADR-023
+           HTTP behind an allowlist (no domain); ECS Fargate api x2 + worker (Spot) + migrate
+image:     ECR <account>.dkr.ecr.us-east-1.amazonaws.com/chess-platform:<sha> (immutable)
+           and ghcr.io/abhinav2777/chess-platform:<sha> (public)
+ci:        backend, frontend, image (Trivy before push; OIDC push to ECR), terraform x2
+verified:  2026-10-01 - browser game flow green against the ALB; destroy checklist all zero;
+           unit 90, integration 143.
+next:      Phase 8 - Kubernetes (PROJECT_STATE §10)
