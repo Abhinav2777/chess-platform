@@ -1,29 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { Side } from './protocol';
-
-/**
- * One glyph per piece type, used for BOTH colours and tinted with CSS.
- *
- * The obvious mapping uses U+2654–2659 for white and U+265A–265F for black. It does not
- * survive contact with real font stacks: plenty of systems ship the outline set and not
- * the filled one, and the filled pieces render as tofu boxes. Partial coverage of a
- * Unicode block is normal, and there is no way to feature-detect it.
- *
- * Using six codepoints instead of twelve halves the surface, and `color` plus
- * `-webkit-text-stroke` distinguishes the sides more reliably than the glyphs did — a
- * white piece is genuinely white rather than "hollow", which is also easier to read on a
- * light square.
- */
-const GLYPHS: Record<string, string> = {
-  k: '\u2654', q: '\u2655', r: '\u2656', b: '\u2657', n: '\u2658', p: '\u2659',
-};
+import { PIECE_IMAGES, PIECE_NAMES } from './pieces';
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 const PROMOTIONS = [
-  { code: 'q', label: '\u2655', name: 'QUEEN' },
-  { code: 'r', label: '\u2656', name: 'ROOK' },
-  { code: 'b', label: '\u2657', name: 'BISHOP' },
-  { code: 'n', label: '\u2658', name: 'KNIGHT' },
+  { code: 'q', name: 'QUEEN' },
+  { code: 'r', name: 'ROOK' },
+  { code: 'b', name: 'BISHOP' },
+  { code: 'n', name: 'KNIGHT' },
 ] as const;
 
 export type PromotionChoice = typeof PROMOTIONS[number]['name'];
@@ -34,6 +18,8 @@ interface BoardProps {
   legalMoves: string[];
   interactive: boolean;
   lastMoveUci: string | null;
+  /** The side whose king is in check, if any — from the server's SAN, never computed here. */
+  checkSide: Side | null;
   onMove: (from: string, to: string, promotion?: PromotionChoice) => void;
 }
 
@@ -42,19 +28,20 @@ interface BoardProps {
  *
  * <h3>Why this is hand-written rather than `react-chessboard`</h3>
  *
- * <p>Rendering a board is an 8x8 grid and a FEN parser — about eighty lines. Integrating,
- * configuring and version-tracking a library to do it is not obviously less work, and this
- * project's own principle (ADR-002) is about not reimplementing a *rules engine*, which is
- * a genuinely hard, genuinely wrong-in-subtle-ways problem. A grid of divs is not that.
+ * <p>Rendering a board is an 8x8 grid and a FEN parser. Integrating, configuring and
+ * version-tracking a library to do it is not obviously less work, and this project's own
+ * principle (ADR-002) is about not reimplementing a *rules engine*, which is a genuinely hard,
+ * genuinely wrong-in-subtle-ways problem. A grid of buttons is not that.
  *
- * <p>The decisive point is below: **this component contains no chess logic at all.** It
- * cannot tell a legal move from an illegal one. Every square it will accept comes from the
- * server's `legalMoves`, so the claim that the client is never authoritative is structural
- * here rather than a convention someone could break.
+ * <p>The decisive point: **this component contains no chess logic at all.** It cannot tell a
+ * legal move from an illegal one. Every square it will accept comes from the server's
+ * `legalMoves`; even the check highlight is read off the server's SAN (`+`/`#`). The claim
+ * that the client is never authoritative is structural here, not a convention.
  *
- * <p>Swapping in a library later is a single component change; nothing else depends on it.
+ * <p>Pieces: the Cburnett SVG set (CC BY-SA 3.0, `pieces/README.md`). Unicode glyphs were used
+ * before; they depend on the font stack and the white ones washed out on light squares.
  */
-export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, onMove }: BoardProps) {
+export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, checkSide, onMove }: BoardProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
 
@@ -69,8 +56,19 @@ export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, 
       .map((uci) => uci.slice(2, 4)));
   }, [selected, legalMoves]);
 
+  // Squares with at least one legal move: only those can be picked up.
+  const movable = useMemo(() => new Set(legalMoves.map((uci) => uci.slice(0, 2))), [legalMoves]);
+
+  const checkedKing = useMemo(() => {
+    if (!checkSide) return null;
+    const king = checkSide === 'WHITE' ? 'K' : 'k';
+    return Object.keys(squares).find((square) => squares[square] === king) ?? null;
+  }, [checkSide, squares]);
+
   const ranks = orientation === 'WHITE' ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
   const files = orientation === 'WHITE' ? FILES : [...FILES].reverse();
+  const bottomRank = ranks[7];
+  const leftFile = files[0];
 
   const lastFrom = lastMoveUci?.slice(0, 2);
   const lastTo = lastMoveUci?.slice(2, 4);
@@ -80,8 +78,7 @@ export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, 
 
     if (selected && destinations.has(square)) {
       // A promotion is detectable without any chess knowledge: the plain move is absent
-      // from legalMoves while the five-character forms are present. No rules engine, no
-      // special-casing the eighth rank.
+      // from legalMoves while the five-character forms are present.
       const needsPromotion = !legalMoves.includes(selected + square)
         && legalMoves.some((uci) => uci.startsWith(selected + square) && uci.length === 5);
 
@@ -93,12 +90,14 @@ export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, 
       setSelected(null);
       return;
     }
-    setSelected(squares[square] ? square : null);
+    setSelected(square === selected || !movable.has(square) ? null : square);
   }
+
+  const promotingWhite = pendingPromotion ? squares[pendingPromotion.from] === 'P' : true;
 
   return (
     <div className="board-wrapper">
-      <div className="board">
+      <div className={`board${interactive ? ' interactive' : ''}`}>
         {ranks.flatMap((rank) => files.map((file) => {
           const square = `${file}${rank}`;
           const piece = squares[square];
@@ -109,16 +108,20 @@ export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, 
             selected === square ? 'selected' : '',
             destinations.has(square) ? (piece ? 'capture' : 'target') : '',
             square === lastFrom || square === lastTo ? 'last-move' : '',
+            square === checkedKing ? 'in-check' : '',
           ].filter(Boolean).join(' ');
 
           return (
+            // aria-label is the square name alone: it is what assistive tech announces, and
+            // what the browser checks select (getByRole('button', { name: 'e2' })).
             <button key={square} className={classes} onClick={() => clickSquare(square)}
                     aria-label={square} type="button">
-              {piece ? (
-                <span className={`piece ${piece === piece.toUpperCase() ? 'white' : 'black'}`}>
-                  {GLYPHS[piece.toLowerCase()]}
-                </span>
-              ) : null}
+              {file === leftFile && <span className="coord rank" aria-hidden="true">{rank}</span>}
+              {rank === bottomRank && <span className="coord file" aria-hidden="true">{file}</span>}
+              {piece && (
+                <img className="piece" src={PIECE_IMAGES[piece]} draggable={false}
+                     alt={`${piece === piece.toUpperCase() ? 'white' : 'black'} ${PIECE_NAMES[piece.toLowerCase()]}`} />
+              )}
             </button>
           );
         }))}
@@ -126,14 +129,22 @@ export function Board({ fen, orientation, legalMoves, interactive, lastMoveUci, 
 
       {pendingPromotion && (
         <div className="promotion" role="dialog" aria-label="Choose a promotion piece">
-          {/* No default to queen. Underpromotion to a knight is a real tactic, and
-              guessing would be silently wrong roughly one game in a thousand. */}
-          {PROMOTIONS.map((option) => (
-            <button key={option.code} type="button" onClick={() => {
-              onMove(pendingPromotion.from, pendingPromotion.to, option.name);
-              setPendingPromotion(null);
-            }}>{option.label}</button>
-          ))}
+          <div className="promotion-choices">
+            {/* No default to queen. Underpromotion to a knight is a real tactic, and guessing
+                would be silently wrong roughly one game in a thousand. */}
+            {PROMOTIONS.map((option) => {
+              const letter = promotingWhite ? option.code.toUpperCase() : option.code;
+              return (
+                <button key={option.code} type="button" aria-label={`Promote to ${option.name.toLowerCase()}`}
+                        onClick={() => {
+                          onMove(pendingPromotion.from, pendingPromotion.to, option.name);
+                          setPendingPromotion(null);
+                        }}>
+                  <img src={PIECE_IMAGES[letter]} alt="" />
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
