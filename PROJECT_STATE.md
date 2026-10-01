@@ -74,18 +74,30 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 7 — AWS deployment (Path B, HTTP, us-east-1 — ADR-023) |
-| **Phase status** | 7.1–7.4 done; the app stack is fully written and planned, not applied. 7.5 is the first apply. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~11.5 of 14–18 |
-| **Cumulative hours (estimated)** | ~96 of 135–175 |
+| **Current phase** | Phase 7 — AWS deployment — **complete** (next: Phase 8 — Kubernetes) |
+| **Phase status** | **Phase 7 complete.** App stack applied, verified in a browser, destroyed; bootstrap stack live (~$0.05/mo est.). |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done) |
+| **Cumulative hours (estimated)** | ~100 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 7.5 — first apply from zero, browser checks against the ALB, destroy, verify (§10) |
+| **Next milestone** | Phase 8 — Kubernetes: design and decisions first (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 7 — Milestone 7.5 (2026-10-01): applied, verified, destroyed — **Phase 7 complete**
+
+- Three applies: (1) migrations applied, then the migrate task died on a Valkey handshake
+  timeout — services never started; (2) up and healthy, but moves failed on the plain-HTTP
+  origin (`crypto.randomUUID` needs a secure context); (3) full browser game flow green, after a
+  rolling deploy with the circuit breaker armed.
+- External checks: actuator not routed, 8081 and direct task IPs closed, malformed JSON 400,
+  cookie without Secure; ALB split 25/25 across the two API tasks.
+- Destroyed; every service queried directly returns zero; only the bootstrap stack remains.
+- Measured numbers in §12 (apply/destroy times, Fargate start times, AWS latencies).
+
 
 ### Phase 7 — Milestone 7.4 (2026-10-01): compute, planned
 
@@ -713,12 +725,16 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. Merge 7.4; wait for the main run to push the new image to ECR (the first with the 8081 change).
-2. **7.5 — the first apply (spends money, ≈ $3.40/day while up):** owner approves → `terraform
-   apply -var image_tag=<sha>` → migrate → services healthy → browser checks against the ALB
-   (`APP_URL=http://<alb>`), including two API tasks → capture evidence (cost, timings, logs) →
-   `terraform destroy` → destroy checklist → confirm nothing billable remains. DEPLOYMENT.md final.
-3. **Owner:** MFA on IAM user `abhinav` (deferred).
+1. **Phase-boundary archive** after this PR merges:
+   `git archive --format=tar.gz -o ../chess-platform-M7-2026-10-01.tar.gz origin/main`
+2. **2026-10-02:** read the 7.5 session's actual cost in Cost Explorer; add it to §12.
+3. **Phase 8 — Kubernetes (12–16 h):** design first. Decisions needed: kind locally only vs a
+   short EKS window (~$0.10/h control plane + nodes); manifests vs Helm vs Kustomize; how
+   probes, graceful shutdown and the migrate Job map from ECS.
+4. Carried to Phase 9: JVM start time on fractional vCPU (60–122 s measured — AOT cache /
+   Spring AOT / CRaC / more CPU at boot); per-connection logging or metrics with the task ID
+   (cross-instance delivery could not be attributed per socket on AWS); worker health check.
+5. **Owner:** MFA on IAM user `abhinav` (deferred).
 
 ---
 
@@ -745,8 +761,17 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Degraded play, Valkey paused (browser) — after ADR-018 | Healthy ~0.13 s; first outage move 1.9 s (mover) / 10.3 s (waiting opponent); steady state 0.9–2.0 s; recovery after the 5 s window, then ~0.13 s | Same | `npm run e2e:outage` |
 | Degraded move visible via REST (server) | Worst 1,039 ms per move with Valkey paused | Testcontainers, 2026-09-28 | `ValkeyOutageIntegrationTest` prints `MEASURED` |
 | Rate limiter cost during a Valkey outage | First move after Valkey stops: 1,037 ms (= 1 s Redis command timeout); later moves within 5 s skip Valkey (circuit) | Testcontainers, 2026-09-28 | `ValkeyFanoutIntegrationTest.survivesValkeyOutage` prints `MEASURED` |
+| `terraform apply` from zero (first attempt) | 11 m 59 s to the migrate step; RDS 8 m 43 s, ElastiCache 4 m 41 s | AWS us-east-1, 2026-10-01 | owner's terminal output (DEVELOPMENT_LOG 7.5) |
+| `terraform destroy` | 10 m 16 s (ElastiCache 3 m 18 s); a second run finished the rest | AWS us-east-1, 2026-10-01 | owner's terminal output |
+| Flyway, all 7 migrations against RDS over TLS | 0.9 s | RDS db.t4g.micro, 2026-10-01 | migrate task log |
+| App start on Fargate (to "Started") | api 0.5 vCPU: 60–75 s (4 starts); worker 0.25 vCPU: ~122 s (2); migrate 0.25 vCPU: 98–113 s (2) | ECS Fargate x86, 2026-10-01 | CloudWatch Logs, `Started ChessPlatformApplication` |
+| First PostgreSQL TLS connection from a 0.25-vCPU task | ~4 s (HikariPool start → first connection) | Same | migrate task log |
+| Pairing latency (browser → ALB, from Hyderabad) | 4.8 s, both players on the board after the second seek | Headless Chromium → us-east-1 ALB, 2026-10-01 | `APP_URL=… npm run e2e:lobby` |
+| Game end → rating shown to both players (AWS) | 3.35 s (outbox → relay → SQS → worker on Spot → Valkey → API → browser) | Same | `npm run e2e:lobby` against the ALB |
+| ALB request distribution across the two API tasks | 25 / 25 over 30 min (one task per AZ) | CloudWatch `RequestCount` by AZ, 2026-10-01 | `get-metric-statistics` |
 | Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |
 
-Estimates currently in the repository, all clearly labelled as such: AWS monthly costs
+Not yet measured: the real AWS bill for the 7.5 session (Cost Explorer lagged; read it on
+2026-10-02 and add a row). Estimates currently in the repository, all clearly labelled as such: AWS monthly costs
 (`ARCHITECTURE.md` §12.1, ADR-010), phase hour budgets (`ROADMAP.md`), the 1,000-connection
 target (`ARCHITECTURE.md` §2 — a *target*, not a result).

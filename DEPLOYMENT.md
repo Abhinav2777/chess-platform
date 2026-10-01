@@ -62,22 +62,6 @@ On any later machine: `terraform init -backend-config="bucket=chess-platform-tfs
 it would lose the record of what the app stack created. If this account is being retired:
 empty the app stack first, then remove `prevent_destroy`, then destroy.
 
-## App stack (`infra/app`, Milestones 7.3–7.5) — apply, measure, destroy
-
-Not yet applied. Everything is written (7.3 data tier, 7.4 compute); the first apply, the
-verification and the destroy are 7.5, which finalises this section.
-
-```bash
-cd infra/app
-cp terraform.tfvars.example terraform.tfvars   # allowed_ingress_cidrs = ["<your IP>/32"]
-terraform init -backend-config="bucket=chess-platform-tfstate-<account-id>"
-terraform plan -var image_tag=<full SHA of a green main run>   # needs the AWS CLI (migrate step)
-```
-
-Estimated while applied (us-east-1 on-demand): **≈ $0.14/h, ≈ $3.40/day** — ALB ~$0.03/h,
-Fargate api 2 × $0.0247/h, worker on Spot ~$0.005/h, 5 public IPv4 × $0.005/h, data tier
-~$0.03/h (ADR-023 §7.4). A forgotten weekend ≈ $10; the forecast budget alert catches it first.
-
 ## CI/CD (Phase 6, ADR-022)
 
 Every PR and every push to `main`: `backend` (unit, ArchUnit, Testcontainers), `frontend`
@@ -105,18 +89,88 @@ running (expand → deploy → contract).
 All figures are **estimates** derived from published us-east-1 on-demand pricing, not
 billing observations. Actual costs go in `PROJECT_STATE.md` §12 once observed.
 
+## App stack (`infra/app`) — apply, verify, destroy
+
+Never left running (rule 2). One session is: apply → verify → measure → destroy. First done
+2026-10-01 (ADR-023 §7.5): ~12 min to create (RDS ≈ 9 min), ~10 min to destroy.
+
+**Estimated cost while applied** (us-east-1 on-demand): **≈ $0.14/h, ≈ $3.40/day** — ALB ~$0.03/h,
+Fargate api 2 × $0.0247/h, worker on Spot ~$0.005/h, 5 public IPv4 × $0.005/h, RDS + Valkey + two
+secrets ~$0.03/h. The forecast budget alert catches a forgotten stack within a day or two.
+
+### 1. Prerequisites
+
+- The bootstrap stack exists (above), and the image you want is in ECR: CI pushes every green
+  `main` commit as its full SHA. `aws ecr describe-images --repository-name chess-platform`.
+- The AWS CLI is on the machine running `apply` — the migrate step calls it.
+
+### 2. Apply
+
+```bash
+cd infra/app
+cp terraform.tfvars.example terraform.tfvars           # once
+echo "allowed_ingress_cidrs = [\"$(curl -s https://checkip.amazonaws.com)/32\"]" > terraform.tfvars
+terraform init -backend-config="bucket=chess-platform-tfstate-<account-id>"
+SHA=$(git rev-parse origin/main)                       # after `git fetch`; a green main run
+terraform plan -var image_tag=$SHA -out=app.tfplan     # READ IT
+terraform apply app.tfplan                             # prints app_url at the end
+```
+
+Order is enforced by the graph: network and data tier → **migrate task (must exit 0)** → services
+→ `apply` returns only when both services are steady and the targets healthy. A failed migration
+stops here with nothing rolled out; read `aws logs tail /ecs/chess-platform/migrate --since 30m`,
+fix, and apply again (the failed migrate step is tainted and re-runs).
+
+**Deploying a new version** onto a running stack: the same plan/apply with the new SHA — new task
+definitions, migrate re-run, rolling update with the circuit breaker (rolls back if new tasks never
+get healthy).
+
+### 3. Verify
+
+```bash
+aws ecs describe-services --cluster chess-platform --services api worker \
+  --query 'services[].[serviceName,runningCount,deployments[0].rolloutState]'
+U=$(terraform output -raw app_url)
+curl -s -o /dev/null -w "%{http_code}\n" $U/                    # 200
+curl -s -o /dev/null -w "%{http_code}\n" $U/actuator/health     # 404: actuator is on 8081, not routed
+cd ../../frontend && APP_URL=$U npm run e2e:lobby              # full game flow, "console errors: none"
+```
+
+From a non-allowlisted address the ALB does not answer at all — by design (ADR-023).
+
+### 4. Destroy — and prove it
+
+```bash
+cd infra/app
+terraform destroy -var image_tag=$SHA      # if it ends in RequestExpired: run it again (TROUBLESHOOTING)
+terraform state list | grep -v '^data\.'   # must print nothing
+```
+
 ## Destroy checklist (Phase 7 onward)
 
-Run after every Path B or EKS session. A forgotten `apply` is the single most likely way
-this project costs real money.
+Query each service directly. **Not** the Resource Groups Tagging API: after the first destroy it
+still listed security groups and tasks that `describe-*` reported as NotFound.
 
-- [ ] `terraform destroy` completed without errors
-- [ ] EKS cluster deleted (the control plane bills whether or not pods run)
-- [ ] RDS instance deleted, **final snapshot skipped or intentionally retained**
-- [ ] ElastiCache cluster deleted
-- [ ] ALB and target groups gone
-- [ ] Elastic IPs released (they bill when unattached)
-- [ ] EBS volumes deleted (they survive instance termination)
-- [ ] ECR images pruned to the latest 3 tags
-- [ ] CloudWatch log groups have a retention policy set (default is *never expire*)
-- [ ] AWS Cost Explorer shows no unexpected resources
+```bash
+aws rds describe-db-instances --query 'length(DBInstances)'                          # 0
+aws rds describe-db-snapshots --snapshot-type manual --query 'length(DBSnapshots)'   # 0
+aws rds describe-db-instance-automated-backups --query 'length(DBInstanceAutomatedBackups)'  # 0
+aws elasticache describe-replication-groups --query 'length(ReplicationGroups)'      # 0
+aws elbv2 describe-load-balancers --query 'length(LoadBalancers)'                    # 0
+aws ecs list-clusters --query 'length(clusterArns)'                                  # 0
+aws ec2 describe-addresses --query 'length(Addresses)'                               # 0 (EIPs bill unattached)
+aws ec2 describe-network-interfaces --query 'length(NetworkInterfaces)'              # 0
+aws ec2 describe-volumes --query 'length(Volumes)'                                   # 0
+aws ec2 describe-nat-gateways --filter Name=state,Values=available,pending --query 'length(NatGateways)'  # 0
+aws ec2 describe-vpcs --filters Name=is-default,Values=false --query 'length(Vpcs)'  # 0
+aws secretsmanager list-secrets --include-planned-deletion --query 'length(SecretList)'  # 0
+aws logs describe-log-groups --query 'logGroups[].logGroupName'                      # none from this stack
+aws sqs list-queues                                                                  # none
+```
+
+Expected to remain: the bootstrap stack (budget, state bucket, ECR — at most 3 images, OIDC role)
+and INACTIVE ECS task definition revisions (free; ECS keeps them).
+
+- [ ] EKS cluster deleted, if one was created (Phase 8 — the control plane bills with no pods)
+- [ ] AWS Cost Explorer the next day: the session's cost matches the estimate; nothing unexpected
+

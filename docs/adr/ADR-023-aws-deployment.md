@@ -1,7 +1,6 @@
 # ADR-023: AWS deployment — one origin, plain HTTP behind an allowlist, create-measure-destroy
 
-**Status:** Accepted for 7.1 (application side); sections for 7.2–7.5 are added as they are
-built · **Date:** 2026-09-30
+**Status:** Accepted — Phase 7 complete (7.1–7.5) · **Date:** 2026-09-30, completed 2026-10-01
 **Builds on:** ADR-010 (AWS shape, no NAT), ADR-021 (one image, three roles), ADR-022 (CI).
 **Amends:** the roadmap's Phase 7 done-when ("public HTTPS + WSS").
 
@@ -213,6 +212,24 @@ cost of the HTTP-only decision, paid in a place no server-side test could see. F
 `crypto.getRandomValues` (available everywhere), one code path for every context; verified inside
 the live insecure page (1,000 valid, unique IDs). The e2e scripts now also record `pageerror` —
 an exception in an event handler is not a console message, which is why the first probe saw nothing.
+
+**Attempt 3** (image `f096c78`): a rolling deploy onto the running stack — new task definitions,
+migrate re-run (no-op), both services rolled with the circuit breaker armed, one deployment each
+afterwards. `e2e:lobby` against the ALB: pair 4.8 s, moves and clocks live, resignation → rating on
+both screens in 3.35 s, lobby updated, **no console or page errors**. ALB `RequestCount` split
+25/25 across the two AZs (one API task each). Cross-instance delivery for a *specific* game could
+not be attributed from logs (no per-connection logging); it rests on the design and
+`ValkeyFanoutIntegrationTest` (two instances). Phase 9 item.
+
+**Destroy:** first run 10 m 16 s, then `RequestExpired` on the last few calls (cause not
+established: clock within 1 s of AWS; credentials valid afterwards); a second run finished. Then
+every service queried directly: RDS (instances, snapshots, backups), ElastiCache, ALBs, target
+groups, ECS clusters, ENIs, EIPs, EBS, NAT gateways, VPCs, secrets incl. pending deletion, log
+groups, SQS — all **zero**. The tagging API still listed deleted resources; direct describes
+returned NotFound — it lags, and is not the source of truth for a destroy check.
+
+**Measured on AWS** (PROJECT_STATE §12): app start 60–75 s on 0.5 vCPU, ~100–122 s on 0.25 vCPU —
+the 180 s health-check grace was right, with little margin; a Phase 9 topic.
 
 ## Alternatives considered
 
