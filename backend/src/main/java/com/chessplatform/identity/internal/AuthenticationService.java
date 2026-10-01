@@ -2,7 +2,9 @@ package com.chessplatform.identity.internal;
 
 import com.chessplatform.identity.domain.User;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Orchestrates the login and refresh flows.
@@ -20,25 +22,36 @@ public class AuthenticationService {
     private final UserAuthenticator authenticator;
     private final JwtService jwt;
     private final RefreshTokenService refreshTokens;
+    private final TransactionTemplate transactions;
 
     public AuthenticationService(UserRegistrar registrar, UserAuthenticator authenticator,
-                                 JwtService jwt, RefreshTokenService refreshTokens) {
+                                 JwtService jwt, RefreshTokenService refreshTokens,
+                                 PlatformTransactionManager transactionManager) {
         this.registrar = registrar;
         this.authenticator = authenticator;
         this.jwt = jwt;
         this.refreshTokens = refreshTokens;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * Hash first, outside any transaction; then one short transaction for the user row and its
+     * refresh-token family, so both exist or neither does. Not {@code @Transactional}: that would
+     * take a pooled connection at entry and hold it through the hash (Phase 9.4).
+     */
     public Session register(String username, String email, String password) {
-        User user = registrar.register(username, email, password);
-        return sessionFor(user);
+        String passwordHash = registrar.hash(password);
+        return transactions.execute(status ->
+                sessionFor(registrar.registerHashed(username, email, passwordHash)));
     }
 
-    @Transactional
+    /**
+     * Verify the password with no connection held (the lookup is a short read of its own), then a
+     * short transaction to start the refresh family. Not {@code @Transactional}, as above.
+     */
     public Session login(String username, String password) {
         User user = authenticator.authenticate(username, password);
-        return sessionFor(user);
+        return transactions.execute(status -> sessionFor(user));
     }
 
     /**
