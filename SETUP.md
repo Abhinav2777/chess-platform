@@ -91,6 +91,26 @@ The image also serves the frontend (ADR-023): open **http://localhost:8080** —
 exactly as behind the ALB. The browser checks run against it with
 `APP_URL=http://localhost:8080 npm run e2e:lobby` (from `frontend/`).
 
+## Kubernetes on kind (Phase 8)
+
+Needs `kind` and `kubectl`, ~5 GB of free memory, and port 80 free on the host.
+
+```bash
+# 1. Build the image (on this machine: TROUBLESHOOTING "docker build fails: UnknownHostException")
+docker build -f backend/Dockerfile -t chess-platform:dev .
+# 2. Cluster + add-ons (ingress-nginx, metrics-server), images preloaded — ~1–2 min
+k8s/cluster-up.sh
+# 3. Deploy: dependencies → migrate Job (must complete) → api ×2 + worker — ~1 min
+k8s/deploy.sh dev
+# 4. Open http://localhost  (the browser checks: APP_URL=http://localhost npm run e2e:lobby)
+kubectl -n chess get pods ; kubectl -n chess top pods
+# Tear down
+kind delete cluster --name chess
+```
+
+A new image: build it with a new tag and `k8s/deploy.sh <tag>` — the migrate Job runs first, then a
+rolling update (one pod at a time, never below two ready). Layout and reasoning: ADR-024.
+
 ## API collection
 
 `docs/api/chess-platform.postman_collection.json`. Import into Postman and **Run
