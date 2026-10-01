@@ -1,0 +1,24 @@
+# Cluster add-ons, vendored and pinned (reviewable in a diff; no fetch at deploy time).
+#   ingress-nginx controller-v1.15.1, kind provider manifest
+#   metrics-server v0.9.0 — what the HPA reads CPU from
+#
+# Images are referenced by tag here, not the upstream tag@digest: a kind node cannot pull (this
+# machine's containers have no internet egress), and `kind load` does not carry registry digests.
+# The pin is enforced where the image enters: cluster-up.sh pulls each one BY DIGEST on the host
+# (Docker verifies the bytes), tags it, and loads it. Keep these tags and the digests there in step.
+resources:
+  - ingress-nginx-kind-v1.15.1.yaml
+  - metrics-server-v0.9.0.yaml
+patches:
+  # kind's kubelets serve self-signed certificates; metrics-server would refuse them. Fine for
+  # a local cluster — a real one has kubelet serving certs signed by the cluster CA.
+  - target: { kind: Deployment, name: metrics-server, namespace: kube-system }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --kubelet-insecure-tls
+images:
+  - name: registry.k8s.io/ingress-nginx/controller
+    newTag: v1.15.1
+  - name: registry.k8s.io/ingress-nginx/kube-webhook-certgen
+    newTag: v1.6.9

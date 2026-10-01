@@ -140,6 +140,14 @@ class ValkeyOutageIntegrationTest {
             }
             System.out.printf("MEASURED degraded move -> visible to opponent via REST, worst %d ms%n", worstMs);
 
+            // Still ready: the instance is serving games (ADR-018). A readiness probe that
+            // included Valkey would mark every instance unready at once, and the load balancer
+            // would turn a degraded feature into a total outage.
+            assertThat(http.send(java.net.http.HttpRequest.newBuilder(
+                            java.net.URI.create("http://localhost:" + port + "/actuator/health/readiness")).GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode())
+                    .as("readiness with Valkey down").isEqualTo(200);
+
             Game finished = games.findById(game.id()).orElseThrow();
             assertThat(finished.status()).isEqualTo(GameStatus.FINISHED);
             assertThat(finished.result()).isEqualTo(GameResult.WHITE_WIN);
