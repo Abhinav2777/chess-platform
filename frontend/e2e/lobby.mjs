@@ -58,6 +58,7 @@ await black.getByRole('button', { name: 'e5', exact: true }).click();
 await white.locator('ol.moves li', { hasText: 'e5' }).waitFor({ timeout: 5000 });
 const finished = Date.now();
 await white.getByRole('button', { name: 'Resign' }).click();
+await white.getByRole('button', { name: 'Yes, resign' }).click();   // resigning asks for confirmation
 await Promise.all([
   white.locator('.rating', { hasText: 'Rating 1184 (-16)' }).waitFor({ timeout: 15000 }),
   black.locator('.rating', { hasText: 'Rating 1216 (+16)' }).waitFor({ timeout: 15000 }),
