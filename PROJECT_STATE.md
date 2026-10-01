@@ -76,8 +76,8 @@ left half-migrated because a sub-milestone ended.
 |---|---|
 | **Current phase** | Phase 8 — Kubernetes — **complete** (next: Phase 9 — tracing, load testing, optimisation) |
 | **Phase status** | **Phase 8 complete.** Rolling deploy under live games measured on kind: zero lost games. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done) |
-| **Cumulative hours (estimated)** | ~110 of 135–175 |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done) |
+| **Cumulative hours (estimated)** | ~114 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
 | **Next milestone** | Phase 9 — design first (§10) |
@@ -86,6 +86,13 @@ left half-migrated because a sub-milestone ended.
 ---
 
 ## 2. Completed
+
+### Interlude — frontend UI pass (2026-10-01, owner's request, ADR-025)
+
+- Dark, lichess-like redesign: app shell, sign-in, lobby, game screen, SVG pieces (Cburnett,
+  CC BY-SA 3.0), highlights incl. check, game-over dialog, phone layout. No UI libraries.
+- Browser checks green on dev, on the image via kind, and the outage check on bootRun.
+
 
 ### Phase 8 — Milestone 8.3 (2026-10-01): the demonstration — **Phase 8 complete**
 
