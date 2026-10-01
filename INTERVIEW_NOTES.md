@@ -398,6 +398,21 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 9.1 — tracing
+
+### "How do you trace across a message queue — and an outbox?"
+The producer puts the W3C traceparent in the message attributes; the consumer continues it. The
+outbox is the twist: the message is sent later by a scheduled relay in its own trace, so I store the
+traceparent in the outbox row and the relay forwards it. One trace now runs from the resign click to
+the rating update — and showed a full second of that is the relay waiting for its next poll.
+
+### "Agent or library instrumentation?"
+Library, through Spring Boot 4's Observation support: no bytecode agent adding startup time to a JVM
+that already takes a minute on small Fargate tasks, and nothing hidden. The cost is that anything the
+libraries don't cover is mine — WebSocket frames, which I wrap in an observation per message.
+
+---
+
 ## Phase 8.3 — proving the deploy
 
 ### "How do you know a deploy doesn't lose games?"

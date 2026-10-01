@@ -32,3 +32,4 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 023 | AWS deployment: one origin, HTTP behind an allowlist, create-measure-destroy | Accepted |
 | 024 | Kubernetes on kind (Kustomize); graceful WebSocket drain | Accepted |
 | 025 | A time-boxed frontend UI pass (dark, lichess-like; no UI libraries) | Accepted |
+| 026 | Tracing: Boot 4 native OpenTelemetry, trace context through the outbox and SQS | Accepted |
