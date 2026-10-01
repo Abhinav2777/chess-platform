@@ -398,6 +398,27 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 8.2 — Kubernetes manifests
+
+### "Readiness versus liveness — what's in each of yours?"
+Liveness is only "is the JVM alive" — never a dependency, or a database blip restarts every pod.
+Readiness is the app's own verdict plus the database. Not Valkey: the app keeps games going without
+it, and putting it in readiness would make every pod unready at once — the load balancer turns a
+degraded feature into a full outage. I found that, and that my drain wasn't reaching the probe at
+all, because listing readiness members replaces Spring's default one.
+
+### "Why no CPU limit?"
+CPU limits are enforced by CFS throttling in 100 ms periods. A JVM's GC and JIT threads burst; they
+get throttled and latency spikes while the node has idle cores. I set a CPU request for scheduling
+and the HPA, and memory limit equal to request, because memory isn't compressible.
+
+### "What's the preStop sleep for?"
+Deleting a pod starts endpoint removal and termination at the same time. Without a pause the app
+can stop accepting while the ingress still routes to it. Ten seconds of sleep, then SIGTERM, then
+my drain closes the sockets with 1001 and the clients reconnect to pods that are already ready.
+
+---
+
 ## Phase 8.1 — graceful drain
 
 ### "What happens to open WebSockets when you deploy?"
