@@ -395,6 +395,16 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### kind: blank page, the SPA's JavaScript gets 403 (empty MIME type)
+
+**Seen:** 2026-10-01, ingress on host port 8000 mapped to the node's port 80. **Cause:** ingress-nginx
+sends `X-Forwarded-Port: 80` (its own listener); Tomcat trusts forwarded headers from the pod
+network, so the request looked like `localhost:80` while the page's `Origin` was `localhost:8000` —
+cross-origin to Spring's CORS check, which refused the module script. Tomcat's `RemoteIpValve`
+resets the port to the scheme default whenever `X-Forwarded-Proto` is present, so an empty
+`port-header` cannot fix it in the app. **Fix:** map host port 80 → 80 (`k8s/kind-cluster.yaml`).
+**Check:** `curl -H "Origin: http://localhost:<port>" http://localhost:<port>/assets/<bundle>.js`.
+
 ### `terraform destroy`: `api error RequestExpired: Request has expired`
 
 **Seen:** 2026-10-01, the last calls of a 10-minute destroy. Clock was within 1 s of AWS (NTP
