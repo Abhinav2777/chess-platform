@@ -37,6 +37,10 @@ logstashEncoder      = "9.0"      # verified 2026-09-30: 9.x is on Jackson 3, th
 springCloudAws       = "4.1.1"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x is Boot 3.5). Tested upstream on Boot 4.0.8.
 awsSdk               = "2.55.6"   # BOM, imported after Spring Cloud AWS's so the SDK version is ours (ADR-020).
 
+# JDBC spans for Micrometer Observation (Phase 9). Not Boot-managed; 2.3.0 is built against
+# Boot 4.1.1 (its POM), verified 2026-10-01.
+datasourceMicrometer = "2.3.0"
+
 archunit             = "1.5.1"
 # Testcontainers and AssertJ are deliberately absent: the Spring Boot BOM manages both
 # (4.1.1: Testcontainers 2.0.5, AssertJ 3.27.7). Pinning them here fought the BOM — the
@@ -107,6 +111,10 @@ postgresql           = { module = "org.postgresql:postgresql" }
 
 # --- Observability ---
 micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+# Tracing (Phase 9, ADR-026): Micrometer Observation -> OpenTelemetry bridge -> OTLP. Boot-managed.
+spring-opentelemetry  = { module = "org.springframework.boot:spring-boot-starter-opentelemetry" }
+datasource-micrometer = { module = "net.ttddyy.observation:datasource-micrometer-spring-boot", version.ref = "datasourceMicrometer" }
+otel-sdk-testing      = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 logstash-encoder      = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstashEncoder" }
 
 # --- Domain ---

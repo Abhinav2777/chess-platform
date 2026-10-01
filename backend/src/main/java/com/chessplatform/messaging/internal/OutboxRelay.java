@@ -44,6 +44,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class OutboxRelay {
 
     static final String EVENT_ID_HEADER = "eventId";
+    /** W3C trace context, from the outbox row: the listener's observation continues it (ADR-026). */
+    static final String TRACEPARENT_HEADER = "traceparent";
 
     /** SendMessageBatch's per-call maximum. */
     private static final int SQS_BATCH = 10;
@@ -83,14 +85,15 @@ public class OutboxRelay {
                 .description("Events that exhausted their send attempts and need a human").register(metrics);
     }
 
-    record Row(UUID id, String eventType, UUID aggregateId, String payload, Instant createdAt) {
+    record Row(UUID id, String eventType, UUID aggregateId, String payload, Instant createdAt,
+               String traceParent) {
     }
 
     /** Claims and sends one batch. Returns how many rows it claimed. */
     @Transactional
     public int relayOnce() {
         List<Row> rows = jdbc.query("""
-                        SELECT id, event_type, aggregate_id, payload::text AS payload, created_at
+                        SELECT id, event_type, aggregate_id, payload::text AS payload, created_at, trace_parent
                           FROM outbox
                          WHERE published_at IS NULL AND attempts < ?
                          ORDER BY id
@@ -99,7 +102,7 @@ public class OutboxRelay {
                         """,
                 (rs, n) -> new Row(rs.getObject("id", UUID.class), rs.getString("event_type"),
                         rs.getObject("aggregate_id", UUID.class), rs.getString("payload"),
-                        rs.getTimestamp("created_at").toInstant()),
+                        rs.getTimestamp("created_at").toInstant(), rs.getString("trace_parent")),
                 MAX_ATTEMPTS, properties.relayBatchSize());
         if (rows.isEmpty()) {
             return 0;
@@ -121,9 +124,14 @@ public class OutboxRelay {
             byEventId.put(row.id().toString(), row);
             // The header maps each per-message result back to its row, and travels as an SQS
             // message attribute — so the event id is visible without parsing the body.
-            messages.add(MessageBuilder.withPayload(envelope(row))
-                    .setHeader(EVENT_ID_HEADER, row.id().toString())
-                    .build());
+            MessageBuilder<String> message = MessageBuilder.withPayload(envelope(row))
+                    .setHeader(EVENT_ID_HEADER, row.id().toString());
+            // Sent as a message attribute. sendMany is not observed by Spring Cloud AWS (only the
+            // single-message path is), so nothing overwrites it with the relay's own trace.
+            if (row.traceParent() != null) {
+                message.setHeader(TRACEPARENT_HEADER, row.traceParent());
+            }
+            messages.add(message.build());
         }
 
         SendResult.Batch<String> result;

@@ -111,6 +111,19 @@ kind delete cluster --name chess
 A new image: build it with a new tag and `k8s/deploy.sh <tag>` — the migrate Job runs first, then a
 rolling update (one pod at a time, never below two ready). Layout and reasoning: ADR-024.
 
+## Traces and metrics locally (Phase 9)
+
+```bash
+docker compose -f ops/docker/docker-compose.yml --profile observability up -d lgtm   # Grafana :3000 (admin/admin)
+MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true \
+MANAGEMENT_OTLP_METRICS_EXPORT_URL=http://localhost:4318/v1/metrics \
+  ./gradlew :backend:bootRun --args='--spring.profiles.active=local'
+```
+
+Grafana → Explore → Tempo; e.g. TraceQL `{ kind = consumer }` finds traces that crossed SQS.
+Without the endpoint variable nothing is exported (ADR-026).
+
 ## API collection
 
 `docs/api/chess-platform.postman_collection.json`. Import into Postman and **Run
