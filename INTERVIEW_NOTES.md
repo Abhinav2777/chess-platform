@@ -398,6 +398,17 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 8.1 — graceful drain
+
+### "What happens to open WebSockets when you deploy?"
+At first: an abnormal 1006 for every client, because Spring's graceful shutdown waits for HTTP
+requests and an upgraded socket isn't one. Now a lifecycle step runs before the web server stops —
+readiness false, a 1001 "going away, please reconnect" on every socket, newcomers bounced, seeks
+kept. The client already had jittered reconnect and snapshot resync from earlier phases; the gap was
+the server's. I proved the ordering matters by moving the step after the web server: back to 1006.
+
+---
+
 ## Phase 7.5 — the first deploy
 
 ### "What broke because you deployed on HTTP?"
