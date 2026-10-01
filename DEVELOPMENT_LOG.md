@@ -5,6 +5,32 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 8.1: the drain (and the client needed nothing)
+
+Phase 8 decisions: kind only, Kustomize (ADR-024).
+
+**Measured before building:** with a no-op `SocketDrain` stub, a stopping application closed client
+sockets with **1006**. Graceful shutdown covers HTTP requests, not upgraded sockets; readiness
+never changed.
+
+**Built:** `SocketDrain` (SmartLifecycle, phase `DEFAULT - 512`, ahead of Boot's web-server graceful
+shutdown): readiness off → 1001 GOING_AWAY "please reconnect" on every socket → newcomers bounced,
+seeks kept. The registry now tracks every open socket (the drain must reach unauthenticated ones).
+
+**Not built, on purpose:** client changes. Reading `GameSocket.ts` first showed Phase 2's full-jitter
+backoff and Phase 3's snapshot resync already do what a deploy needs.
+
+**A test-infrastructure surprise:** closing the context in a test made Spring 7's test-context cache
+fail — it now *restarts* stopped contexts after each test and cannot restart a closed one. The test
+uses `context.stop()`, which runs the identical phase-ordered lifecycle stop.
+
+Mutation-checked: drain after the web server → 1006; seek guard removed → seek cancelled.
+Unit 90, integration 145.
+
+**Hours:** ~2.5.
+
+---
+
 ## 2026-10-01 — 7.5 complete: green in a browser on AWS, then destroyed — Phase 7 done
 
 **Attempt 3** (image `f096c78`, rolling deploy onto the running stack): both services rolled to
