@@ -5,6 +5,27 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — A 12-minute image build, and a full cache
+
+The UI PR's `image` job sat in `Build` for 12 min (normal: 0.2–2.6 min; main built the same code
+2.6 min earlier). Logs are not served for a running step, so the run was cancelled to read them:
+buildx spent 240 s restoring the cached `npm ci` layers, then downloaded the ~250 MB Gradle
+dependency layer from the GitHub Actions cache at ~0.2 MB/s. The code built normally — the time
+was all cache transfer.
+
+The repository's Actions cache held **10,656 MiB — over GitHub's 10 GB limit**: 4.9 GB of
+`trivy-action` vulnerability-DB snapshots (one ~1 GB entry per day, never pruned), 4.9 GB of
+buildkit `mode=max` layers, ~4.3 GB of it scoped to already-merged PRs, unreadable forever.
+GitHub's status page also showed an "Elevated request latency" incident at 13:37 that may have
+overlapped — not separable from here, and not claimed either way.
+
+Fixed what is ours: Trivy `cache: false` (a fresh DB is seconds; a stale DB is what a gate must
+not use quietly); buildx `cache-to` on main only — PRs read main's cache, as the Gradle cache
+already did; a `cache-cleanup` workflow deleting a PR's caches when it closes (GitHub's documented
+recipe). Stale entries removed once by hand.
+
+---
+
 ## 2026-10-01 — The 8.3 PR's image scan: Jackson again
 
 PR run 99856445337, `image` red: CVE-2026-91776 and CVE-2026-91777 (HIGH) in jackson-databind

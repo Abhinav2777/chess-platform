@@ -219,7 +219,12 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Only main writes the layer cache; PRs read main's. Like the Gradle cache above: a PR
+          # cannot replace what main relies on, and PR builds stop uploading their own copies.
+          # mode=max stores intermediate layers too (the ~250 MB Gradle dependency layer,
+          # node_modules) — every PR writing them pushed the repo past GitHub's 10 GB cache
+          # limit, and the UI PR's build crawled restoring evicted layers at 0.2 MB/s (2026-10-01).
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       # The gate. Fails on HIGH/CRITICAL vulnerabilities that have a fix available: an
       # unfixable one is not actionable by us, and blocking on it would teach everyone to
@@ -231,6 +236,10 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          # No cache: the action stores its ~1 GB vulnerability DB once per day and the entries
+          # pile up (4.9 GB of the repo's 10 GB on 2026-10-01). A fresh download is seconds, and a
+          # scan against a stale DB is the one thing a security gate must not do quietly.
+          cache: false
           exit-code: '1'
           format: table
 
