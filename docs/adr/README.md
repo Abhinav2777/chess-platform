@@ -29,4 +29,5 @@ supersedes the old one and mark the old one `Superseded by ADR-NNN`.
 | 020 | Spring Cloud AWS 4.x for SQS (amends 011) | Accepted |
 | 021 | One container image, three roles; migrations as a separate step | Accepted |
 | 022 | CI: PR gate, scan before push, SHA-pinned actions, GHCR | Accepted |
-| 023 | AWS deployment: one origin, HTTP behind an allowlist, create-measure-destroy | Accepted (7.1; grows through 7.5) |
+| 023 | AWS deployment: one origin, HTTP behind an allowlist, create-measure-destroy | Accepted |
+| 024 | Kubernetes on kind (Kustomize); graceful WebSocket drain | Accepted (8.1; grows through 8.3) |
