@@ -3,6 +3,7 @@ import { api, currentToken, type GameDetail } from './api';
 import { anchor, freeze, type ClockAnchor } from './clock';
 import { GameSocket, type ConnectionState, type MoveRequest } from './GameSocket';
 import type { Failure, GameSnapshot } from './protocol';
+import { randomUuid } from './uuid';
 
 /** Our own MOVE_MADE normally arrives in milliseconds; its absence means fanout is down. */
 const ECHO_TIMEOUT_MS = 1_500;
@@ -225,9 +226,9 @@ export function useGame(gameId: string) {
     if (!current || !snapshot) return;
     current.move({
       // Generated here, by the client, which is the entire point: the server cannot mint
-      // this or a retry would look like a new move. crypto.randomUUID is available in
-      // every browser this project targets.
-      clientMoveId: crypto.randomUUID(),
+      // this or a retry would look like a new move. randomUuid, not crypto.randomUUID —
+      // the latter does not exist on a plain-HTTP origin (uuid.ts).
+      clientMoveId: randomUuid(),
       expectedPly: snapshot.ply,
       from,
       to,
