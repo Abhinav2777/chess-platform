@@ -395,6 +395,16 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### ECS task exits: `Connection initialization timed out after 1 second(s)` (Valkey)
+
+**Seen:** 2026-10-01, first apply, migrate task on 0.25 vCPU. **Cause:** Lettuce bounded the
+connection handshake (TCP + TLS + HELLO) by the 1 s command timeout; a cold JVM on a small Fargate
+task needed longer for its first TLS handshake. **Fixed** by `ValkeyClientConfig`
+(`chess.valkey.connection-init-timeout`, default 10 s; commands still 1 s). If it recurs: check the
+task's CPU, and that the error is not a plaintext client against a TLS-required cluster
+(`SPRING_DATA_REDIS_SSL_ENABLED=true` in the task definition) — that also times out at init.
+**Read the logs:** `aws logs tail /ecs/chess-platform/<role> --since 30m`.
+
 ### CI: `Not authorized to perform sts:AssumeRoleWithWebIdentity`
 
 **Seen:** 2026-10-01, first main run after the bootstrap stack. **Cause:** the role's trust
