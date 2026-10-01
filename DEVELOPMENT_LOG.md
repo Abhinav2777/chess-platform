@@ -5,6 +5,31 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.5 complete: green in a browser on AWS, then destroyed — Phase 7 done
+
+**Attempt 3** (image `f096c78`, rolling deploy onto the running stack): both services rolled to
+revision 3, one deployment each, two new healthy API tasks. `e2e:lobby` against the ALB passed end
+to end with no console or page errors: pair 4.8 s, live moves and clocks, rating on both screens
+3.35 s after resignation (0.8 s locally — the extra hops are real: SQS, Spot worker, ElastiCache
+TLS, Hyderabad → Virginia).
+
+**Not proven, and said so:** that the two players' sockets were on different tasks. The ALB split
+requests 25/25, but the API does not log connections, so a game cannot be attributed. The
+guarantee rests on the Valkey fan-out design and its two-instance integration test. Phase 9.
+
+**Measured:** Fargate start times — api 60–75 s (0.5 vCPU), worker ~122 s and migrate ~100–113 s
+(0.25 vCPU). Locally: seconds. JVM start is CPU-bound and fractional vCPUs show it.
+
+**Destroy:** 10 m 16 s, then `RequestExpired` on the last calls (clock in sync, credentials fine
+afterwards — cause not established); re-run finished. Checklist by direct service queries: all zero.
+The tagging API still listed security groups and tasks; direct describes said NotFound. Kept: the
+bootstrap stack (budget, state bucket, ECR with 3 images, OIDC role), ~$0.05/month estimated.
+Actual session cost: Cost Explorer showed $0.00 (lag) — to read on 2026-10-02.
+
+**Phase 7: ~15.5 h** against 14–18 h.
+
+---
+
 ## 2026-10-01 — 7.5, attempt 2: the server was right; the browser refused
 
 Apply with image `df3df89` succeeded: migrate (tainted step re-ran), api ×2 healthy in two AZs,
