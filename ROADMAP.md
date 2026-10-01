@@ -274,14 +274,14 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 
 ---
 
-### Phase 8 — Kubernetes · 12–16 h · Weeks 13–14 — **IN PROGRESS (8.1 done, ~2.5 h)**
+### Phase 8 — Kubernetes · 12–16 h · Weeks 13–14 — **IN PROGRESS (8.1–8.2 done, ~7 h)**
 
 **Decisions (owner, 2026-10-01 — ADR-024):** kind only, no EKS window; Kustomize.
 
 | # | Milestone | Status |
 |---|---|---|
 | 8.1 | Graceful WebSocket drain (readiness off → 1001 GOING_AWAY → drain), tests first | ✅ ~2.5 h |
-| 8.2 | kind cluster + Kustomize manifests: Deployments, migrate Job, Service, Ingress, probes (startup/readiness/liveness), resources, rolling update, PDB, HPA, preStop | |
+| 8.2 | kind cluster + Kustomize manifests: Deployments, migrate Job, Service, Ingress, probes (startup/readiness/liveness), resources, rolling update, PDB, HPA, preStop | ✅ ~4.5 h — two readiness bugs fixed |
 | 8.3 | k6: live games across `kubectl rollout restart` — zero lost games, clocks consistent | |
 
 

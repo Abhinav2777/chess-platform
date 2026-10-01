@@ -75,17 +75,28 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 8 — Kubernetes (kind, Kustomize — ADR-024) |
-| **Phase status** | 8.1 done. Next: kind cluster and manifests. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~2.5 of 12–16 |
-| **Cumulative hours (estimated)** | ~102.5 of 135–175 |
+| **Phase status** | 8.1–8.2 done; the cluster runs on kind. Next: the k6 demonstration. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~7 of 12–16 |
+| **Cumulative hours (estimated)** | ~107 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 8.2 — kind cluster + Kustomize manifests (§10) |
+| **Next milestone** | 8.3 — k6 across a rolling restart (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 8 — Milestone 8.2 (2026-10-01): kind + Kustomize
+
+- `k8s/`: kind cluster, vendored add-ons, base/deps/overlay, `cluster-up.sh`, `deploy.sh`
+  (migrate Job gates the rollout). Probes on 8081 (`k8s` profile), preStop, no CPU limit,
+  maxUnavailable 0, PDB, HPA, hardened pods.
+- Fixed: readiness now `readinessState,db` — the drain reaches the probe; a Valkey outage no
+  longer makes every instance unready (also fixes ECS).
+- Verified: browser flow through ingress; a live socket survives a rolling restart (1001 → new pod
+  in 0.5 s, ≥ 2 ready throughout). Unit 90, integration 146.
+
 
 ### Phase 8 — Milestone 8.1 (2026-10-01): graceful WebSocket drain
 
@@ -733,14 +744,11 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Owner:** install `kind`, `kubectl` (and `helm` only if we consume a chart for ingress-nginx —
-   a static manifest may do). Free memory before 8.2: the cluster needs ~4.5–5 GB.
-2. **8.2 — kind + Kustomize:** images preloaded with `kind load` (this machine's containers have no
-   internet egress); in-cluster PostgreSQL, Valkey, ElasticMQ; migrate Job gating the rollout;
-   startup/readiness/liveness probes on the management port; preStop sleep; requests without CPU
-   limits; `maxUnavailable: 0`; PDB; HPA on CPU (with its limits stated).
-3. **8.3 — k6 across a rolling restart:** zero lost games, clocks consistent, reconnect time measured.
-4. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
+1. **8.3 — k6 across a rolling restart:** N concurrent games over WebSockets (k6 v2.1.0 installed),
+   `kubectl rollout restart deployment/api` mid-run; assert zero lost games (every move persisted,
+   in order), clocks consistent with the server, every disconnect a 1001 followed by a reconnect;
+   measure reconnect time and error counts. Keep the kind cluster up (memory: ~5 GB).
+2. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
 
 ---
 
@@ -759,6 +767,10 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Claim | Value | Measured on | Evidence |
 |---|---|---|---|
 | Concurrency invariant under repetition | 100 rounds × 16 contenders: exactly 1 winner per game, 0 failures, 1.49 s | Dev machine, Testcontainers PG 16, 2026-09-28 | `-Pchess.concurrency.rounds=100`; `concurrency.rounds=100` in the test report |
+| kind: deploy from zero / cluster create | ~65 s (deps → migrate Job → api ×2 + worker) / ~70 s (images cached) | kind v0.33.0, k8s v1.37.0, dev machine, 2026-10-01 | `time k8s/deploy.sh`, `time k8s/cluster-up.sh` |
+| kind: idle pod memory | api 372–375 Mi (limit 640 Mi), worker 358 Mi, postgres 60 Mi, elasticmq 68 Mi, valkey 9 Mi | Same | `kubectl top pods` |
+| Browser flow through ingress-nginx (kind) | pair 0.79 s; rating shown 1.33 s after resignation | Same | `APP_URL=http://localhost npm run e2e:lobby` |
+| Rolling restart, one live socket | closed 1001 with reconnect reason → live on a new pod 0.5 s later; ready endpoints ≥ 2 throughout (17 samples) | Same | node WebSocket probe + EndpointSlice polling |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
 | Game end → rating shown to both players (browser) | 0.8 s (outbox → relay tick → ElasticMQ → worker → commit → push) | Headless Chromium, local, 2026-09-29 | `npm run e2e:lobby` |
 | Backlog drain on worker start | 7 queued events rated within 80 ms of startup | Local, ElasticMQ, 2026-09-29 | bootRun log (DEVELOPMENT_LOG, 5.2) |
