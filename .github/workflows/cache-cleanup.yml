@@ -1,0 +1,27 @@
+name: Cache cleanup
+
+# A pull request's caches are scoped to refs/pull/<n>/merge and can never be read again once it
+# closes, yet they count against the repository's 10 GB limit until GitHub evicts them — which it
+# does by evicting least-recently-used entries, main's included. Delete them when the PR closes.
+# (GitHub's documented recipe: "Force deleting cache entries".)
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write   # delete caches; nothing else
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete this pull request's caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          keys=$(gh cache list --ref "$REF" --limit 1000 --json id --jq '.[].id')
+          for id in $keys; do gh cache delete "$id"; done
+          echo "deleted $(echo "$keys" | grep -c . || true) cache entries for $REF"
