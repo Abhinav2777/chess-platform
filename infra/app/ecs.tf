@@ -15,7 +15,6 @@ locals {
     { name = "SPRING_DATA_REDIS_HOST", value = aws_elasticache_replication_group.valkey.primary_endpoint_address },
     { name = "SPRING_DATA_REDIS_PORT", value = "6379" },
     { name = "SPRING_DATA_REDIS_SSL_ENABLED", value = "true" }, # ElastiCache: TLS required (7.3)
-    { name = "CHESS_REALTIME_FANOUT", value = "valkey" },       # >1 API instance (ADR-002)
     # ADR-023: plain HTTP, so browsers would drop a Secure cookie. Remove with HTTPS.
     { name = "CHESS_AUTH_REFRESH_COOKIE_SECURE", value = "false" },
   ]
@@ -28,10 +27,16 @@ locals {
     { name = "CHESS_AUTH_JWT_SECRET", valueFrom = aws_secretsmanager_secret.jwt.arn },
   ]
 
+  # Valkey fan-out for api (>1 instance, ADR-002) and worker (it publishes RATING_UPDATED).
+  # NOT migrate: with it, the migrate run started a pub/sub subscriber, and the first apply's
+  # migration — already applied, all 7 versions — failed on a Valkey connection it never needed.
+  # A schema migration must not depend on the cache being reachable.
+  fanout = [{ name = "CHESS_REALTIME_FANOUT", value = "valkey" }]
+
   tasks = {
-    api     = { cpu = 512, memory = 1024, profiles = "aws", role_arn = null }
-    worker  = { cpu = 256, memory = 1024, profiles = "aws,worker", role_arn = aws_iam_role.worker_task.arn }
-    migrate = { cpu = 256, memory = 1024, profiles = "aws,migrate", role_arn = null }
+    api     = { cpu = 512, memory = 1024, profiles = "aws", role_arn = null, extra_env = local.fanout }
+    worker  = { cpu = 256, memory = 1024, profiles = "aws,worker", role_arn = aws_iam_role.worker_task.arn, extra_env = local.fanout }
+    migrate = { cpu = 256, memory = 1024, profiles = "aws,migrate", role_arn = null, extra_env = [] }
   }
 }
 
@@ -81,7 +86,7 @@ resource "aws_ecs_task_definition" "role" {
       { containerPort = 8080, protocol = "tcp" }, # application
       { containerPort = 8081, protocol = "tcp" }, # management: ALB health checks only
     ] : []
-    environment = concat(local.common_environment, [
+    environment = concat(local.common_environment, each.value.extra_env, [
       { name = "SPRING_PROFILES_ACTIVE", value = each.value.profiles },
     ])
     secrets = local.common_secrets
