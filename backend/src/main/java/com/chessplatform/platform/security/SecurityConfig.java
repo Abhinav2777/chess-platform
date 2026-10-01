@@ -2,6 +2,7 @@ package com.chessplatform.platform.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,8 +34,10 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   JwtAuthenticationFilter jwtFilter)
+                                                   JwtAuthenticationFilter jwtFilter,
+                                                   Environment environment)
             throws Exception {
+        boolean actuatorOnItsOwnPort = actuatorOnItsOwnPort(environment);
         return http
                 // CSRF protects cookie-authenticated state changes, because a browser
                 // attaches cookies to cross-site requests automatically. Our API
@@ -54,6 +57,14 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .authorizeHttpRequests(authorize -> authorize
+                        // Actuator on its own port (the aws and k8s profiles): open to whatever
+                        // can reach that port, because nothing outside can — no Service or
+                        // Ingress exposes it, and on AWS the security group admits only the ALB's
+                        // health checks. Network isolation is the access control, and a metrics
+                        // scraper needs no credentials (found in 9.2: the pods' histograms answered
+                        // 401). On the application port these paths are not mapped at all: 404.
+                        // When actuator shares the application port (local), only health is open.
+                        .requestMatchers(actuatorOnItsOwnPort ? "/actuator/**" : "/__never__").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login",
                                          "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
@@ -144,5 +155,17 @@ public class SecurityConfig {
                 + "\"title\":\"" + status.getReasonPhrase() + "\","
                 + "\"status\":" + status.value() + ","
                 + "\"detail\":\"" + detail + "\"}");
+    }
+
+    /**
+     * Whether actuator is served by a separate management server. {@code 0} (a random port, as in
+     * tests) is always separate; otherwise it is separate when it differs from the server port.
+     */
+    static boolean actuatorOnItsOwnPort(Environment environment) {
+        Integer management = environment.getProperty("management.server.port", Integer.class);
+        if (management == null || management < 0) {
+            return false;
+        }
+        return management == 0 || !management.equals(environment.getProperty("server.port", Integer.class, 8080));
     }
 }
