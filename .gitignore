@@ -74,3 +74,5 @@ crash.log
 *.log
 CLAUDE.md
 docs/CLAUDE_MASTER_PROMPT.md
+# k6 run output (Phase 8.3+); results worth keeping are summarised in docs/perf/
+loadtest/results/
