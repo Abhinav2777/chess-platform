@@ -199,6 +199,10 @@ chess:
   # rather than one per request.
   valkey:
     circuit-open-for: 5s
+    # Once per connection: TCP + TLS handshake + HELLO. Separate from spring.data.redis.timeout
+    # (per command, 1 s): a cold JVM on 0.25 vCPU took over a second for its first TLS handshake
+    # to ElastiCache, and the shared budget killed every task at startup (ValkeyClientConfig).
+    connection-init-timeout: 10s
 
   # Matchmaking (ADR-016). The queue lives in Valkey; pairing is a Lua script.
   matchmaking:
