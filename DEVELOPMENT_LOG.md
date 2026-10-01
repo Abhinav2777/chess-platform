@@ -5,6 +5,36 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 9.1: one trace from a resign click to the rating update
+
+Phase 9 decisions: Boot 4 native OpenTelemetry (not the agent), kind + one AWS session.
+
+Read before writing: Boot 4.1.1's BOM (starter-opentelemetry; OTel 1.62), datasource-micrometer
+2.3.0's POM (built on Boot 4.1.1), Spring Cloud AWS 4.1.1's jar (SqsTemplate/SqsListener
+observations), Boot 4's property metadata (names changed from 3.x; trace export has **no default
+endpoint**; OTLP metrics export **is on by default** toward localhost:4318 — switched off).
+
+The outbox breaks traces: the relay sends from its own scheduled trace. V8 adds
+`outbox.trace_parent`; `Outbox.append` stores the current W3C traceparent; the relay sends it as a
+message attribute — after checking in bytecode that `sendMany` is not observed and so will not
+overwrite it. WebSocket frames get an Observation each (`chess.ws.message`), since nothing
+instruments them.
+
+Test: real spans via InMemorySpanExporter — the consumer and the rating's JDBC spans share the
+move's trace ID; mutation (no header) → never joins. Two compile stops on the way: a wrong import,
+and `-Werror` on an unused try-resource (Java 25's `_` says it). Full suite green, 0 exporter-noise
+lines.
+
+Live in Grafana (LGTM 0.34.0): the resign trace — `ws RESIGN` 28 ms, then `game-events receive`
+40 ms at +1.03 s. **The gap is the relay's poll interval: ~1 s of every rating push is waiting.**
+A first search found only a sweeper-rooted trace (ingestion lag); the resign trace was there when
+fetched by ID. Valkey spans exist (matchmaker); the resign trace has none because `local` fans out
+in-process. Noted: every scheduler tick is a trace at 100 % sampling.
+
+**Hours:** ~3.5.
+
+---
+
 ## 2026-10-01 — A 12-minute image build, and a full cache
 
 The UI PR's `image` job sat in `Build` for 12 min (normal: 0.2–2.6 min; main built the same code
