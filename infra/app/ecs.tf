@@ -37,8 +37,18 @@ locals {
   # A schema migration must not depend on the cache being reachable.
   fanout = [{ name = "CHESS_REALTIME_FANOUT", value = "valkey" }]
 
+  # 9.4 sessions only (var.relaxed_auth_rate_limits): every k6 user registers from one address.
+  relaxed_limits = var.relaxed_auth_rate_limits ? [{
+    name = "SPRING_APPLICATION_JSON"
+    value = jsonencode({ chess = { ratelimit = { policies = {
+      "login-ip"    = { capacity = 2000, period = "1m" }
+      "login-user"  = { capacity = 100, period = "1m" }
+      "register-ip" = { capacity = 2000, period = "1m" }
+    } } } })
+  }] : []
+
   tasks = {
-    api     = { cpu = 512, memory = 1024, profiles = "aws", role_arn = null, extra_env = local.fanout }
+    api     = { cpu = 512, memory = 1024, profiles = "aws", role_arn = null, extra_env = concat(local.fanout, local.relaxed_limits) }
     worker  = { cpu = 256, memory = 1024, profiles = "aws,worker", role_arn = aws_iam_role.worker_task.arn, extra_env = local.fanout }
     migrate = { cpu = 256, memory = 1024, profiles = "aws,migrate", role_arn = null, extra_env = [] }
   }
