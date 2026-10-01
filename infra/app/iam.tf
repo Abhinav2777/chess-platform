@@ -45,9 +45,10 @@ data "aws_iam_policy_document" "execution" {
     resources = [data.aws_ecr_repository.app.arn]
   }
   statement {
-    sid       = "WriteOwnLogs"
-    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = [for g in aws_cloudwatch_log_group.task : "${g.arn}:*"]
+    sid     = "WriteOwnLogs"
+    actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = concat([for g in aws_cloudwatch_log_group.task : "${g.arn}:*"],
+    [for g in aws_cloudwatch_log_group.loadgen : "${g.arn}:*"])
   }
   statement {
     sid       = "InjectSecrets"

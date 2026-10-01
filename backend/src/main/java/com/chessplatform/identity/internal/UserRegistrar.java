@@ -8,7 +8,9 @@ import com.chessplatform.identity.domain.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -61,15 +63,39 @@ public class UserRegistrar {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
+    private final TransactionTemplate transactions;
 
-    public UserRegistrar(UserRepository users, PasswordEncoder passwordEncoder, Clock clock) {
+    public UserRegistrar(UserRepository users, PasswordEncoder passwordEncoder, Clock clock,
+                         PlatformTransactionManager transactionManager) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * Hashes, then registers in a short transaction of its own (or the caller's, if one is
+     * active — which is why {@link AuthenticationService} hashes first itself).
+     */
     public User register(String rawUsername, String rawEmail, String rawPassword) {
+        String passwordHash = hash(rawPassword);
+        return transactions.execute(status -> registerHashed(rawUsername, rawEmail, passwordHash));
+    }
+
+    /**
+     * bcrypt, deliberately slow (cost 12) — and therefore never inside a transaction. A JPA
+     * transaction takes its pooled connection when it begins; hashing inside one holds that
+     * connection idle for the whole hash. On a 0.5-vCPU Fargate task under contention that was
+     * seconds, and ~3 registrations a second exhausted a 10-connection pool (Phase 9.4,
+     * docs/perf/optimisation-02.md). Hash first, then open the transaction.
+     */
+    public String hash(String rawPassword) {
+        return passwordEncoder.encode(rawPassword);
+    }
+
+    /** The database half of registration. Joins the caller's transaction; requires one. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public User registerHashed(String rawUsername, String rawEmail, String passwordHash) {
         String username = normalise(rawUsername);
         String email = normalise(rawEmail);
 
@@ -87,7 +113,7 @@ public class UserRegistrar {
                 Uuid7.generate(),
                 username,
                 email,
-                passwordEncoder.encode(rawPassword),
+                passwordHash,
                 INITIAL_RATING,
                 Instant.now(clock));
 
