@@ -10,6 +10,9 @@ async function user(name) {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 } });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`${name}: ${m.text()}`); });
+  // An exception thrown in an event handler is a pageerror, not a console message — this is how
+  // a missing crypto.randomUUID on a plain-HTTP origin went unreported in 7.5.
+  page.on('pageerror', (e) => consoleErrors.push(`${name}: uncaught ${e.message}`));
   // Chrome's console line for a failed load has no URL; this one does.
   page.on('response', (r) => { if (r.status() >= 400) consoleErrors.push(`${name}: ${r.status()} ${r.request().method()} ${r.url()}`); });
   await page.goto(APP_URL);
