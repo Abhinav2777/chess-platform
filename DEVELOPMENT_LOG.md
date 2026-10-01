@@ -5,6 +5,34 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 7.5, attempt 1: the migrations worked; the migrate task didn't
+
+The owner ran `terraform apply first.tfplan` (an apply is gated by Claude Code's permission
+classifier — creating billable resources needs the owner's hand). 12 min: RDS 8 m 43 s,
+ElastiCache 4 m 41 s, then `terraform_data.migrate` failed: exit 1. **The services were never
+created** — the migrate-first dependency did its job on its first real test.
+
+Logs: Flyway applied all 7 migrations to RDS over TLS in 0.9 s. Then the context failed starting
+`redisMessageListenerContainer`: `Connection initialization timed out after 1 second(s)`.
+
+**Diagnosis, in order, each step read from the system rather than assumed:**
+- task definition: `SPRING_DATA_REDIS_SSL_ENABLED=true`, host correct; ElastiCache `available`,
+  TLS `required` — configuration right;
+- no custom connection factory in the code; Boot 4.1.1's metadata has `spring.data.redis.ssl.enabled`;
+- "initialization timed out" (not "connect timed out") → TCP connected → network path fine;
+- the same task took 4 s for its first PostgreSQL TLS connection and ~100 s to start Spring on 0.25
+  vCPU — a 1 s budget for a first TLS handshake was never going to hold;
+- reproduced locally: a proxy delaying first bytes by 2 s → identical message and stack frame.
+
+**Two fixes:** migrate no longer gets `CHESS_REALTIME_FANOUT` (it never needed Valkey); and the
+handshake gets its own 10 s budget while commands keep 1 s (`ValkeyClientConfig`, two tests, both
+mutation-checked). Unit 90, integration 143.
+
+The stack stays up meanwhile (DB, cache, ALB: ~$0.06/h estimated); the re-apply replaces the
+tainted migrate step and continues.
+
+---
+
 ## 2026-10-01 — 7.4: compute, and actuator off the public port
 
 **Found first:** wiring the ALB health check exposed that actuator shared the application port.

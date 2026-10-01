@@ -180,6 +180,28 @@ prevent.
 published list prices; not yet measured): ALB ~$0.03/h, api 2 × $0.0247/h, worker on Spot
 ~$0.005/h, 5 public IPv4 × $0.005/h, data tier ~$0.03/h — **≈ $0.14/h, ≈ $3.40/day.**
 
+## 7.5 — First apply (2026-10-01): what production found
+
+**Attempt 1** (image `d8fbb9b`): 62 resources; RDS 8 m 43 s, ElastiCache 4 m 41 s; the migrate
+task **applied all 7 migrations** over TLS in 0.9 s — then exited 1. Services were never created:
+the migrate-first ordering held, and nothing ran on a half-done deploy. Two causes:
+
+1. **The migrate role connected to Valkey.** Terraform gave every task
+   `CHESS_REALTIME_FANOUT=valkey`, so migrate started a pub/sub listener it has no use for. Now
+   api and worker only. A schema migration must not depend on the cache.
+2. **One Valkey timeout was doing two jobs.** Lettuce bounds connection initialisation (TCP +
+   TLS handshake + HELLO) by the command timeout — 1 s, chosen in Phase 4 so requests fail fast.
+   On 0.25 vCPU the first TLS handshake took longer (the same task needed 4 s for its first
+   PostgreSQL TLS connection, and ~100 s to start Spring). Error:
+   `Connection initialization timed out after 1 second(s)`. **Reproduced locally** with a TCP
+   proxy that answers 2 s late — same message, same frame (`RedisHandshakeHandler`). Fix
+   (`ValkeyClientConfig`): client timeout = `chess.valkey.connection-init-timeout` (10 s) for the
+   handshake; `TimeoutOptions` expires each command after `spring.data.redis.timeout` (1 s).
+   Both tests mutation-checked (no TimeoutOptions → commands wait 10 s; init 1 s → handshake fails).
+
+Why local never showed either: compose's Valkey is plaintext, on a fast machine, and always up.
+The test suite now carries the slow-handshake shape; TLS itself is still exercised only in AWS.
+
 ## Alternatives considered
 
 | Alternative | Why not |

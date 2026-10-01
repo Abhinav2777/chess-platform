@@ -398,6 +398,19 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 7.5 — the first deploy
+
+### "What happened the first time you deployed?"
+The migration step failed — after the migrations had run. The migrate task also started a Valkey
+subscriber it didn't need, and Valkey's connection handshake timed out at one second. Two lessons:
+a migration shouldn't depend on the cache, and one timeout was doing two jobs. Lettuce bounds the
+TLS handshake by the command timeout, and on a quarter-vCPU Fargate task the first handshake took
+longer than a second. I reproduced it locally with a proxy that answers two seconds late, then gave
+the handshake its own ten-second budget while commands keep one second. And the services never
+started on the failed deploy, because they depend on the migrate step.
+
+---
+
 ## Phase 7.4 — compute
 
 ### "Execution role versus task role?"
