@@ -9,6 +9,7 @@ const docker = (cmd) => execSync(`docker ${cmd} chess-valkey`, { stdio: 'pipe' }
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium', headless: true });
 async function user(name) {
   const page = await (await browser.newContext({ viewport: { width: 1100, height: 800 } })).newPage();
+  page.on('pageerror', (e) => console.log(`${name}: uncaught ${e.message}`));
   await page.goto(APP_URL);
   await page.getByRole('button', { name: 'Create an account' }).click();
   await page.getByPlaceholder('username').fill(name);

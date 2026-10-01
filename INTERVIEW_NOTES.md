@@ -400,6 +400,14 @@ locally the image was just `chess-platform:dev`.
 
 ## Phase 7.5 — the first deploy
 
+### "What broke because you deployed on HTTP?"
+Moves. The client generated its idempotency key with crypto.randomUUID, which browsers only expose
+in secure contexts — HTTPS or localhost. Every test ran on localhost, so it always worked; on the
+load balancer's plain-HTTP origin it was undefined and the click handler threw. No server log, no
+console message. I found it by capturing the WebSocket frames — no MOVE was ever sent — and fixed it
+with getRandomValues, which works everywhere. Lesson: HTTP-only had a cost I hadn't priced in, and
+my browser checks now record uncaught page errors.
+
 ### "What happened the first time you deployed?"
 The migration step failed — after the migrations had run. The migrate task also started a Valkey
 subscriber it didn't need, and Valkey's connection handshake timed out at one second. Two lessons:
