@@ -5,6 +5,47 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — The 8.3 PR's image scan: Jackson again
+
+PR run 99856445337, `image` red: CVE-2026-91776 and CVE-2026-91777 (HIGH) in jackson-databind
+3.1.6 — the version the Phase 6 override pins, published after it. Fixed in 3.1.7 and 3.2.3; took
+3.1.7, a patch on the 3.1 line Boot 4.1.1 was built against (no Boot 4.1.2 yet). All Jackson paths
+resolve to 3.1.7; unit 90, integration 146; the image scanned with CI's Trivy settings: clean.
+
+The gate working as intended for the second time on a PR that did not cause the finding
+(cf. OpenSSL, 7.1). The trade-off of pinning a version for a CVE: the pin is now ours to keep
+current until Boot catches up — Dependabot cannot see a Gradle `extra` property (ADR-022).
+
+Local note: Trivy's first local run "failed" with exit 1 — a vulnerability-DB download that could
+not resolve DNS (the temporary forwarder was down), not a finding. Read the output, not the code.
+
+---
+
+## 2026-10-01 — 8.3: forty games through a rolling deploy — Phase 8 done
+
+`loadtest/rolling-deploy.js`: each VU plays a real game (two sockets, random legal moves from the
+server's list), reconnects like the browser, and checks every acknowledged move against the server
+at the end; clocks are checked live. Settled two protocol facts empirically first: stored move ply =
+`MOVE_MADE.ply` = plies after the move; and the first-move abort is real (a probe game created
+minutes earlier refused its first move with 422).
+
+**Runs:** control (8 games, no disruption) green; rolling restart (40 games) green; a contrast
+"crash" with `kubectl delete --grace-period=0 --force` — which turned out not to be one: the kubelet
+still sent SIGTERM, the drain ran, 7 × 1001. A real crash = SIGKILL to the JVM's host PID from the
+kind node (`crictl inspect` → `kill -9`; from inside the container PID 1 ignores it): 6 × 1006 and
+still 20/20 games consistent.
+
+**Caught in my own reporting:** the HPA had scaled 2 → 4 *before* the main run, so "2 pods" was
+wrong; and the first runs lacked p99 and load-generator figures that `docs/perf/README.md` requires.
+Added both to the harness (k6 sampled from /proc — no `/usr/bin/time` here) and re-ran: 40/40
+consistent, 0 clock anomalies, 116 × 1001 / 0 abnormal, moves p50/p95/p99 7/11/13 ms, reconnect
+p99 498 ms, k6 at 0.03 of 16 cores. Also recorded: the re-send path never fired (no move in flight
+at a cut) — not evidence for idempotency; the Phase 3 tests are.
+
+**Hours:** ~3. **Phase 8: ~10 h** against 12–16 h.
+
+---
+
 ## 2026-10-01 — 8.2: on kind, and what the probes had been hiding
 
 **Before any cluster existed**, reading the probe configuration found two bugs that also apply to

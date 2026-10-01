@@ -398,6 +398,27 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 8.3 — proving the deploy
+
+### "How do you know a deploy doesn't lose games?"
+I measured it. A k6 script plays 40 real games over WebSockets; mid-run I restart the deployment.
+Every client that's cut gets a 1001, reconnects with jitter, and resyncs. Afterwards every move any
+player saw acknowledged is compared against the server, and clocks are checked live — they can
+only go down. 40 of 40 games consistent, zero clock anomalies, move round trip p99 13 ms, reconnect
+p99 about half a second, which is the client's deliberate jitter.
+
+### "And if a pod crashes instead?"
+I tested that too — SIGKILL to the JVM, no drain. Clients see an abnormal 1006 instead of 1001, and
+still zero games lost, because moves commit to Postgres before they're acknowledged and clients
+resync from the server. The drain is for a clean handoff, not for correctness. One surprise:
+kubectl delete with grace period zero and force isn't a crash — the kubelet still sends SIGTERM.
+
+### "What didn't your test prove?"
+The idempotent resend never fired — no move happened to be in flight at a cut — so that guarantee
+rests on my integration tests, not this run. And the cluster and load generator shared one laptop.
+
+---
+
 ## Phase 8.2 — Kubernetes manifests
 
 ### "Readiness versus liveness — what's in each of yours?"
