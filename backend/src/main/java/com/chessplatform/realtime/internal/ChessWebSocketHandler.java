@@ -90,6 +90,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
     private final PresenceTracker presence;
     private final MatchmakingFacade matchmaking;
     private final RateLimiter rateLimiter;
+    private final SocketDrain drain;
 
     /**
      * One thread for auth timeouts. These fire rarely and do almost nothing, so a pool
@@ -107,7 +108,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
                                  IdentityFacade identity, GameFacade gameFacade,
                                  RealtimeProperties properties, GameEventPublisher publisher,
                                  PresenceTracker presence, MatchmakingFacade matchmaking,
-                                 RateLimiter rateLimiter, MeterRegistry metrics) {
+                                 RateLimiter rateLimiter, SocketDrain drain, MeterRegistry metrics) {
         this.registry = registry;
         this.sender = sender;
         this.identity = identity;
@@ -117,6 +118,7 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         this.presence = presence;
         this.matchmaking = matchmaking;
         this.rateLimiter = rateLimiter;
+        this.drain = drain;
 
         Gauge.builder("chess.ws.connections.active", registry,
                         GameSessionRegistry::localConnectionCount)
@@ -130,6 +132,12 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        if (drain.isDraining()) {
+            // Still routed here for a moment after shutdown began (endpoint removal is not
+            // instant). Send it on at once rather than serve a socket about to be cut.
+            session.close(SocketDrain.RESTARTING);
+            return;
+        }
         if (registry.unauthenticatedCount() >= properties.maxUnauthenticated()) {
             // Refusing here rather than after auth is the point: the attack is opening
             // sockets and never authenticating.
@@ -462,11 +470,12 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
         if (state != null && state.subscribedGame() != null) {
             releaseGame(state.subscribedGame(), state.userId(), session);
         }
-        if (state != null && state.seeking()) {
+        if (state != null && state.seeking() && !drain.isDraining()) {
             // A seek belongs to the socket that made it: closing the tab leaves the queue
             // now, rather than when the seek's TTL lapses 45 s later and someone has been
             // paired with an empty chair. An instance crash runs no cleanup — that is what
-            // the TTL is for.
+            // the TTL is for. Not during a drain: the player is about to reconnect elsewhere,
+            // and their re-seek finds the entry still queued, join time intact (ADR-016).
             cancelQuietly(state.userId());
         }
         registry.remove(session);
