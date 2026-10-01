@@ -58,6 +58,21 @@ class ManagementPortIntegrationTest extends DeploymentTestSupport {
     }
 
     /**
+     * The management port is reachable only from inside the network (no Service/Ingress on
+     * Kubernetes; on AWS the security group admits only the ALB's health checks), so a metrics
+     * scraper there needs no credentials — network isolation is the access control. Found in
+     * 9.2: the baseline could not read the pods' own histograms (401).
+     */
+    @Test
+    @DisplayName("the management port serves Prometheus metrics to an unauthenticated scraper")
+    void prometheusOnTheManagementPort() throws Exception {
+        HttpResponse<String> scrape = send(managementPort, "/actuator/prometheus", null);
+
+        assertThat(scrape.statusCode()).isEqualTo(200);
+        assertThat(scrape.body()).contains("jvm_memory_used_bytes");
+    }
+
+    /**
      * The tests above run the management server on a random port (DeploymentTestSupport), so on
      * their own they would pass whatever the profile says. This pins the profile itself.
      */

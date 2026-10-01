@@ -83,7 +83,10 @@ EXPOSE 8080
 #                          limp on in an undefined state
 #   enable-native-access   Netty's native loading (ADR-020); Java 25 warns, later blocks
 # Overridable per deployment: set JDK_JAVA_OPTIONS in the task definition.
-ENV JDK_JAVA_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED"
+# 50 %, not 75: the JVM's non-heap measured 212 MB under load (9.3) — at 75 % of a 1 GB container,
+# heap max + non-heap + native exceeds the limit and the kernel kills the process before Java
+# reports anything. Deployments also commit the heap up front (k8s overlay, ECS task definition).
+ENV JDK_JAVA_OPTIONS="-XX:MaxRAMPercentage=50 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED"
 
 # Exec form: the JVM is PID 1 and receives SIGTERM directly, so graceful shutdown
 # (server.shutdown=graceful) actually runs. A shell form would swallow the signal and the

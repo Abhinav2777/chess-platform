@@ -19,7 +19,7 @@ replicas() { kubectl -n chess get deployment api -o jsonpath='{.status.readyRepl
 echo "$(date +%T) api pods ready at start: $(replicas)   (the HPA may change this — recorded, not assumed)"
 
 GAMES=$GAMES PLAY_SECONDS=$PLAY_SECONDS k6 run --quiet \
-  --summary-export "$OUT/rolling-deploy-$stamp.json" rolling-deploy.js > "$OUT/rolling-deploy-$stamp.log" 2>&1 &
+  --summary-export "$OUT/rolling-deploy-$stamp.json" games.js > "$OUT/rolling-deploy-$stamp.log" 2>&1 &
 K6=$!
 
 # The load generator's own CPU and peak memory, sampled from /proc, so a report can show k6 was
