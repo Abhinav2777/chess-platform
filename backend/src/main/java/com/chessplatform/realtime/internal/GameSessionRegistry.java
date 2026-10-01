@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +41,8 @@ public class GameSessionRegistry {
 
     private final Map<UUID, Set<WebSocketSession>> watchers = new ConcurrentHashMap<>();
     private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
+    /** Every open socket, authenticated or not — what a drain has to close (SocketDrain). */
+    private final Map<String, WebSocketSession> open = new ConcurrentHashMap<>();
 
     /**
      * Authenticated sockets by user, for messages addressed to a person rather than a game
@@ -50,6 +53,12 @@ public class GameSessionRegistry {
 
     public void register(WebSocketSession session) {
         sessions.put(session.getId(), new SessionState());
+        open.put(session.getId(), session);
+    }
+
+    /** A snapshot: closing a socket removes it from the registry while this runs. */
+    public List<WebSocketSession> openSessions() {
+        return List.copyOf(open.values());
     }
 
     public SessionState stateOf(WebSocketSession session) {
@@ -97,6 +106,7 @@ public class GameSessionRegistry {
     }
 
     public void remove(WebSocketSession session) {
+        open.remove(session.getId());
         SessionState state = sessions.remove(session.getId());
         if (state != null && state.subscribedGame != null) {
             unsubscribe(state.subscribedGame, session);
