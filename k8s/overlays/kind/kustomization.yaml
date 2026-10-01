@@ -17,9 +17,14 @@ configMapGenerator:
       - SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY=local   # ElasticMQ ignores them; the SDK wants some
       - SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY=local
       - CHESS_MESSAGING_CREATE_QUEUES=true              # ElasticMQ; Terraform owns queues in AWS
-      # Heap from the container limit. 60 %, not the image's 75 %: in 640 Mi, metaspace, code
-      # cache, thread stacks and Netty's direct buffers need the rest — 75 % risked OOMKilled.
-      - JDK_JAVA_OPTIONS=-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED
+      # Memory budget, sized from measurement (Phase 9.3, docs/perf/optimisation-01.md):
+      #   heap 50 % of the limit, committed and touched at startup (Initial = Max, AlwaysPreTouch)
+      #   + non-heap measured at 212 Mi + native (thread stacks, GC, malloc) ~60–100 Mi.
+      # Pre-touching makes the worst-case footprint the everyday one: a budget that cannot hold
+      # it fails at deploy (OOMKilled on start), not months later under load. The previous
+      # 60 % of 640 Mi did exactly that once the heap was pre-touched — and, without it, was
+      # OOM-killed under a stress burst after the heap had grown.
+      - JDK_JAVA_OPTIONS=-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=50 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED
       # Load-test-sized auth limits (Phase 8.3 registers many users from one address).
       - 'SPRING_APPLICATION_JSON={"chess":{"ratelimit":{"policies":{"login-ip":{"capacity":2000,"period":"1m"},"login-user":{"capacity":100,"period":"1m"},"register-ip":{"capacity":2000,"period":"1m"}}}}}'
 

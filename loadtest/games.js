@@ -1,4 +1,6 @@
-// Phase 8.3 (ADR-024): live games across a rolling deploy.
+// Live games over WebSockets — the scenario for Phase 8.3 (a rolling deploy under load, run by
+// rolling-deploy.sh) and Phase 9.2 (the baseline, run by baseline.sh). Named rolling-deploy.js
+// until 9.2.
 //
 // Each VU plays ONE real game: two players, two WebSockets, random legal moves (the server sends
 // the legal list). When a socket is closed — 1001 from SocketDrain during a rollout — the player
@@ -14,7 +16,7 @@
 //
 // Run with loadtest/rolling-deploy.sh, which triggers `kubectl rollout restart` mid-test.
 import http from 'k6/http';
-import { check } from 'k6';
+import { check, sleep } from 'k6';
 import { WebSocket } from 'k6/websockets';
 import { setTimeout, clearTimeout } from 'k6/timers';
 import { Counter, Trend } from 'k6/metrics';
@@ -23,6 +25,13 @@ const BASE = __ENV.BASE_URL || 'http://localhost';
 const WS_URL = BASE.replace(/^http/, 'ws') + '/ws';
 const GAMES = Number(__ENV.GAMES || 40);
 const PLAY_SECONDS = Number(__ENV.PLAY_SECONDS || 180);
+// VU starts spread over this many seconds (9.2). All at once, 500 VUs register 1,000 users in the
+// same second, and the first minute measures bcrypt, not chess.
+const RAMP_SECONDS = Number(__ENV.RAMP_SECONDS || 0);
+// Think time between a player's turn arriving and their move (ms). Human-like by default; 9.3
+// shortens it to drive the move rate up and find what saturates first.
+const THINK_MIN_MS = Number(__ENV.THINK_MIN_MS || 800);
+const THINK_MAX_MS = Number(__ENV.THINK_MAX_MS || 2000);
 const CLOCK_TOLERANCE_MS = 5;
 
 const goingAway = new Counter('ws_closes_going_away');      // 1001 — expected during a rollout
@@ -43,7 +52,7 @@ export const options = {
   // p99 too: docs/perf/README.md requires p50/p95/p99, and k6's default summary stops at p95.
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
   scenarios: {
-    games: { executor: 'per-vu-iterations', vus: GAMES, iterations: 1, maxDuration: `${PLAY_SECONDS + 120}s` },
+    games: { executor: 'per-vu-iterations', vus: GAMES, iterations: 1, maxDuration: `${PLAY_SECONDS + RAMP_SECONDS + 120}s` },
   },
   thresholds: {
     games_inconsistent: ['count==0'],
@@ -73,6 +82,7 @@ function register(name) {
 }
 
 export default function () {
+  if (RAMP_SECONDS > 0) sleep(((__VU - 1) / GAMES) * RAMP_SECONDS);
   const tag = `${__VU}${Date.now().toString(36).slice(-6)}`;
   const names = { WHITE: `lw${tag}`, BLACK: `lb${tag}` };
   const tokens = { WHITE: register(names.WHITE), BLACK: register(names.BLACK) };
@@ -211,7 +221,8 @@ function schedule(p, game) {
   if (game.ended) return;
   if (Date.now() > game.deadline) return endGame(game);
   if (game.over || game.sideToMove !== p.side || p.pending || p.moveTimer || !game.legal) return;
-  p.moveTimer = setTimeout(() => { p.moveTimer = null; move(p, game); }, 800 + Math.random() * 1200);
+  p.moveTimer = setTimeout(() => { p.moveTimer = null; move(p, game); },
+    THINK_MIN_MS + Math.random() * (THINK_MAX_MS - THINK_MIN_MS));
 }
 
 function move(p, game) {

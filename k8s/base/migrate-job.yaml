@@ -34,8 +34,10 @@ spec:
             # No CHESS_REALTIME_FANOUT: a migration must not depend on Valkey (Phase 7.5).
             - { name: SPRING_PROFILES_ACTIVE, value: "k8s,migrate" }
           resources:
-            requests: { cpu: 100m, memory: 512Mi }
-            limits: { memory: 512Mi }
+            # 384 Mi heap (50 %, pre-touched) + ~200 Mi non-heap + native. 512 Mi was OOM-killed on
+            # every attempt once the heap was pre-touched (9.3).
+            requests: { cpu: 100m, memory: 768Mi }
+            limits: { memory: 768Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
