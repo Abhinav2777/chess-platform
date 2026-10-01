@@ -5,6 +5,41 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — 9.2–9.3: a flat baseline, then the stress that killed both pods
+
+**Tooling:** `games.js` (renamed; ramp + think-time knobs), `server-metrics.py` (scrapes pods via
+the API server's pod proxy; percentiles from histogram-bucket deltas; pool, CPU, memory breakdown,
+restart counts), `baseline.sh` (HPA removed, replicas fixed, k6 headroom, hard SIGINT stop).
+**Found on the way:** actuator on the management port answered the scraper with 401 — it is
+network-isolated, so it is now open to whatever can reach it (tests incl. a unit test of the port
+decision; the shared-port local profile stays protected); and a terminating pod still reports phase
+Running — the scraper hit a draining old pod (401) until it filtered on readiness and deletion.
+
+**Baseline** (`docs/perf/baseline.md`): 100 / 500 / 1,000 sockets, all games consistent, MOVE server
+p99 ≈ 6.6 ms throughout, k6 ≤ 0.18 of 16 cores. Pool 9/10 and memory 594/640 Mi at the top.
+Latency was lower at higher load even warm — recorded as not separated (likely CPU power states).
+
+**Stress** (0.1–0.3 s think, ~1,460 moves/s): the pool saturated (pending 159), then **both API pods
+were OOMKilled 3 s apart**, four times each — a total outage loop. Heap max (371 Mi) + measured
+non-heap (212 Mi) + native exceeds 640 Mi. An identical run on fresh pods did not die (heap committed
+~190 Mi) — latent, history-dependent. Made deterministic by pre-touching the heap: the old budget
+OOM-kills every migrate attempt and the API at startup (and `maxUnavailable: 0` kept serving).
+
+**The one change** (owner's choice, `docs/perf/optimisation-01.md`): 1 Gi limit, heap 50 %
+committed and touched at start; migrate 768 Mi; image default 50 %; the same options in the ECS task
+definitions. After: same stress, 0 restarts, full heap (495 Mi) held throughout, peak 908/1024 Mi.
+No throughput change — the pool is the next limit, kept as a separate change. Headroom ~11 %, not the
+~20 % I estimated: native memory grew. Written down, not rounded up.
+
+Also: a k6 I had "killed" (SIGTERM = graceful) sat holding 0.4 GB for an hour — force-killed; the
+harness now stops k6 with `timeout -s INT`, which also lets it write its summary.
+
+Unit 95, integration 148.
+
+**Hours:** ~5.5 (9.2 + 9.3).
+
+---
+
 ## 2026-10-01 — 9.1: one trace from a resign click to the rating update
 
 Phase 9 decisions: Boot 4 native OpenTelemetry (not the agent), kind + one AWS session.
