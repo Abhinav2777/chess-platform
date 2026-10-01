@@ -21,6 +21,32 @@ not resolve DNS (the temporary forwarder was down), not a finding. Read the outp
 
 ---
 
+## 2026-10-01 — Interlude: a UI pass (owner's request)
+
+The owner found the UI below average. Weighed it first against CLAUDE.md (frontend is priority
+10/10; ~110 h used): agreed a 6–8 h box, focused scope, dark lichess-like style (ADR-025).
+
+Screenshotted the old UI against the kind backend before touching anything; listed every selector
+and text the browser checks depend on, so the redesign keeps them on purpose. Pieces: the Cburnett
+SVG set — the licence read from the Wikimedia API (CC BY-SA 3.0), not from memory; Wikimedia
+throttled the first download until requests carried a descriptive User-Agent.
+
+Built: tokens + one stylesheet, app shell with sign-out, sign-in card, lobby cards, game screen with
+player bars, paired move list, status banner, resign confirmation, game-over dialog, check highlight
+(from the server's SAN), phone layout. Iterated against kind with the Vite dev server (the backend's
+CORS/WS origins already allow :5173) — no image rebuild per change.
+
+Verified: build clean; `e2e:lobby` green on dev, then on the production image through kind's
+ingress; `e2e:outage` green on bootRun. One timeout on the first post-deploy run that four later
+runs (including a reproduced full redeploy) did not repeat — step unknown because I kept only the
+tail of the output. Recorded, not explained.
+
+Also fixed: README status still said "Phase 0, no code" and "Java 21".
+
+**Hours:** ~4.
+
+---
+
 ## 2026-10-01 — 8.3: forty games through a rolling deploy — Phase 8 done
 
 `loadtest/rolling-deploy.js`: each VU plays a real game (two sockets, random legal moves from the
