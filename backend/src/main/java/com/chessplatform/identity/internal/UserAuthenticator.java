@@ -51,7 +51,11 @@ public class UserAuthenticator {
         this.passwordEncoder = passwordEncoder;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Not transactional, on purpose: the lookup is the repository's own short read, and the
+     * deliberately slow bcrypt comparison then runs with no connection held (Phase 9.4 — inside a
+     * transaction it kept a pooled connection idle for the whole hash).
+     */
     public User authenticate(String rawUsername, String rawPassword) {
         String username = rawUsername.strip().toLowerCase(Locale.ROOT);
         Optional<User> candidate = users.findByUsername(username);
