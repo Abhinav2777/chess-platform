@@ -5,6 +5,22 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 — The 8.3 PR's image scan: Jackson again
+
+PR run 99856445337, `image` red: CVE-2026-91776 and CVE-2026-91777 (HIGH) in jackson-databind
+3.1.6 — the version the Phase 6 override pins, published after it. Fixed in 3.1.7 and 3.2.3; took
+3.1.7, a patch on the 3.1 line Boot 4.1.1 was built against (no Boot 4.1.2 yet). All Jackson paths
+resolve to 3.1.7; unit 90, integration 146; the image scanned with CI's Trivy settings: clean.
+
+The gate working as intended for the second time on a PR that did not cause the finding
+(cf. OpenSSL, 7.1). The trade-off of pinning a version for a CVE: the pin is now ours to keep
+current until Boot catches up — Dependabot cannot see a Gradle `extra` property (ADR-022).
+
+Local note: Trivy's first local run "failed" with exit 1 — a vulnerability-DB download that could
+not resolve DNS (the temporary forwarder was down), not a finding. Read the output, not the code.
+
+---
+
 ## 2026-10-01 — 8.3: forty games through a rolling deploy — Phase 8 done
 
 `loadtest/rolling-deploy.js`: each VU plays a real game (two sockets, random legal moves from the
