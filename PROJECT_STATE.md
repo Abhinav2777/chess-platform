@@ -74,18 +74,26 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 7 — AWS deployment — **complete** (next: Phase 8 — Kubernetes) |
-| **Phase status** | **Phase 7 complete.** App stack applied, verified in a browser, destroyed; bootstrap stack live (~$0.05/mo est.). |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done) |
-| **Cumulative hours (estimated)** | ~100 of 135–175 |
+| **Current phase** | Phase 8 — Kubernetes (kind, Kustomize — ADR-024) |
+| **Phase status** | 8.1 done. Next: kind cluster and manifests. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~2.5 of 12–16 |
+| **Cumulative hours (estimated)** | ~102.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | Phase 8 — Kubernetes: design and decisions first (§10) |
+| **Next milestone** | 8.2 — kind cluster + Kustomize manifests (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 8 — Milestone 8.1 (2026-10-01): graceful WebSocket drain
+
+- `SocketDrain`: readiness off → 1001 GOING_AWAY to every socket → newcomers bounced, seeks kept;
+  runs before the web server's graceful shutdown. Baseline without it: 1006.
+- Client unchanged (full-jitter reconnect + snapshot resync already sufficient).
+- Unit 90, integration 145.
+
 
 ### Phase 7 — Milestone 7.5 (2026-10-01): applied, verified, destroyed — **Phase 7 complete**
 
@@ -725,16 +733,14 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase-boundary archive** after this PR merges:
-   `git archive --format=tar.gz -o ../chess-platform-M7-2026-10-01.tar.gz origin/main`
-2. **2026-10-02:** read the 7.5 session's actual cost in Cost Explorer; add it to §12.
-3. **Phase 8 — Kubernetes (12–16 h):** design first. Decisions needed: kind locally only vs a
-   short EKS window (~$0.10/h control plane + nodes); manifests vs Helm vs Kustomize; how
-   probes, graceful shutdown and the migrate Job map from ECS.
-4. Carried to Phase 9: JVM start time on fractional vCPU (60–122 s measured — AOT cache /
-   Spring AOT / CRaC / more CPU at boot); per-connection logging or metrics with the task ID
-   (cross-instance delivery could not be attributed per socket on AWS); worker health check.
-5. **Owner:** MFA on IAM user `abhinav` (deferred).
+1. **Owner:** install `kind`, `kubectl` (and `helm` only if we consume a chart for ingress-nginx —
+   a static manifest may do). Free memory before 8.2: the cluster needs ~4.5–5 GB.
+2. **8.2 — kind + Kustomize:** images preloaded with `kind load` (this machine's containers have no
+   internet egress); in-cluster PostgreSQL, Valkey, ElasticMQ; migrate Job gating the rollout;
+   startup/readiness/liveness probes on the management port; preStop sleep; requests without CPU
+   limits; `maxUnavailable: 0`; PDB; HPA on CPU (with its limits stated).
+3. **8.3 — k6 across a rolling restart:** zero lost games, clocks consistent, reconnect time measured.
+4. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
 
 ---
 
