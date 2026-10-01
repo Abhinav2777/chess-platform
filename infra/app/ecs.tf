@@ -17,6 +17,10 @@ locals {
     { name = "SPRING_DATA_REDIS_SSL_ENABLED", value = "true" }, # ElastiCache: TLS required (7.3)
     # ADR-023: plain HTTP, so browsers would drop a Secure cookie. Remove with HTTPS.
     { name = "CHESS_AUTH_REFRESH_COOKIE_SECURE", value = "false" },
+    # Memory budget (9.3, docs/perf/optimisation-01.md): the image default (75 % heap of 1024 MB =
+    # 768) + 212 MB measured non-heap + native exceeds the task. 50 %, committed and touched at
+    # start, so a budget that cannot hold the worst case fails at deploy instead of under load.
+    { name = "JDK_JAVA_OPTIONS", value = "-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=50 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED" },
   ]
 
   # ECS reads these at task start, from Secrets Manager, into environment variables. The
