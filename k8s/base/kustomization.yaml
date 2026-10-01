@@ -1,0 +1,12 @@
+# The application, environment-agnostic. An overlay supplies the ConfigMap `chess-config` and the
+# Secret `chess-secrets` (and, on kind, the dependencies).
+namespace: chess
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: chess-platform
+resources:
+  - namespace.yaml
+  - api.yaml
+  - worker.yaml
+  - migrate-job.yaml
+  - ingress.yaml
