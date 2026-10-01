@@ -78,6 +78,8 @@ dependencies {
     runtimeOnly(libs.postgresql)
 
     implementation(libs.bundles.observability)
+    implementation(libs.spring.opentelemetry)     // traces: Observation -> OTel -> OTLP (ADR-026)
+    implementation(libs.datasource.micrometer)    // a span per JDBC query
     implementation(libs.chesslib)
 
     // Phase 5: SQS via Spring Cloud AWS 4.x (ADR-020, amending ADR-011). The AWS SDK BOM is
@@ -93,6 +95,7 @@ dependencies {
     testImplementation(libs.assertj)
     testImplementation(libs.testcontainers.junit)
     testImplementation(libs.testcontainers.postgres)
+    testImplementation(libs.otel.sdk.testing)    // InMemorySpanExporter: assert on real spans
 }
 
 // ---------------------------------------------------------------------------
