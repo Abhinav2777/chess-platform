@@ -1,6 +1,6 @@
 # ADR-024: Kubernetes on kind, and a graceful WebSocket drain
 
-**Status:** Accepted for 8.1–8.2; the 8.3 section is added when it is built ·
+**Status:** Accepted — Phase 8 complete (8.1–8.3) ·
 **Date:** 2026-10-01
 **Builds on:** ADR-007 (snapshot recovery), ADR-009 (socket auth), ADR-016 (seeks), ADR-021
 (one image, three roles), ADR-023 (the ECS deployment this mirrors).
@@ -92,6 +92,23 @@ ingress-nginx green (pair 0.79 s, rating push 1.33 s); `/actuator` not routed; p
 details; idle memory api 372–375 Mi of 640 Mi, worker 358 Mi. **Rolling restart with a live socket:**
 closed `1001 "Server restarting, please reconnect"`, live again on a new pod 0.5 s later; ready
 endpoints never below 2 (17 samples).
+
+## 8.3 — The demonstration
+
+`loadtest/rolling-deploy.js` (k6): 40 real games (80 sockets) playing random legal moves, players
+that reconnect like the browser and re-send an in-flight move with its idempotency key; at 60 s
+`kubectl rollout restart`; every game then checked move-by-move against the server, clocks checked
+live. **Result: 40/40 games consistent, 0 clock anomalies, 116 × 1001 and 0 abnormal closes,
+moves p99 13 ms, reconnect p99 498 ms (the client's jitter), k6 at 0.03 of 16 cores.** Report:
+`docs/perf/2026-10-01-rolling-deploy-kind.md`.
+
+**Contrast, a crash (SIGKILL):** 6 × 1006, still 20/20 games consistent. Correctness rests on
+PostgreSQL commits, idempotency keys and snapshot resync; the drain makes the handoff clean.
+`kubectl delete --grace-period=0 --force` turned out not to be a crash (the kubelet still sends
+SIGTERM).
+
+**Recorded honestly:** the re-send path was never exercised (no move in flight at a cut); the HPA
+had scaled to 4 pods before the measured run; cluster and generator share one host.
 
 ## Interview angle
 

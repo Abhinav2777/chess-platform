@@ -274,7 +274,7 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 
 ---
 
-### Phase 8 — Kubernetes · 12–16 h · Weeks 13–14 — **IN PROGRESS (8.1–8.2 done, ~7 h)**
+### Phase 8 — Kubernetes · 12–16 h · Weeks 13–14 — **COMPLETE (~10 h)**
 
 **Decisions (owner, 2026-10-01 — ADR-024):** kind only, no EKS window; Kustomize.
 
@@ -282,7 +282,7 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 |---|---|---|
 | 8.1 | Graceful WebSocket drain (readiness off → 1001 GOING_AWAY → drain), tests first | ✅ ~2.5 h |
 | 8.2 | kind cluster + Kustomize manifests: Deployments, migrate Job, Service, Ingress, probes (startup/readiness/liveness), resources, rolling update, PDB, HPA, preStop | ✅ ~4.5 h — two readiness bugs fixed |
-| 8.3 | k6: live games across `kubectl rollout restart` — zero lost games, clocks consistent | |
+| 8.3 | k6: live games across `kubectl rollout restart` — zero lost games, clocks consistent | ✅ ~3 h — 40/40 games, 0 clock anomalies; crash contrast too |
 
 
 **MU:** readiness vs liveness (different endpoints, different meanings) · requests vs
@@ -361,6 +361,17 @@ explaining one afterwards.
 | **Schedule status** | **On track, at the high edge for Phase 3.** 3.3 must fit in ~2–6 h to stay inside the 16–20 h budget. |
 | **Scope status** | **On track.** The abort rule was already in Phase 3's MI list; early-resignation-aborts was added inside it because it closes the same loophole with four lines. No P2 feature built. |
 | **Recommended adjustment** | Keep 3.3 to closeout only. If threefold repetition threatens the budget, it stays recorded debt rather than stretching Phase 3 — the concurrency verifications matter more. |
+
+## Time checkpoint — end of Phase 8
+
+| | |
+|---|---|
+| **Estimated time used** | ~110 h (through Phase 7 ~100, Phase 8 ~10) |
+| **Estimated remaining** | ~25–65 h of the 135–175 plan |
+| **Schedule status** | **On track** — Phase 8 under its 12–16 h, helped by skipping EKS (owner's choice). |
+| **Scope status** | **On track** — done-when met and measured: a rolling deploy under 40 live games, zero lost games, zero clock anomalies (`docs/perf/2026-10-01-rolling-deploy-kind.md`). EKS skipped (ADR-024). |
+| **What it found** | The readiness probe never saw the drain, and listed Valkey — a Valkey outage would have pulled every instance (ECS too). A blank page from a proxy reporting the wrong port. `--grace-period=0 --force` is not a crash. |
+| **Recommended adjustment** | Phase 9 starts from measured questions: per-pod CPU under load (what scaled the HPA), JVM start on small CPU, socket-to-pod attribution, and capacity on kind before deciding whether an AWS load-test session is worth its cost. |
 
 ## Time checkpoint — end of Phase 7
 

@@ -14,5 +14,6 @@ Each report must state:
 - p50 / p95 / p99, not just an average
 - CPU and memory headroom **on the load generator**, to prove it wasn't the bottleneck
 
-Empty until Phase 9. That is the correct state right now, and it stays that way until
-something is actually measured.
+## Reports
+
+- [2026-10-01 — rolling deploy under live games, kind](2026-10-01-rolling-deploy-kind.md) (Phase 8.3)
