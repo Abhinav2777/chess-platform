@@ -395,6 +395,14 @@ unaffected.
 `docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
+### Deployed (plain HTTP): a click does nothing — no request, no console error
+
+**Seen:** 2026-10-01, moves on the ALB. **Cause:** a secure-context-only browser API
+(`crypto.randomUUID`, also `crypto.subtle`, `navigator.clipboard`, service workers) is undefined
+on `http://` origins other than localhost; the handler throws. **Check:** in the page,
+`isSecureContext`. **Find:** listen for `pageerror` (Playwright) or watch DevTools → Console with
+"Preserve log"; console listeners alone miss handler exceptions. Fixed for move IDs (`uuid.ts`).
+
 ### ECS task exits: `Connection initialization timed out after 1 second(s)` (Valkey)
 
 **Seen:** 2026-10-01, first apply, migrate task on 0.25 vCPU. **Cause:** Lettuce bounded the

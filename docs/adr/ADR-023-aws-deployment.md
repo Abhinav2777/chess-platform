@@ -202,6 +202,18 @@ the migrate-first ordering held, and nothing ran on a half-done deploy. Two caus
 Why local never showed either: compose's Valkey is plaintext, on a fast machine, and always up.
 The test suite now carries the slow-handshake shape; TLS itself is still exercised only in AWS.
 
+**Attempt 2** (image `df3df89`): migrate, both services and the health checks all green — two API
+tasks in two AZs, worker on Spot. From outside: SPA 200; `/actuator/*` not routed; 8081 and direct
+task IPs unreachable; malformed JSON 400; cookie without `Secure`. **The browser check failed at the
+first move.** Frame capture: pairing, snapshot and presence flowed both ways; white's click sent
+**no** `MOVE` frame. The client built its idempotency key with `crypto.randomUUID()` — which
+browsers expose **only in secure contexts** (HTTPS or localhost). Every earlier run was on
+localhost; on the plain-HTTP ALB origin it was `undefined` and the click handler threw. This is a
+cost of the HTTP-only decision, paid in a place no server-side test could see. Fix: a v4 UUID from
+`crypto.getRandomValues` (available everywhere), one code path for every context; verified inside
+the live insecure page (1,000 valid, unique IDs). The e2e scripts now also record `pageerror` —
+an exception in an event handler is not a console message, which is why the first probe saw nothing.
+
 ## Alternatives considered
 
 | Alternative | Why not |
