@@ -1,0 +1,22 @@
+# One host, one origin: the SPA, /api and /ws all go to the api Service (ADR-023's same-origin
+# design, carried over). WebSockets need no annotation in ingress-nginx; the timeouts do.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chess
+  annotations:
+    # nginx closes an idle proxied connection after this. The client PINGs every 25 s, so 60 s
+    # keeps live games open and reaps dead ones within a minute — the ALB's setting (ADR-023).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port: { name: http }
