@@ -49,7 +49,9 @@ repositories {
 // Security overrides of Boot-managed versions (Phase 6, found by the first Trivy scan).
 //
 // Boot 4.1.1 manages Tomcat 11.0.24 (3 CRITICAL CVEs, fixed in 11.0.25) and Jackson
-// 3.1.5 / 2.21.5 (HIGH, fixed in 3.1.6 / 2.21.6); no Boot 4.1.2 existed yet. Boot's own
+// 3.1.5 / 2.21.5 (HIGH, fixed in 3.1.6 / 2.21.6); no Boot 4.1.2 existed yet.
+// 2026-10-01: Jackson 3.1.6 -> 3.1.7 for CVE-2026-91776 / -91777 (HIGH, jackson-databind), found
+// by the image scan on the 8.3 PR. Patch release on Boot's 3.1 line, not the 3.2 minor. Boot's own
 // property names, so the rest of its dependency management is untouched. (A Jackson 2
 // override also lived here until logstash-logback-encoder 9 moved to Jackson 3 and took
 // Jackson 2 databind off the classpath — 2026-09-30.)
@@ -59,7 +61,7 @@ repositories {
 // tells us when the next one is needed.
 // ---------------------------------------------------------------------------
 extra["tomcat.version"] = "11.0.25"
-extra["jackson-bom.version"] = "3.1.6"
+extra["jackson-bom.version"] = "3.1.7"
 
 dependencies {
     implementation(libs.spring.web)

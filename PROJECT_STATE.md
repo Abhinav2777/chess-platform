@@ -74,18 +74,25 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 8 — Kubernetes (kind, Kustomize — ADR-024) |
-| **Phase status** | 8.1–8.2 done; the cluster runs on kind. Next: the k6 demonstration. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~7 of 12–16 |
-| **Cumulative hours (estimated)** | ~107 of 135–175 |
+| **Current phase** | Phase 8 — Kubernetes — **complete** (next: Phase 9 — tracing, load testing, optimisation) |
+| **Phase status** | **Phase 8 complete.** Rolling deploy under live games measured on kind: zero lost games. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done) |
+| **Cumulative hours (estimated)** | ~110 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 8.3 — k6 across a rolling restart (§10) |
+| **Next milestone** | Phase 9 — design first (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 8 — Milestone 8.3 (2026-10-01): the demonstration — **Phase 8 complete**
+
+- k6: 40 live games across `kubectl rollout restart` — 40/40 consistent, 0 clock anomalies,
+  0 abnormal closes; crash contrast (SIGKILL): 1006s, still 0 games lost.
+- Report: `docs/perf/2026-10-01-rolling-deploy-kind.md` (the first file in `docs/perf/`).
+
 
 ### Phase 8 — Milestone 8.2 (2026-10-01): kind + Kustomize
 
@@ -744,11 +751,15 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **8.3 — k6 across a rolling restart:** N concurrent games over WebSockets (k6 v2.1.0 installed),
-   `kubectl rollout restart deployment/api` mid-run; assert zero lost games (every move persisted,
-   in order), clocks consistent with the server, every disconnect a 1001 followed by a reconnect;
-   measure reconnect time and error counts. Keep the kind cluster up (memory: ~5 GB).
-2. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
+1. **Phase-boundary archive** after the 8.x PRs merge:
+   `git archive --format=tar.gz -o ../chess-platform-M8-2026-10-01.tar.gz origin/main`
+2. **Free memory:** `kind delete cluster --name chess` when not testing (~5 GB); recreating takes
+   ~2 min (`k8s/cluster-up.sh` + `k8s/deploy.sh <tag>`).
+3. **Phase 9 — tracing, load testing, optimisation (10–14 h):** design first. Measured questions
+   already waiting: per-pod CPU under load (what scaled the HPA), JVM start on small CPU,
+   socket-to-pod attribution, capacity on kind; then decide whether one AWS load-test session
+   (apply → measure → destroy) is worth its few dollars.
+4. 2026-10-02: read the 7.5 session's cost in Cost Explorer (§12). Owner: MFA (deferred).
 
 ---
 
@@ -771,6 +782,8 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | kind: idle pod memory | api 372–375 Mi (limit 640 Mi), worker 358 Mi, postgres 60 Mi, elasticmq 68 Mi, valkey 9 Mi | Same | `kubectl top pods` |
 | Browser flow through ingress-nginx (kind) | pair 0.79 s; rating shown 1.33 s after resignation | Same | `APP_URL=http://localhost npm run e2e:lobby` |
 | Rolling restart, one live socket | closed 1001 with reconnect reason → live on a new pod 0.5 s later; ready endpoints ≥ 2 throughout (17 samples) | Same | node WebSocket probe + EndpointSlice polling |
+| Rolling deploy under live games (kind) | 40 games / 80 sockets, 4 API pods, `rollout restart` at 60 s: 40/40 games consistent, 0 clock anomalies, 116 × 1001 / 0 abnormal; moves p50/p95/p99 7/11/13 ms; reconnect p50/p95/p99 217/490/498 ms; rollout 42 s; k6 0.03 of 16 cores | kind, dev machine, 2026-10-01 | `docs/perf/2026-10-01-rolling-deploy-kind.md` |
+| Crash (SIGKILL one API JVM) under live games | 20 games: 6 × 1006, 20/20 consistent, 0 clock anomalies; container ready again in 9 s | Same | same report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
 | Game end → rating shown to both players (browser) | 0.8 s (outbox → relay tick → ElasticMQ → worker → commit → push) | Headless Chromium, local, 2026-09-29 | `npm run e2e:lobby` |
 | Backlog drain on worker start | 7 queued events rated within 80 ms of startup | Local, ElasticMQ, 2026-09-29 | bootRun log (DEVELOPMENT_LOG, 5.2) |
