@@ -39,8 +39,9 @@ spec:
             - { name: SPRING_PROFILES_ACTIVE, value: "k8s,worker" }
             - { name: CHESS_REALTIME_FANOUT, value: valkey }   # it publishes RATING_UPDATED
           resources:
-            requests: { cpu: 100m, memory: 640Mi }
-            limits: { memory: 640Mi }
+            # Same JVM, same arithmetic as the api (9.3).
+            requests: { cpu: 100m, memory: 1Gi }
+            limits: { memory: 1Gi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

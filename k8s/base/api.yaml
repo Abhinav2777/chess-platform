@@ -50,8 +50,10 @@ spec:
             # enforced by CFS throttling in 100 ms periods; a JVM's GC and JIT threads burst, get
             # throttled, and latency spikes while the node has idle cores. Memory: limit =
             # request — memory is not compressible, and an overcommitted node OOM-kills.
-            requests: { cpu: 250m, memory: 640Mi }
-            limits: { memory: 640Mi }
+            # 1 Gi = 512 Mi heap (50 %, pre-touched) + 212 Mi measured non-heap + native, with
+            # ~20 % to spare (9.3). 640 Mi was OOM-killed under load (docs/perf/optimisation-01.md).
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { memory: 1Gi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

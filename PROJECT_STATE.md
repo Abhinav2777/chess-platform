@@ -75,17 +75,25 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 9 — tracing, load testing, optimisation |
-| **Phase status** | 9.1 done (tracing end to end). Next: the baseline. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~3.5 of 10–14 |
-| **Cumulative hours (estimated)** | ~117.5 of 135–175 |
+| **Phase status** | 9.1–9.3 done; done-when files exist. 9.4 (AWS session) optional, chosen by the owner. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~9 of 10–14 |
+| **Cumulative hours (estimated)** | ~123 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 9.2 — baseline at 100 / 500 / 1,000 connections (§10) |
+| **Next milestone** | 9.4 — the AWS session (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 9 — Milestones 9.2–9.3 (2026-10-01): baseline and one optimisation
+
+- `docs/perf/baseline.md` (flat to 1,000 sockets) and `docs/perf/optimisation-01.md` (pool saturates;
+  memory budget OOM-killed both pods; resized from measurement, pre-touched heap; 0 restarts after).
+- Actuator open on the isolated management port (scrapers); k8s/ECS memory settings updated.
+  Unit 95, integration 148.
+
 
 ### Phase 9 — Milestone 9.1 (2026-10-01): tracing
 
@@ -765,13 +773,13 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **9.2 — baseline:** k6 games at 100 / 500 / 1,000 connections on kind (HPA off, replicas fixed),
-   with server-side `chess.ws.message` histograms and Hikari/JVM metrics in Grafana alongside k6;
-   load-generator headroom recorded → `docs/perf/baseline.md`.
-2. **9.3 — one optimisation:** whichever bottleneck 9.2 finds (candidates already visible: Hikari
-   pool size 10; the relay's 1 s poll for rating latency) → `docs/perf/optimisation-01.md`.
-3. **9.4 — AWS session:** re-apply ECS, run k6 as a one-off task inside the VPC, compare, destroy.
-4. Owner: MFA (deferred). Cost Explorer for the 7.5 session (§12).
+1. **9.4 — AWS session (owner chose it; ~2–3 h, ~$1):** apply the app stack with the new memory
+   settings (first deploy of them on ECS), run `games.js` as a one-off ECS task inside the VPC at the
+   baseline levels, compare with kind, destroy, checklist. Watch: 0.5 vCPU Fargate tasks will saturate
+   CPU long before the laptop did.
+2. Candidates recorded, not built: pool size or load shedding (next limit); relay poll → LISTEN/NOTIFY
+   (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress).
+3. **Phase 10 — hardening & docs.** Owner: MFA (deferred); Cost Explorer for 7.5 (§12).
 
 ---
 
@@ -794,6 +802,8 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | kind: idle pod memory | api 372–375 Mi (limit 640 Mi), worker 358 Mi, postgres 60 Mi, elasticmq 68 Mi, valkey 9 Mi | Same | `kubectl top pods` |
 | Browser flow through ingress-nginx (kind) | pair 0.79 s; rating shown 1.33 s after resignation | Same | `APP_URL=http://localhost npm run e2e:lobby` |
 | Rolling restart, one live socket | closed 1001 with reconnect reason → live on a new pod 0.5 s later; ready endpoints ≥ 2 throughout (17 samples) | Same | node WebSocket probe + EndpointSlice polling |
+| Baseline, live games (kind, 2 API pods) | 100 / 500 / 1,000 sockets: 28 / 139 / 279 moves/s; MOVE server p99 9.6 (cold) / 6.6 / 6.7 ms; all games consistent | kind, dev machine, 2026-10-01 | `docs/perf/baseline.md` |
+| Stress, before → after memory budget | ~1,460 moves/s: before OOMKilled 4×/pod (grown heap), after 0 restarts at full heap; peak 908/1024 Mi; pool saturated in both (p99 ~380–410 ms) | Same | `docs/perf/optimisation-01.md` |
 | Rolling deploy under live games (kind) | 40 games / 80 sockets, 4 API pods, `rollout restart` at 60 s: 40/40 games consistent, 0 clock anomalies, 116 × 1001 / 0 abnormal; moves p50/p95/p99 7/11/13 ms; reconnect p50/p95/p99 217/490/498 ms; rollout 42 s; k6 0.03 of 16 cores | kind, dev machine, 2026-10-01 | `docs/perf/2026-10-01-rolling-deploy-kind.md` |
 | Crash (SIGKILL one API JVM) under live games | 20 games: 6 × 1006, 20/20 consistent, 0 clock anomalies; container ready again in 9 s | Same | same report |
 | JVM clock skew has no effect on game timing | Application `Clock` +10 min: moves charged < 1 s, no expiry, REST clocks full | Dev machine, 2026-09-28 | `ClockSkewIntegrationTest` |
