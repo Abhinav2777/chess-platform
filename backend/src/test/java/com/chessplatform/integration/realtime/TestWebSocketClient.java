@@ -136,6 +136,16 @@ class TestWebSocketClient extends TextWebSocketHandler implements AutoCloseable 
         return (Map<String, Object>) envelope.payload();
     }
 
+    /** How the server closed the socket; waits up to {@code millis} for the close to arrive. */
+    CloseStatus awaitCloseStatus(long millis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + millis;
+        while (System.currentTimeMillis() < deadline && closeStatus == null) {
+            Thread.sleep(20);
+        }
+        assertThat(closeStatus).as("the server should have closed the socket").isNotNull();
+        return closeStatus;
+    }
+
     void assertClosedWithin(long millis) throws InterruptedException {
         long deadline = System.currentTimeMillis() + millis;
         while (System.currentTimeMillis() < deadline && (session.isOpen())) {
