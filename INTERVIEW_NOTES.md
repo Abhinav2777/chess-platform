@@ -7,6 +7,147 @@ is the rehearsal script.
 **Rule:** if you cannot answer a question here without reading it, that part of the
 system is not finished, regardless of whether the code works.
 
+**Numbers:** every figure below is in `PROJECT_STATE.md` §12 with its environment. Say the
+environment with the number — "on kind", "on Fargate" — before an interviewer has to ask.
+
+**Order:** the pitch and the resume bullets first; then the questions by phase (newest phases
+first after Phase 6, as they were written); the fundamentals the project exercises at the end.
+
+---
+
+## The pitch
+
+### 30 seconds
+
+> I built a real-time multiplayer chess platform as a backend project — Spring Boot, PostgreSQL,
+> Valkey, WebSockets, on AWS and Kubernetes. The problem is keeping shared state correct while
+> things fail: the clock is computed from database time, so any server can die mid-game, and moves
+> stay consistent without locks. Then I measured it — load tests and failure drills found three real
+> problems, and each fix has a before-and-after number in the repo.
+
+### 2 minutes
+
+> **What it is.** Two players matched by rating, playing over WebSockets with a server-side clock,
+> results rated asynchronously. One Spring Boot application — a modular monolith, boundaries
+> checked by ArchUnit — deployed as three roles from one image: API, worker, migrations.
+>
+> **The three hard parts.** *The clock:* it never ticks; remaining time is computed from stored
+> values and PostgreSQL's `now()`, so it's identical on every server and survives a crash — I
+> killed a server mid-game and the clock was off by 29 milliseconds over 32 seconds. *Concurrency:*
+> exactly one move per turn without a distributed lock — a client idempotency key, an optimistic
+> version column, and a primary key on game and ply; under 16-way contention for 100 rounds there
+> was exactly one winner each time. *Realtime across servers:* players are usually on different
+> pods, so moves fan out through Valkey after the transaction commits, and anyone who misses one
+> gets a full snapshot on reconnect — which is what lets a pod leave mid-game. A rolling deploy
+> during 40 live games lost nothing.
+>
+> **Asynchronous ratings** go through a transactional outbox and SQS with an idempotent consumer:
+> at-least-once delivery, exactly-once effect.
+>
+> **What measuring found.** On AWS, half-vCPU tasks collapsed under a burst of sign-ups: bcrypt on
+> virtual threads occupied every carrier thread, so requests holding database connections couldn't
+> run. A bounded platform-thread pool with load shedding took that burst from 30 of 50 games to 50
+> of 50, zero errors. Freezing PostgreSQL showed requests could wait the whole freeze — 33 seconds —
+> now 2.9. The security review found an unauthenticated 100 MB request could take 600 MB of heap.
+> Every number is in a report in the repository with its environment.
+
+### 10 minutes — outline
+
+Draw the system diagram (`docs/diagrams/README.md` §1) while talking. About a minute per line;
+stop wherever they want to dig.
+
+1. **The problem (1 min).** Shared mutable state, turn by turn, under failure. A clock that decides
+   outcomes. Why chess: two writers, strict alternation, an obvious correctness invariant.
+2. **Shape (1 min).** Modular monolith (ADR-001) — one image, three roles; module boundaries
+   enforced by ArchUnit, and the story of the ArchUnit test that was green while checking nothing.
+3. **The clock (1.5 min).** Naive per-game timers and their five failure modes; computed clock;
+   database time; lazy check plus a `SKIP LOCKED` sweeper; the client clock that anchors rather
+   than ticks. Evidence: kill -9 mid-game, Δ −29 ms.
+4. **Concurrency (1.5 min).** The three layers, why each exists, why Redlock would add a failure
+   mode. Evidence: 16 contenders × 100 rounds; `chess.move.conflicts`.
+5. **Realtime across pods (1 min).** First-frame auth, Valkey fanout after commit, snapshot on
+   reconnect, graceful drain. Evidence: 40 games through a rolling deploy, 0 lost.
+6. **Asynchronous ratings (1 min).** Outbox in the game's transaction, relay with `SKIP LOCKED`,
+   SQS Standard, `processed_events`. Evidence: queue down 60 s → rated within 3 s of recovery.
+7. **Deployment (1 min).** Terraform on ECS Fargate, no NAT gateway, OIDC in CI, apply-measure-
+   destroy ($0.20 for a full session day); kind with probes, PDB, `maxUnavailable: 0`.
+8. **What measurement found (1.5 min)** — pick two: the bcrypt/virtual-thread starvation (9.4), the
+   database freeze (10.2), the 100 MB body (10.1), the 24-character column found by reading docs
+   against the schema (10.3).
+9. **Limits, honestly (0.5 min).** Fargate measured only to ~100 sockets; no alerting; HTTP-only;
+   single-AZ database. What would close each.
+
+---
+
+## Resume bullets
+
+Each is defensible line by line from the ledger. The environment is part of the claim.
+
+- **Built a real-time multiplayer chess backend** (Java 25, Spring Boot 4, PostgreSQL, Valkey,
+  WebSockets) as a modular monolith with a database-time computed clock and lock-free move
+  consistency (idempotency key + optimistic locking + composite key) — exactly one winner in
+  16-way contention over 100 rounds; 0 lost games across 1,000 concurrent WebSockets on Kubernetes
+  and a rolling deploy under 40 live games.
+- **Deployed on AWS ECS Fargate with Terraform** (RDS, ElastiCache, SQS, ALB, OIDC-based CI) and
+  load-tested it with k6, finding that bcrypt on virtual threads starved carrier threads on 0.5
+  vCPU tasks; a bounded platform-thread pool with 503 load shedding took a sign-up burst from
+  30/50 games completed to 50/50, with zero error-log lines (excess load shed and retried).
+- **Hardened it with failure drills and an OWASP API security review:** bounded database waits
+  (worst case 33.5 s → 2.9 s with PostgreSQL frozen under live load; ERROR logs 127 → 1),
+  exactly-once rating updates over at-least-once SQS via a transactional outbox, and closed an
+  unauthenticated request-body DoS (one 100 MB request ≈ 600 MB of heap) with a 16 KB limit.
+
+**What each will be asked:** (1) "How do you know it was exactly one?" — the concurrency test and
+the per-game move verification in every k6 run. (2) "Why did virtual threads make it worse?" —
+cooperative scheduling, no preemption, one or two carriers on a fractional vCPU. (3) "What's a
+transactional outbox?" — the event row commits with the game, or neither does.
+
+---
+
+## If you rehearse only ten questions
+
+1. Walk me through the architecture — Phase 0.
+2. What's the hardest problem? (the clock) — Phase 0, Milestone 3.3.
+3. How do you prevent two moves at the same ply? Why not a Redis lock? — Phase 0.
+4. What happens to open WebSockets when you deploy? — Phase 8.1, 8.3.
+5. SQS delivers twice — how isn't a rating applied twice? — Milestone 5.2.
+6. What was your bottleneck? — Phase 9.2–9.3, 9.4.
+7. What happens when the database goes down mid-game? — Phase 10.2.
+8. Tell me about a test that was lying to you. — Milestone 4.1.
+9. What was the worst security issue you found? — Phase 10.1.
+10. What would you do differently / what doesn't it do? — below.
+
+---
+
+## Limits, and what I would do next
+
+Say these before they are found.
+
+| Limit | Why it is so | What would close it |
+|---|---|---|
+| Fargate measured to ~100 concurrent sockets | The larger run was stopped on cost | A run with play time longer than the ramp, ~$0.10 (10.5) |
+| No alerting | The AWS stack lives for measurement sessions | Alarms on `chess.outbox.oldest_age_seconds` and DLQ depth first |
+| HTTP-only deployment | No domain, by the owner's decision (ADR-023) | A domain, an ACM certificate, one HTTPS listener |
+| Single-AZ RDS, single Valkey node | Cost | Multi-AZ RDS (roughly double the database cost — estimate); the app already tolerates Valkey loss |
+| Sign-up capacity ~1/s on 0.5 vCPU | bcrypt cost 12 by design | Larger tasks, scaling on CPU, or authentication as its own service |
+| Access tokens live 15 min after logout | Stateless JWT (ADR-009) | A deny-list in Valkey keyed by token ID, if a requirement demanded it |
+
+**Done differently from day one:** start load tests on the target hardware earlier — two of the
+biggest findings (bcrypt starving the carriers, the memory budget) only appear with constrained
+CPU or memory, and a 16-core laptop hid them for months; and check documentation against code at
+every milestone, not once at the end.
+
+### "How would it scale to a million concurrent users?"
+
+Theoretical, and labelled so (`ARCHITECTURE.md` §14). **10K:** more API pods; the first limit is
+database connections (pods × 10 against ~85 on the smallest RDS) — PgBouncer or a larger
+instance; the sweeper and relay already scale out with `SKIP LOCKED`. **100K:** split the
+WebSocket gateway from the game service so connection count and move throughput scale apart;
+read replicas for history. **1M:** a chess game involves exactly two players and nothing crosses
+games, so shard by game ID into independent cells — each with its own PostgreSQL and Valkey — with
+a routing layer mapping a game to its cell. No distributed transactions are needed, because no
+operation spans two games; matchmaking becomes the one cross-cell service.
+
 ---
 
 ## Phase 0 — architecture and decisions
@@ -747,13 +888,71 @@ I didn't assume it. I planted a type error and watched the build fail with TS232
 
 ---
 
-## To be added
+## Fundamentals the project exercises
 
-Phase 1 — Spring Security internals, JPA mapping and `@Version`, transaction boundaries,
-bcrypt cost, keyset pagination.
-Phase 2 — WebSocket lifecycle, why publishing inside a transaction is a bug, backpressure.
-Phase 3 — isolation levels, `SKIP LOCKED`, the concurrency test.
-Phase 4 — Lua atomicity, TTL and eviction, cache invalidation.
-Phase 5 — outbox pattern, at-least-once, DLQ.
-Phase 6–8 — Docker layering, CI gates, VPC design, IAM, probes, graceful shutdown.
-Phase 9 — trace propagation across queues, reading a p99, finding the real bottleneck.
+The topics the plan listed per phase that are not answered above. Each answer points at the code.
+
+### "How does a request get authenticated in Spring Security here?"
+A filter chain. `JwtAuthenticationFilter` (a `OncePerRequestFilter`, placed before the username/
+password filter) reads `Authorization: Bearer`, verifies the token — HS256 pinned, expiry checked —
+and puts the user into the `SecurityContext`. The chain is stateless (no session, no cookie), and
+authorisation is deny-by-default: every path not explicitly listed needs a user. Failures are
+written as problem+json by the entry point. The WebSocket handshake can't carry the header, so it
+is permitted, and the socket authenticates in its first frame instead.
+
+### "What does `@Version` do, and what isolation level do you run at?"
+`games.version` is a JPA `@Version` column: the update includes `WHERE version = :read`, so a
+writer that read a stale row updates nothing and gets an optimistic-lock failure — the losing move
+becomes `CONFLICT`. Transactions run at PostgreSQL's default, READ COMMITTED; the version column is
+what makes that safe for moves. One read runs at REPEATABLE READ: the game snapshot (board, move log
+and clock) — two queries that must see the same instant, or a move committing between them would
+send a board and a log that disagree.
+
+### "Where do your transaction boundaries go, and what never goes inside one?"
+One transaction per move: read, validate, write the move, update the game, and — if the game ended —
+the outbox row. Never inside: network calls whose latency you don't control. The project learned
+that twice: publishing to Valkey inside the transaction would broadcast moves a rollback erases, so
+it happens after commit; and bcrypt inside the registration transaction held pooled connections idle
+for the whole hash (9.4).
+
+### "What happens when a client can't keep up with the messages you send?"
+Backpressure per socket: each session is wrapped in a `ConcurrentWebSocketSessionDecorator` with a
+512 KB send buffer and a 5 s send timeout. A client that stops reading — a phone that lost signal —
+gets disconnected instead of making the server buffer without limit. It reconnects and receives a
+snapshot, so nothing is lost by cutting it off.
+
+### "Why is a Lua script atomic in Valkey, and where do you rely on it?"
+Valkey runs one command at a time, and a script is one command: nothing interleaves with it. The
+rate limiter's token bucket (read, refill, take, write back) and matchmaking's pairing (find a
+compatible pair, remove both, mark them pending) are each one script. Without that, two servers
+could both read "one token left" or both pair the same player.
+
+### "What's in Valkey with a TTL, and what happens under memory pressure?"
+Seeks expire unless re-sent (the client re-seeks every 15 s — the TTL is the heartbeat), pairing
+markers expire if a game is never created, presence expires after 90 s without a heartbeat. The
+eviction policy is not set explicitly — the default parameter group on ElastiCache. That is
+acceptable only because of ADR-004: nothing in Valkey is the source of truth, so an evicted key
+costs a re-seek or a moment of wrong presence, never a game. Memory use was never measured near the
+limit.
+
+### "How do you invalidate your cache?"
+There isn't one to invalidate, deliberately. A read cache for game state was planned and not built
+(ADR-016): reads are primary-key lookups; the move pipeline must read PostgreSQL anyway for the
+optimistic lock, so a cache cannot help the hot path; and it would put invalidation risk on the most
+correctness-critical data. ADR-016 said to revisit if load tests showed read pressure — they didn't. If it were needed: cache the snapshot keyed by game and version, written after commit —
+the version in the key makes staleness detectable instead of needing invalidation.
+
+### "How is your Docker image built?"
+Multi-stage: a JDK stage resolves dependencies first (its own layer, cached until the build file
+changes), builds the jar and extracts Spring Boot's layers; the runtime stage is a JRE with OS
+packages patched as of a dated build argument, runs as a non-root user, and copies the layers
+least-changing first — dependencies, loader, application — so a code change rebuilds a few
+megabytes. One image runs as API, worker or migration by profile. Trivy fails the build on a HIGH or
+CRITICAL finding before anything is pushed.
+
+### "How do you read a p99, and why not an average?"
+The average hides the slow requests users feel. I read percentiles from histograms on the server —
+the difference between bucket counts before and after a test window, so the result is that window,
+not the process's lifetime — and compare with the client's view from k6: if they differ by more than
+the network, something between them is queueing. A p99 is only meaningful with its count: 1 % of
+2,500 moves is 25 moves.
