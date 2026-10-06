@@ -5,6 +5,33 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-06 — 10.1: the security review found that §10 described a different system
+
+Phase 10 scope: Extended (owner), ~16 h.
+
+Checked `ARCHITECTURE.md` §10 against the code first: no CSP, no double-submit CSRF token, no SSM,
+no TLS to the browser — five claims untrue since Phase 0. Then probed the running app, then fixed.
+**Worst:** request bodies were unbounded and parsed before the controller's rate limit — four 100 MB
+logins took the heap from 58 MB to 2,463 MB; one would end a 512 MB AWS task. Now a filter at the
+front of the chain: 413 at 16 KB, chunked bodies capped while read. **Most latent:** the AWS profile
+would have fallen back to the repository's development signing key had the secret mapping ever
+broken — anyone could mint tokens. Now startup fails. Also: REST served any game to any signed-in
+user while SUBSCRIBE refused (one rule per transport); a 72-character password of 80 bytes and an
+e2→e2 move were 500s; the WS frame limit was a default nobody had chosen.
+
+Verified the CSP in a browser before believing it: `e2e:lobby` against the built SPA — paired,
+played, rating pushed, 0 console errors. Corrected my own review draft once: I wrote that tasks had
+no route to the internet; they run in public subnets with public IPs (no NAT) — the bullet now says
+so and names the trade-off.
+
+One test per finding over real HTTP; each mutation-checked (undo → exactly that test fails). One
+unexplained readiness 503 in a busy full run, not reproduced in four runs — recorded, not explained
+away. Unit 108, integration 157.
+
+**Hours:** ~3.5.
+
+---
+
 ## 2026-10-01 → 10-06 — 9.4: the AWS session, where bcrypt took the service down twice
 
 **Built:** a k6 load generator as a one-off ECS task inside the VPC (`loadgen.tf`, aimed at the
