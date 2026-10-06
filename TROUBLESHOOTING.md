@@ -502,6 +502,15 @@ The kernel's OOM killer. Seen when the full Testcontainers suite ran while the c
 `--profile app` API and worker JVMs were also up on a 15 GB machine. Stop the app containers
 (`docker compose -f ops/docker/docker-compose.yml --profile app stop api worker`) first.
 
+### `kill -STOP` inside a container does not stop its main process
+
+**Seen:** 2026-10-06, a PostgreSQL "freeze" drill (`pkill -STOP postgres` via `kubectl exec`): the
+backends stopped, but new connections kept working. **Cause:** the container's main process is PID
+1 in its PID namespace, and Linux ignores SIGSTOP/SIGKILL sent to a namespace's init from inside
+that namespace. **Check:** `grep NSpid /proc/<pid>/status` on the node (`15751 1` = PID 1 inside).
+**Fix:** signal from the parent namespace — on kind, `docker exec <cluster>-control-plane pkill -STOP
+-x postgres`. Handled signals (SIGQUIT, SIGTERM) do reach PID 1, because it installs handlers.
+
 ### Pool exhausted (`active=10, waiting=N`) though no transaction is long — on a small-CPU host only
 
 **Seen:** 2026-10-06, Fargate 0.5 vCPU, a burst of sign-ups. **The tell:** Hikari reports waiting
