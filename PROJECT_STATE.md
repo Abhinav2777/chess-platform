@@ -75,17 +75,27 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 10 — hardening & documentation |
-| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.4 done. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~11 of ~16 |
-| **Cumulative hours (estimated)** | ~139.5 of 135–175 |
+| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.4 and 10.6 done; 10.5 (AWS) deferred by the owner. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~13.5 of ~16 |
+| **Cumulative hours (estimated)** | ~142 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 10.5 — the AWS session (§10) |
+| **Next milestone** | 10.5 — the AWS session (deferred; §10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 10 — Milestone 10.6 (2026-10-07): demo
+
+- `docs/demo/`: two GIFs from two real browsers on kind — play (seek → mate → rating) and a real
+  `kubectl rollout restart` mid-game (waits at 4×, labelled). Scripted (`frontend/e2e/demo.mjs`,
+  `docs/demo/make-gif.sh`): synced per-video, takes rejected if infrastructure restarted.
+- **Client bug found by recording:** a move made as a pod drained was lost with its socket and
+  vanished. `useGame` now keeps the last unacknowledged move and re-sends it after a reconnect with
+  the same `clientMoveId` (or drops it if the board is past it). `e2e/move-across-reconnect.mjs`
+  intercepts the socket (lost move / lost echo); red before the fix, green after; in nightly CI.
 
 ### Phase 10 — Milestone 10.4 (2026-10-07): interview package
 
@@ -828,10 +838,12 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.5 — one AWS session: hashing
-   queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent sockets (play > ramp);
-   V9 applies on that deploy. Then 10.6 demo. Owner: MFA (deferred).
-2. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
+1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Remaining: 10.5 — one AWS session, deferred
+   by the owner: hashing queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent
+   sockets (play > ramp); V9 applies on that deploy. Owner: MFA (deferred).
+2. Dependabot PRs open since 2026-10-06 (#26 node 24 → 26 in the image build, #27 Gradle
+   minor/patch, #28 vite 8.3.2) — triage before Phase 10 closes.
+3. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
    SQS SDK call timeout (the relay holds its transaction across a stalled send, ~30 s — 10.2); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
    (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500
    concurrent sockets on Fargate (a ramp shorter than the play time).
@@ -880,6 +892,7 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | PostgreSQL frozen 30 s under 20 live games (kind) | before: longest move wait 33.5 s, 127 refusals as `INTERNAL`, 127 ERROR lines; after: 2.9 s, 155 as `SERVICE_UNAVAILABLE`, 1 ERROR line; both 20/20 games consistent, 0 abnormal closes; new visitors 503 for ~20 s, pods ready ~10 s after recovery | kind v0.33.0, dev machine, 2 API pods fixed, 2026-10-06 | `docs/failure-drills.md` |
 | PostgreSQL crash (immediate shutdown) under live games | database back < 4 s; 4 moves refused; readiness never flipped; 20/20 consistent | Same | same report |
 | Queue frozen / worker down 60 s | games unaffected; 20 events held in the outbox; rated within 3 s of the queue / 14 s of the worker returning | Same | same report |
+| Browser reconnect during a rolling restart (kind) | 453 ms and 275 ms (badge "Live" → not live → "Live", timed in the page); 36 plies identical on both boards after both API pods were replaced | kind, dev machine, 2 API pods fixed, 2026-10-07 | `docs/demo/README.md`, `frontend/e2e/demo.mjs` |
 | Large request bodies, before the body limit (local) | 4 concurrent 100 MB login bodies: heap 58 → 2,463 MB (~600 MB each); after: 413 in 2 ms | Dev machine, local profile, 2026-10-06 | `docs/security-review.md` finding 1 |
 | Fargate: sign-up burst, before → after the bounded hashing pool | 50 games, 30 s ramp: before 30/50 games, 15/100 sign-ups failed, pool `waiting=11`, 265 WARN/ERROR lines; after 50/50, 0 error lines, 6 shed (503) and retried; API CPU 100 % in both | ECS Fargate, 2 × 0.5 vCPU API, 2026-10-06 | `docs/perf/optimisation-02.md` |
 | Fargate: 500 sign-ups at ~0.8/s, ~50 concurrent games | 250/250 games consistent, 0 HTTP failures (HTTP p99 1.3 s), move ack p50/p95/p99 11/73/120 ms, API CPU max 76 % | Same | same report |
