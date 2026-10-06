@@ -331,6 +331,42 @@ class RealtimeGameplayIntegrationTest {
         }
 
         /**
+         * Phase 9.4: a load-test client whose game creation had failed sent SUBSCRIBE with no
+         * game id, and the server answered INTERNAL with an ERROR-level "Unhandled error". A bad
+         * frame is the client's mistake: VALIDATION_FAILED, and the socket stays usable.
+         */
+        @Test
+        @DisplayName("a malformed frame is VALIDATION_FAILED and the socket stays usable")
+        void rejectsMalformedPayloads() throws Exception {
+            try (TestWebSocketClient whiteClient = connectedAndSubscribed(whiteToken)) {
+                whiteClient.send(ClientMessage.SUBSCRIBE, Map.of());
+                Map<String, Object> missingId = whiteClient.payloadOf(whiteClient.await("ERROR"));
+                assertThat(missingId.get("code")).isEqualTo("VALIDATION_FAILED");
+                assertThat(missingId.get("message")).isEqualTo("Subscribe.gameId must not be null");
+
+                whiteClient.send(ClientMessage.MOVE, Map.of("gameId", "not-a-uuid",
+                        "clientMoveId", UUID.randomUUID().toString(), "expectedPly", 0, "from", "e2", "to", "e4"));
+                assertThat(whiteClient.payloadOf(whiteClient.await("ERROR")).get("code"))
+                        .isEqualTo("VALIDATION_FAILED");
+
+                whiteClient.send(ClientMessage.MOVE, Map.of("gameId", game.id().toString(),
+                        "expectedPly", 0, "from", "e2", "to", "e4"));
+                assertThat(whiteClient.payloadOf(whiteClient.await("ERROR")).get("message"))
+                        .isEqualTo("Move.clientMoveId must not be null");
+
+                whiteClient.send(ClientMessage.RESIGN, Map.of());
+                assertThat(whiteClient.payloadOf(whiteClient.await("ERROR")).get("code"))
+                        .isEqualTo("VALIDATION_FAILED");
+
+                // Nothing reached the game, and the same socket still plays.
+                assertThat(moves.findByGameIdOrderByPlyAsc(game.id())).isEmpty();
+                whiteClient.send(ClientMessage.MOVE, new Payloads.Move(
+                        game.id(), UUID.randomUUID(), 0, "e2", "e4", null));
+                assertThat(whiteClient.payloadOf(whiteClient.await("MOVE_MADE")).get("ply")).isEqualTo(1);
+            }
+        }
+
+        /**
          * The limiter runs before the move pipeline, so a flood is refused before it costs a
          * database transaction. This context's bucket is 5 per 10 s (see properties), so
          * refill during the burst is negligible and the split is exact.
