@@ -1,11 +1,12 @@
 # ARCHITECTURE
 
-Authoritative technical design for the real-time multiplayer chess platform.
-Last updated: Milestone 3.2 (2026-09-28). §5.2 and §6 reflect the implementation; later
-sections still describe the target design for phases not yet built.
+Technical design of the real-time multiplayer chess platform **as built**.
+Last checked against the code: Phase 10.3 (2026-10-07) — every statement here was verified
+against the code, the configuration or a measurement; anything designed but not built says so.
 
 Companion documents: `ROADMAP.md` (what/when), `PROJECT_STATE.md` (current status),
-`docs/adr/` (why). This file describes the target design; ADRs record the reasoning.
+`docs/adr/` (why), `docs/perf/` and `docs/failure-drills.md` (measurements),
+`docs/security-review.md`, `docs/diagrams/`.
 
 ---
 
@@ -28,19 +29,19 @@ apps, multi-region, service mesh, Kafka. See `ROADMAP.md` § Scope Priority.
 
 ## 2. Non-functional requirements
 
-These are *targets*, not measurements. Nothing here is claimed until `docs/perf/`
-contains a k6 report backing it.
+Targets set in Phase 0, and what was measured against them. A measurement names its
+environment; a blank means not measured.
 
-| Concern | Target |
-|---|---|
-| Move round-trip (client → server → opponent), p95 | < 150 ms intra-region |
-| REST API p95 | < 200 ms |
-| Concurrent WebSocket connections (measured target) | 1,000 |
-| Concurrent active games (measured target) | 300 |
-| Clock accuracy | ±50 ms of true elapsed, independent of client |
-| Data durability | Zero lost completed games; move log is append-only |
-| Recovery | Any pod may be killed mid-game with no game-state loss |
-| Availability model | Single-AZ acceptable for portfolio; multi-AZ discussed only |
+| Concern | Target | Measured |
+|---|---|---|
+| Move acknowledgement, p95 | < 150 ms intra-region | kind, 1,000 sockets: client p95 6 ms, server p99 6.7 ms (`docs/perf/baseline.md`). Fargate 2 × 0.5 vCPU, ~50 games during 500 sign-ups: p95 73 ms, p99 120 ms (`optimisation-02.md`) |
+| REST API p95 | < 200 ms | Not measured on its own; on Fargate the HTTP mix is dominated by bcrypt sign-ups (p95 0.95 s at ~0.8 sign-ups/s) |
+| Concurrent WebSocket connections | 1,000 | **1,000 on kind**, flat latency. **~100 on Fargate** — the larger AWS run was stopped on cost |
+| Concurrent active games | 300 | 500 on kind (1,000 sockets) |
+| Clock accuracy | ±50 ms of true elapsed, independent of client | Server killed mid-game: the side to move lost 31,769 ms over 31,798 ms of wall time (Δ −29 ms); JVM clock skewed +10 min had no effect (`PROJECT_STATE.md` §12) |
+| Data durability | Zero lost completed games; move log is append-only | Every k6 game is verified move-by-move against the server: 0 inconsistent across the baseline, the stress run, a rolling deploy, a SIGKILL, and five failure drills |
+| Recovery | Any pod may be killed mid-game with no game-state loss | Drilled: SIGKILL (8.3), rolling deploy (8.3), PostgreSQL crash and freeze, queue and worker outages (10.2) |
+| Availability model | Single-AZ acceptable for portfolio; multi-AZ discussed only | As targeted |
 
 ---
 
@@ -53,70 +54,71 @@ artifact** under a different Spring profile, so they can be scaled independently
 ECS/Kubernetes without becoming a separate codebase. See ADR-001.
 
 ```mermaid
-graph TB
-    subgraph Client
-        R[React SPA<br/>react-chessboard]
+flowchart LR
+    B["Browser — React SPA<br/>hand-written board, no chess logic"]
+    E["Edge: ALB (AWS, HTTP behind an allowlist)<br/>ingress-nginx (kind)"]
+
+    subgraph API["API role — N replicas"]
+        REST[REST controllers]
+        WS["WebSocket handler<br/>first-frame auth"]
+        GAME["game: move pipeline,<br/>computed clock"]
+        MM["matchmaking:<br/>Lua pairing"]
+        ID["identity: JWT,<br/>bounded bcrypt pool"]
+        SW1[timeout sweeper]
     end
 
-    subgraph "Edge"
-        ALB[ALB / Ingress<br/>TLS, sticky-optional]
+    subgraph WRK["Worker role — same image"]
+        RELAY["outbox relay<br/>SKIP LOCKED"]
+        RATE["rating consumer<br/>exactly-once effect"]
+        SW2[timeout sweeper]
     end
 
-    subgraph "chess-api (N replicas)"
-        REST[REST Controllers]
-        WS[WebSocket Handler]
-        GAME[Game Module<br/>move pipeline, clock]
-        MM[Matchmaking Module]
-        ID[Identity Module]
-        RULES[Chess Rules Port<br/>→ chesslib adapter]
-    end
+    MIG["Migrate role — Flyway,<br/>runs before each rollout"]
 
-    subgraph "chess-worker (M replicas, same JAR)"
-        RATE[Rating Consumer]
-        NOTIF[Notification Consumer]
-        SWEEP[Timeout Sweeper]
-    end
+    PG[("PostgreSQL — the only source of truth<br/>users · games · moves · outbox · ratings")]
+    VK[("Valkey — rebuildable state only<br/>fanout · presence · seek queue · rate limits")]
+    SQS[["SQS game-events + DLQ"]]
 
-    PG[(PostgreSQL<br/>SOURCE OF TRUTH)]
-    VK[(Valkey<br/>cache · pub/sub · presence · MM queue)]
-    SQS[[SQS + DLQ]]
-
-    R -->|HTTPS| ALB
-    R <-->|WSS| ALB
-    ALB --> REST
-    ALB --> WS
+    B -->|REST| E
+    B <-->|WebSocket| E
+    E --> REST
+    E <--> WS
     REST --> GAME
     WS --> GAME
-    GAME --> RULES
-    GAME --> PG
-    GAME --> VK
-    GAME -->|domain events| SQS
+    WS --> MM
+    GAME -->|"one transaction per move;<br/>outbox row on game end"| PG
     MM --> VK
-    MM --> PG
+    GAME -->|publish after commit| VK
     VK -.->|pub/sub fanout| WS
+    SW1 --> PG
+    SW2 --> PG
+    RELAY -->|claim unpublished rows| PG
+    RELAY -->|SendMessageBatch| SQS
     SQS --> RATE
-    SQS --> NOTIF
-    RATE --> PG
-    SWEEP --> PG
-    SWEEP --> VK
+    RATE -->|"processed_events + Elo,<br/>one transaction"| PG
+    RATE -->|RATING_UPDATED| VK
+    MIG --> PG
 ```
 
 ### 3.2 Module responsibilities
 
 | Module | Owns | Exposes | Never does |
 |---|---|---|---|
-| `identity` | users, credentials, tokens | `UserId` lookup, auth filter | game logic |
-| `chess` | rules port + chesslib adapter | `ChessRules` interface | I/O, persistence |
-| `game` | game lifecycle, move pipeline, clock | `GameService`, read models | HTTP concerns |
-| `realtime` | WS sessions, protocol, fanout | session registry | business rules |
-| `matchmaking` | queue, pairing | `MatchmakingService` | game mutation (calls `game`) |
-| `rating` | Elo, rating history | consumer beans | synchronous calls from `game` |
-| `platform` | security config, observability, errors | cross-cutting beans | domain logic |
+| `identity` | users, credentials, tokens | `IdentityFacade` | game logic |
+| `chess` | rules port + chesslib adapter | `ChessRules` | I/O, persistence |
+| `game` | game lifecycle, move pipeline, clock, sweeper | `GameFacade`, `GameEvents` | HTTP concerns |
+| `realtime` | WebSocket sessions, protocol, fanout, presence | the `/ws` endpoint | business rules |
+| `matchmaking` | seek queue, pairing | `MatchmakingFacade` | game mutation (calls `game`) |
+| `messaging` | outbox, relay, SQS setup | `Outbox` | business decisions |
+| `rating` | Elo, rating history, the consumer | consumer beans | synchronous calls from `game` |
+| `common` | error types, IDs, rate limiter, Valkey circuit | shared types | depend on any business module |
+| `platform` | security, password hashing, clock, Valkey client config | cross-cutting beans | domain logic |
 
 Boundaries are enforced by **ArchUnit tests**, not convention. A module may only be
 reached through its top-level package; `..internal..` packages are unreachable
-cross-module. This is a ~1-hour investment that makes the "modular monolith" claim
-defensible instead of aspirational.
+cross-module; `common` depends on no business module; no cycles. The rules were vacuous —
+green while importing zero classes — until 4.1b, when a guard asserting that the importer
+sees the codebase was added (ADR-001).
 
 ---
 
@@ -132,6 +134,11 @@ The entire current position of every game is recomputable by replaying its move 
 This means we can survive not just cache loss but corruption of the position column.
 
 ### 4.2 Core schema (Phase 1–3)
+
+Abridged. **The migrations in `backend/src/main/resources/db/migration` are authoritative**
+(V1–V8). Since the Phase 1 sketch below: `side_to_move` became `VARCHAR(5)` `WHITE|BLACK` (V3),
+the clock columns and `turn_deadline` arrived in V4–V5, and V2 (refresh tokens), V6 (outbox),
+V7 (`processed_events`, `rating_history`) and V8 (`outbox.trace_parent`) added tables.
 
 ```sql
 -- Flyway V1
@@ -153,12 +160,12 @@ CREATE TABLE games (
     black_player_id   UUID NOT NULL REFERENCES users(id),
     status            VARCHAR(16) NOT NULL,   -- ACTIVE|FINISHED|ABORTED
     result            VARCHAR(16),            -- WHITE_WIN|BLACK_WIN|DRAW|NULL
-    termination       VARCHAR(24),            -- CHECKMATE|TIMEOUT|RESIGNATION|
-                                              -- STALEMATE|DRAW_50|DRAW_REPETITION|
-                                              -- DRAW_INSUFFICIENT|ABANDONED
+    termination       VARCHAR(24),            -- CHECKMATE|STALEMATE|RESIGNATION|TIMEOUT|
+                                              -- DRAW_FIFTY_MOVE|DRAW_REPETITION|
+                                              -- DRAW_INSUFFICIENT_MATERIAL|ABANDONED
     fen               VARCHAR(100) NOT NULL,  -- derived; rebuildable from moves
     ply               INTEGER      NOT NULL DEFAULT 0,
-    side_to_move      CHAR(1)      NOT NULL,  -- 'w' | 'b'
+    side_to_move      VARCHAR(5)   NOT NULL,  -- WHITE | BLACK (V3; was CHAR(1))
     -- clock (see §6)
     initial_ms        INTEGER      NOT NULL,
     increment_ms      INTEGER      NOT NULL,
@@ -239,12 +246,15 @@ unrelated test classes.
 | Load game for move validation | every move | PK lookup |
 | Insert move + update game | every move | single tx |
 | Sweep timed-out games | 1/sec per sweeper | partial index scan |
-| Game history for a user | rare | `idx_games_white/black`, keyset paginated |
-| Leaderboard | rare, cached | `idx_users_rating` |
+| Game history for a user | rare | `idx_games_white/black`, offset-paginated, page size clamped to 50 |
 
-Pagination is **keyset (`WHERE created_at < :cursor`)**, not `OFFSET`. Offset
-pagination degrades linearly and produces duplicates when rows are inserted during
-paging. Keyset is not harder to write and is the correct default.
+There is no leaderboard (`idx_users_rating` exists for one).
+
+**Pagination is offset, deliberately, for this one list.** Keyset (`WHERE created_at <
+:cursor`) is the right default for a feed that grows while it is read — offset degrades
+linearly and duplicates rows inserted during paging. "My games" is not that: nobody pages past
+the first few, and keyset would need a compound `(created_at, id)` cursor for a gain nobody
+would see (`GameRepository.findByPlayer`).
 
 ---
 
@@ -347,12 +357,16 @@ sequenceDiagram
     W-->>C: GAME_SNAPSHOT
     Note over C,W: ...move exchange...
     C--xW: TCP drop
-    W->>V: SET presence:{gameId}:{userId} offline (TTL 60s)
-    W->>V: PUBLISH game:{gameId} PLAYER_DISCONNECTED
+    W->>V: SREM presence:{gameId}:{userId} {sessionId}
+    W->>V: PUBLISH game:{gameId} PLAYER_PRESENCE {online:false} (only if no session is left)
     C->>W: reconnect (possibly a DIFFERENT pod)
     C->>W: AUTH + SUBSCRIBE
     W-->>C: GAME_SNAPSHOT (state fully restored)
 ```
+
+Presence is a set of session IDs per player per game, with a 90 s TTL refreshed by every
+`PING`: a player is offline only when their last session leaves, so a reconnect that lands
+before the old socket closes announces nothing.
 
 **Authentication happens in the first message, not the handshake.** Browsers cannot
 set arbitrary headers on a WebSocket handshake. The alternatives are a token in the
@@ -502,9 +516,12 @@ is the definition of idempotent.
 
 **Layer 2 — Optimistic locking (`games.version` / JPA `@Version`).** Two concurrent
 transactions both read version 7; both try to write version 8; one commits, the other
-gets `OptimisticLockException`. We do **not** blindly retry — we re-read and re-validate.
-In chess, the loser of the race is almost always making an illegal move anyway (it is
-now the opponent's turn), so the retry correctly fails with `NOT_YOUR_TURN`.
+gets `OptimisticLockingFailureException`. It is **not** retried on the server: the loser
+receives `CONFLICT` (409 / an `ERROR` frame) and the client re-subscribes for a fresh
+snapshot, so the player decides again against the position that actually exists — re-running
+the move would usually fail anyway (the turn has flipped), and when it would not, replaying a
+move chosen against an old position plays something the player never saw. Counted in
+`chess.move.conflicts`.
 
 **Layer 3 — Structural (`PRIMARY KEY (game_id, ply)`).** Even if both other layers were
 buggy, the database physically cannot store two moves at the same ply.
@@ -532,9 +549,12 @@ atomically without a lock.
 ### 7.4 Transaction boundary
 
 One transaction per move, containing: load game → validate → apply rules → insert move
-→ update game. The chess computation happens *inside* the transaction but takes
-microseconds. Pub/Sub publish and SQS send happen **after commit** (via
-`TransactionSynchronization` / `@TransactionalEventListener(AFTER_COMMIT)`).
+→ update game — and, when the move ends the game, the outbox row (§9). The chess
+computation happens *inside* the transaction but takes microseconds. The Valkey publish
+happens **after commit** (`@TransactionalEventListener(AFTER_COMMIT)`): published inside, a
+rollback would leave both players having seen a move that does not exist. The SQS message is
+not sent from this transaction at all — the relay sends it later, from the committed outbox
+row.
 
 ---
 
@@ -598,15 +618,22 @@ ratings through `IdentityFacade` → `rating_history`, whose `PRIMARY KEY (game_
 is the backstop. Metrics: `chess.rating.applied|duplicates|failures|ignored`,
 `chess.sqs.messages{queue}` (DLQ should be zero).
 
-Consumer idempotency: a `processed_events (event_id PRIMARY KEY, processed_at)` table.
+Consumer idempotency: a `processed_events (consumer, event_id)` table — primary key on both,
+so a second consumer of the same events would keep its own record.
 The consumer inserts the event id in the same transaction as its side effect; a
 duplicate hits the PK constraint and is acknowledged without re-applying. Rating
 updates are not naturally idempotent (`rating += delta` applied twice is wrong), which
 is precisely why this table exists.
 
 Retries and DLQ: SQS redrive policy, `maxReceiveCount: 3`, then DLQ (created with the
-queue by `SqsQueues` locally; by Terraform in AWS). A CloudWatch alarm
-on DLQ depth > 0. Poison messages must be visible, not silently dropped.
+queue by `SqsQueues` locally; by Terraform in AWS). DLQ depth is exported as
+`chess.sqs.messages{queue=game-events-dlq}`; **no alarm is configured** — the stack exists only
+for measurement sessions. An alarm on DLQ depth > 0 is the first one a long-lived deployment
+would add. Poison messages must be visible, not silently dropped.
+
+**Measured (10.2):** with the queue frozen or the worker stopped for 60 s, games were unaffected;
+20 events waited in the outbox and were rated within 3 s / 14 s of recovery
+(`docs/failure-drills.md`).
 
 Kafka would be justified by: event replay for rebuilding read models, many independent
 consumer groups over one ordered stream, or sustained high-throughput stream processing.
@@ -656,33 +683,42 @@ observability at week 13+ while the week-12 portfolio deadline requires it; the
 resolution is to build logging and metrics from the first commit and reserve Phase 9
 for tracing, dashboards, and load-test-driven optimisation.
 
-**Logs:** JSON via `logstash-logback-encoder`. MDC populated by a servlet filter and a
-WebSocket interceptor with `requestId`, `userId`, `gameId`, `instanceId`.
+**Logs:** JSON, one object per line (`logstash-logback-encoder`). MDC carries `userId` (REST
+and WebSocket), `gameId` and `wsSessionId` (WebSocket). Expected outcomes — an illegal move, a
+rate limit, a database outage — log at DEBUG or WARN; ERROR is reserved for what someone should
+look at (10.1, 10.2).
 
-**Metrics** (Micrometer → `/actuator/prometheus`):
+**Metrics** (Micrometer → `/actuator/prometheus`, on the management port in AWS and Kubernetes).
+The ones that carry an argument:
 
 | Metric | Type | Why it matters |
 |---|---|---|
-| `chess_move_processing_seconds` | timer | the core latency SLO |
-| `chess_move_conflicts_total` | counter | optimistic-lock failures — proves §7 fires |
-| `chess_move_idempotent_replays_total` | counter | proves retry handling works |
-| `chess_ws_connections_active` | gauge | capacity planning input |
-| `chess_ws_reconnects_total` | counter | connection stability |
-| `chess_games_active` | gauge | load |
-| `chess_matchmaking_wait_seconds` | histogram | product quality |
-| `chess_clock_timeouts_total` | counter | games ended on time — proves §6.3 fires (planned as `…sweeper_finalized_total`; renamed when built, since the move path also finalises) |
-| `chess_move_flag_falls_total` | counter | moves refused because the mover had already flagged |
-| `chess_game_aborts_total` | counter | games aborted before both players moved (§6.5) |
-| `chess_move_late_first_moves_total` | counter | first moves refused because the window had closed |
-| `sqs_consumer_lag` / DLQ depth | gauge | async health |
+| `chess.ws.message{type}` | timer (Observation, histogram) | server-side latency per WebSocket frame — what the load tests read (9.2) |
+| `chess.move.processing` | timer | the move transaction itself |
+| `chess.move.conflicts` | counter | optimistic-lock losers — direct evidence §7 is exercised |
+| `chess.move.idempotent_replays` | counter | retries answered from the stored move |
+| `chess.move.flag_falls`, `chess.move.late_first_moves`, `chess.clock.timeouts`, `chess.game.aborts` | counters | the clock and abort rules (§6) firing |
+| `chess.ws.connections.active` | gauge | capacity planning input |
+| `chess.matchmaking.wait` | timer | seek-to-pair time |
+| `chess.outbox.oldest_age_seconds` | gauge | **the one to alarm on**: how stale the oldest unsent event is |
+| `chess.outbox.backlog`, `chess.outbox.stuck`, `chess.outbox.send_failures` | gauges / counter | the relay's health |
+| `chess.rating.applied`, `chess.rating.duplicates` | counters | exactly-once effects on at-least-once delivery |
+| `chess.sqs.messages{queue}` | gauge | queue and DLQ depth |
+| `chess.valkey.circuit.trips`, `chess.valkey.calls.skipped` | counters | ADR-018's circuit |
+| `chess.ratelimit.rejected`, `chess.auth.hashing.rejected` | counters | load refused on purpose |
+| `executor.*{name=password.hashing}` | executor metrics | the hashing pool's queue and wait (9.4) |
+| `hikaricp.connections.*` | pool metrics | the first limit under load (`optimisation-01.md`) |
 
-`chess_move_conflicts_total` is the metric to point at in an interview: it is direct
-evidence that the concurrency design is exercised rather than theoretical.
+**Tracing** (Phase 9, ADR-026): Spring Boot 4's native OpenTelemetry support — Observation →
+OTel → OTLP, no Java agent. A span per WebSocket frame (nothing instruments those for us) and per
+JDBC query. The interesting hop is the asynchronous one: the game's trace context is stored in
+the outbox row (`outbox.trace_parent`, V8), and the relay sends it as an SQS message attribute,
+so one trace runs from the resign click to the rating update — and showed that ~1 s of it is
+the relay's poll interval. Spans are exported only when an OTLP endpoint is configured; locally,
+Grafana's `otel-lgtm` (compose profile `observability`).
 
-**Tracing:** OpenTelemetry Java agent, OTLP. The interesting span is the async hop —
-trace context is injected into SQS **message attributes** so a trace spans
-`API → game tx → SQS → rating worker → DB`. Without manual propagation the trace breaks
-at the queue boundary, which is the most common tracing mistake in event-driven systems.
+**Not built:** dashboards as code, alerts. The stack exists for measurement sessions; the first
+alarm a long-lived deployment would add is `chess.outbox.oldest_age_seconds` and DLQ depth.
 
 ---
 
@@ -690,32 +726,33 @@ at the queue boundary, which is the most common tracing mistake in event-driven 
 
 ### 12.1 Two paths, deliberately
 
-| Path | What | Cost | When |
-|---|---|---|---|
-| **A — always-on demo** | single t3.small EC2 + Docker Compose + containerised Postgres/Valkey | ~$15/mo | live URL for recruiters, 24/7 |
-| **B — production reference** | Terraform: VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, ECR, Secrets Manager | ~$60–80/mo if left running | applied for demos/load tests, then destroyed |
-| **C — Kubernetes** | kind locally (full manifests); EKS in a time-boxed 2–3 day window | ~$0 / ~$20 for the window | Phase 8 |
+| Path | What | Status |
+|---|---|---|
+| **A — always-on demo** (t3.small + Compose) | a live URL, ~$15/month (estimate) | **Not built** — the owner chose Path B only (ADR-023) |
+| **B — production reference** | Terraform (`infra/`): VPC, ALB, ECS Fargate (api ×2, worker on Spot, migrate one-off), RDS PostgreSQL, ElastiCache Valkey, SQS + DLQ, Secrets Manager, ECR; GitHub OIDC deploys | **Built.** Applied for verification and load-test sessions, then destroyed |
+| **C — Kubernetes** | kind + Kustomize (`k8s/`) | **Built** on kind (ADR-024). The EKS window was not used — kind proves the manifests at no cost |
 
-Path B is never left running. `terraform apply` → measure → screenshot → `terraform
-destroy`. The Terraform code, the load-test reports, and a recorded demo are the
-artifacts; a permanently-running ECS cluster is not. See ADR-010.
+Path B is never left running: `terraform apply` → measure → `terraform destroy` → verify
+every service is empty. **Measured cost:** Cost Explorer reports $0.20 for 2026-10-01, a day
+with the full stack up for several hours across two sessions. Monthly figures for a stack left
+running are estimates from published us-east-1 prices, not observations. Budget alarm at $20.
 
-**All AWS figures in this document are estimates from published us-east-1 on-demand
-pricing and are not billing observations.** Total project AWS budget target: **< $50.**
-
-**NAT Gateway is the trap.** At ~$0.045/hr plus data processing it is ~$32/month —
-more than the compute. Avoided by placing Fargate tasks in public subnets with
-restrictive security groups (no inbound except from the ALB SG) and using VPC gateway
-endpoints for S3. This is a legitimate architecture for this workload and a good
-cost-engineering answer.
+**NAT Gateway is the trap.** At ~$0.045/hr plus data processing it is ~$32/month (estimate) —
+more than the compute. Avoided by running the Fargate tasks in public subnets with public IPs
+(egress to AWS APIs over the internet gateway) and security groups that admit nothing inbound
+except from the ALB; RDS and Valkey sit in isolated subnets. The trade-off — a compromised task
+could reach anywhere on 443 — is recorded in `docs/security-review.md`. The deployment is
+**HTTP-only** behind an address allowlist: no domain, so no certificate (ADR-023).
 
 ### 12.2 Kubernetes
 
-Manifests demonstrate: Deployment, Service, Ingress, ConfigMap, Secret, readiness vs
-liveness probes (different endpoints — readiness checks dependencies, liveness checks
-only that the JVM is alive), resource requests/limits, HPA on CPU + a custom metric,
-`RollingUpdate` with `maxUnavailable: 0`, PodDisruptionBudget, and
-`terminationGracePeriodSeconds` tuned to Spring's graceful shutdown.
+Manifests (`k8s/`, Kustomize, kind overlay) demonstrate: Deployments, Services, Ingress,
+ConfigMap and Secret generators, a migrate Job that gates every rollout, readiness vs liveness
+(readiness: the app's own state + PostgreSQL; liveness: the JVM only — so a database outage
+never restarts a pod, verified in 10.2), startup probe, CPU request without a CPU limit, HPA on
+CPU, `RollingUpdate` with `maxUnavailable: 0`, a PodDisruptionBudget, and
+`terminationGracePeriodSeconds` sized to the drain. Probes and actuator on a separate
+management port.
 
 **The interesting Kubernetes problem here is graceful shutdown of a WebSocket server.**
 On SIGTERM a pod must: fail readiness immediately (so the Ingress stops sending new
@@ -723,7 +760,8 @@ connections), send a `GOING_AWAY` close frame with a reconnect hint to every ope
 socket, drain in-flight move transactions, then exit. Without this, a rolling deploy
 severs live games. With it, clients reconnect to a surviving pod and receive a snapshot
 (§5.3) — the game is uninterrupted. This is the payoff for keeping zero game state in
-pod memory.
+pod memory. **Built (8.1, `SocketDrain`) and measured (8.3):** 40 live games through a rolling
+restart — 40/40 consistent, 116 sockets closed with 1001 and reconnected, 0 abnormal closes.
 
 ---
 
@@ -755,19 +793,29 @@ than documenting it.
 
 ## 14. Scalability
 
-Measured target: **1,000 concurrent WebSocket connections / 300 active games.**
-Everything below that line is theoretical and labelled as such.
+**Measured:** 1,000 concurrent WebSocket connections / 500 games on kind, flat latency
+(`docs/perf/baseline.md`); ~100 concurrent sockets on Fargate (2 × 0.5 vCPU), where the larger
+run was stopped on cost (`docs/perf/optimisation-02.md`). Everything beyond is theoretical and
+labelled as such.
 
-**Where the first bottleneck actually is:** not CPU, and not WebSocket connections
-(a JVM handles tens of thousands of idle sockets on modest memory). It is the
-**database connection pool**. Every move is a short write transaction; with a HikariCP
-pool of 10 per pod and a 5ms transaction, one pod ceilings around 2,000 moves/sec —
-but RDS `db.t4g.micro` allows ~85 total connections, so pods × pool size is the real
-constraint. This is the number to measure in Phase 9.
+**Where the bottlenecks actually were** — two, depending on the hardware, both measured:
+
+- **With CPU to spare (kind, 16 cores):** the **connection pool**, as predicted. At ~1,460
+  moves/s the 10-connection pool saturated and moves queued (p99 ~400 ms); what turned that into
+  an outage was the memory budget — fixed from measurement (`optimisation-01.md`). The pool is
+  still the next limit there.
+- **On 0.5 vCPU (Fargate):** **password hashing.** A burst of sign-ups took the service down
+  twice: bcrypt held pooled connections inside transactions, then — once moved out — occupied
+  every virtual-thread carrier so connection holders could not run. A bounded platform-thread
+  pool with 503 load shedding fixed it (`optimisation-02.md`). Sign-up capacity there is about
+  one per second (estimate) — a sizing fact, not a defect.
+
+RDS `db.t4g.micro` allows ~85 connections, so pods × pool size (10) is the ceiling to watch as
+pods are added.
 
 | Scale | What changes |
 |---|---|
-| 1K conn | Current design. 2 pods. Measured. |
+| 1K conn | Current design. 2 pods. Measured on kind. |
 | 10K conn | More pods; connection pooling via PgBouncer; move Valkey to a larger node; batch clock sweeps. *Theoretical.* |
 | 100K conn | Separate WebSocket gateway tier from the game service; game state in Valkey with write-behind to Postgres; read replicas for history/leaderboard. *Theoretical.* |
 | 1M+ conn | Shard games by `gameId` hash across independent cells; per-cell Postgres and Valkey; a routing layer maps a game to its cell; cross-cell traffic is zero because a chess game is a perfectly-shardable unit. *Theoretical.* |
@@ -782,14 +830,17 @@ cross-game consistency requirement. That is why the 1M answer is "cells", not
 
 | Layer | Tool | What |
 |---|---|---|
-| Unit | JUnit 5 + AssertJ | rules adapter, `ClockCalculator` (pure function), Elo |
-| Architecture | ArchUnit | module boundary enforcement (§3.2) |
-| Integration | Testcontainers: Postgres 16 + Valkey 8 | repositories, move pipeline, migrations |
-| API | MockMvc / RestAssured | authn, authz, validation, status codes |
-| **Concurrency** | JUnit + `CountDownLatch` + real Postgres | N threads submit the same ply → assert exactly 1 commit, N−1 rejections, and that `chess_move_conflicts_total` incremented |
-| WebSocket | Spring `StandardWebSocketClient`, 2 clients | full game, out-of-order, reconnect mid-game, snapshot correctness |
-| Async | Testcontainers LocalStack | SQS produce/consume, duplicate delivery, DLQ routing |
-| Load | k6 (`k6/experimental/websockets`) | 1,000 connections, sustained move rate, p95 latency |
+| Unit | JUnit 5 + AssertJ | rules adapter (perft node counts), clock arithmetic, Elo, error classification, the hashing pool, the body-size filter |
+| Architecture | ArchUnit | module boundaries (§3.2), with a guard that the importer actually sees the classes |
+| Integration | Testcontainers: PostgreSQL 16 + Valkey 8 (+ ElasticMQ for SQS, ADR-019) | repositories, the move pipeline, migrations, outbox → queue → rating, every security finding over real HTTP |
+| **Concurrency** | JUnit + latches + real PostgreSQL | 16 contenders for one ply, 100 rounds: exactly one winner per round |
+| WebSocket | Spring's `StandardWebSocketClient`, real server on a random port | full games, reconnect, drain on shutdown, Valkey fanout across two instances, Valkey outage, a frozen database |
+| Browser | Playwright (`frontend/e2e`) | lobby → pairing → game → resignation → rating, against local, kind and the AWS ALB; fails on any console error or uncaught exception |
+| Load | k6 (`k6/websockets`) | live games verified move-by-move: baseline, stress, rolling deploy, AWS, failure drills |
+
+Fix-driving tests are **mutation-checked**: the fix is removed and the test must fail — the
+habit that caught a test which had been green while checking nothing (ArchUnit, 4.1b) and a flaky
+assertion on executor bookkeeping (9.4).
 
 k6 over Gatling/JMeter: native WebSocket support, scenarios in JavaScript (no Scala or
 XML), single static binary that runs identically in CI and locally, and thresholds that
@@ -801,13 +852,17 @@ claim of this project rather than asserting it.
 
 ---
 
-## 16. Open engineering risks
+## 16. Engineering risks — where they ended up
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Phases 7+8 (AWS+K8s, 30–40h) overrun | Blows the budget | Path A/B/C split (§12.1); K8s on kind first; EKS time-boxed |
-| Frontend creep | Backend time lost | Hard cap 10h total; `react-chessboard`, no custom renderer |
-| Learning time not in the budget | ~40% under-estimate | Explicit "Must understand" section per phase in `ROADMAP.md` |
-| chesslib edge cases (threefold, insufficient material) | Correctness bugs | Perft tests against known node counts at depth 1–4 |
-| Load-test client is the bottleneck, not the server | Meaningless numbers | Run k6 on a separate EC2 instance; verify client CPU headroom |
-| AWS bill surprise | Real money | Budget alarm at $20; `terraform destroy` discipline; no NAT Gateway |
+| Risk (Phase 0) | Outcome |
+|---|---|
+| Phases 7+8 (AWS + K8s) overrun | Held: AWS Path B only, Kubernetes on kind only; both inside budget |
+| Frontend creep | Held: one time-boxed UI pass (ADR-025). The board is hand-written — ~170 lines and no chess logic, simpler than configuring a library |
+| Learning time not in the budget | Real: tracked per phase in `ROADMAP.md`; the project lands near the top of the 135–175 h range |
+| chesslib edge cases | Perft node counts pass; threefold repetition and insufficient material are tested in the rules — and the insufficient-material *draw* could not be stored until 10.3 (a 24-character column) |
+| Load generator is the bottleneck | Checked every run: k6's CPU and memory recorded on kind (≤ 0.18 of 16 cores at 1,000 sockets); on AWS it ran as its own Fargate task inside the VPC |
+| AWS bill surprise | $20 budget alarm; destroy-and-verify after every session; no NAT gateway. Measured: $0.20 for a full session day |
+
+**Open, at the end of the project:** Fargate measured only to ~100 concurrent sockets; the
+hashing queue sized by estimate; no alerting; the deployment is HTTP-only. Each is recorded in
+`PROJECT_STATE.md` with what would close it.
