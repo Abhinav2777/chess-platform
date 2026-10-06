@@ -5,6 +5,21 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-07 — 10.4: the interview package
+
+The pitch at three lengths, timed by word count rather than guessed — the first "30-second"
+version was 106 words (~42 s); cut to 76. Three resume bullets, each claim traced to a ledger row
+with its environment ("on Kubernetes", "0.5 vCPU"); "zero errors" reworded to "zero error-log
+lines", because six sign-ups were shed with 503 and an interviewer could find them. A limits table
+to say before it is found. The plan's "To be added" topics answered against the code — two answers
+changed on checking: the read cache's reasons are ADR-016's (the move path reads PostgreSQL anyway),
+and Valkey's eviction policy is not set at all (the ElastiCache default; acceptable only because
+nothing in Valkey is the source of truth).
+
+**Hours:** ~1.5.
+
+---
+
 ## 2026-10-07 — 10.3: the docs truth pass found a bug in the schema
 
 Read `ARCHITECTURE.md` end to end and checked each factual statement against the code, the
