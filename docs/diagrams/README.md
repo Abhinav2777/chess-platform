@@ -215,7 +215,7 @@ sequenceDiagram
     C->>New: reconnect (exponential backoff, full jitter) · AUTH · SUBSCRIBE
     New->>PG: load game
     New-->>C: GAME_SNAPSHOT — the same position and clocks
-    Note over C,New: a move sent before the cut is re-sent with the same clientMoveId — applied once
+    Note over C,New: a move lost at the cut is re-sent with the same clientMoveId — applied once (browser since 10.6)
 ```
 
 Measured on kind: 40 live games through a rolling restart — 40/40 consistent, 116 sockets moved
