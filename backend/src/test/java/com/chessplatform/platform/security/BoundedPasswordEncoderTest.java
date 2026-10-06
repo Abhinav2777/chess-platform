@@ -65,9 +65,11 @@ class BoundedPasswordEncoderTest {
         encoder = new BoundedPasswordEncoder(blocking(hashing, release), 1, 1, metrics);
 
         // One hash occupies the only thread, one waits in the only queue slot.
-        Thread running = Thread.ofVirtual().start(() -> encoder.encode("first"));
+        AtomicReference<String> first = new AtomicReference<>();
+        AtomicReference<String> second = new AtomicReference<>();
+        Thread running = Thread.ofVirtual().start(() -> first.set(encoder.encode("first")));
         assertThat(hashing.await(5, TimeUnit.SECONDS)).isTrue();
-        Thread queued = Thread.ofVirtual().start(() -> encoder.encode("second"));
+        Thread queued = Thread.ofVirtual().start(() -> second.set(encoder.encode("second")));
         awaitQueued(1);
 
         assertThatThrownBy(() -> encoder.encode("third"))
@@ -77,12 +79,14 @@ class BoundedPasswordEncoderTest {
                 });
         assertThat(metrics.counter("chess.auth.hashing.rejected").count()).isEqualTo(1.0);
 
-        // The refused request did not disturb the admitted ones.
+        // The refused request did not disturb the admitted ones. Asserted on their results, not on
+        // executor.completed: the pool counts a task only after its caller has already been woken,
+        // so that counter can lag a join (seen in CI: 1.0 for 2).
         release.countDown();
         running.join(5_000);
         queued.join(5_000);
-        assertThat(metrics.get("executor.completed").tag("name", BoundedPasswordEncoder.EXECUTOR_NAME)
-                .functionCounter().count()).isEqualTo(2.0);
+        assertThat(first.get()).isEqualTo("hashed:first");
+        assertThat(second.get()).isEqualTo("hashed:second");
     }
 
     @Test
