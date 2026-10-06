@@ -367,6 +367,13 @@ sequenceDiagram
     W-->>C: GAME_SNAPSHOT (state fully restored)
 ```
 
+**A move in flight across a reconnect.** The browser keeps its last unacknowledged move. If the
+snapshot after a reconnect shows the board still at that move's ply, it was lost with the socket —
+the browser re-sends it with the same `clientMoveId`; if the board is past it, it landed and only
+its echo was lost — nothing is sent. The idempotency key makes a re-send of a move that *did* land
+harmless. Added in 10.6, when recording the demo showed a move made in the instant a pod drained
+silently vanishing (`frontend/e2e/move-across-reconnect.mjs`).
+
 Presence is a set of session IDs per player per game, with a 90 s TTL refreshed by every
 `PING`: a player is offline only when their last session leaves, so a reconnect that lands
 before the old socket closes announces nothing.
