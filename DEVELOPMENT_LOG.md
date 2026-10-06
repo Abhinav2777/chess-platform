@@ -5,6 +5,38 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-07 — 10.3: the docs truth pass found a bug in the schema
+
+Read `ARCHITECTURE.md` end to end and checked each factual statement against the code, the
+configuration or a report. ~25 were wrong — most written as plans in Phase 0 and never revisited:
+`react-chessboard` and a "Notification Consumer" in the system diagram, TLS at the edge, keyset
+pagination (offset, deliberately — the code even says so), the race loser getting `NOT_YOUR_TURN`
+(it is `CONFLICT`), an SQS send "after commit" (the outbox row is *in* the transaction), a DLQ
+alarm and S3 VPC endpoints that Terraform never created, MDC keys and metric names that were never
+registered, a Java agent (Boot-native OTel), an EKS window. The NFR table now puts each target next
+to what was measured, and where.
+
+Changing the termination column's comment, I wrote `VARCHAR(32)` from memory, checked it — 24 —
+and noticed `DRAW_INSUFFICIENT_MATERIAL` is 26 characters. A test confirmed it, and found worse: the
+move pipeline's `catch (DataIntegrityViolationException)` meant "duplicate move", so the too-long
+value came back as **"That move was already submitted. Retry"** at INFO — a bug dressed as an
+expected outcome, with a retry that could never succeed. Only the rules test had ever covered the
+outcome; nothing persisted it. V9 widens the column (catalogue-only in PostgreSQL); both duplicate
+catches now require SQLState 23505 and rethrow the rest. Mutation: without V9, the real
+`DataException` surfaces.
+
+Diagrams: five, each rendered with mermaid-cli (Chromium) before commit — all parsed; the system
+diagram read better left-to-right. Two details corrected against code while drawing: the browser
+reconnects with exponential backoff and full jitter (0–500 ms is k6's), and a duplicate rating
+delivery stops at zero rows rather than rolling back. README leads with measured results; SETUP's
+"Prometheus on :8080" was a 401 since 9.2.
+
+Unit 115, integration 159.
+
+**Hours:** ~3.
+
+---
+
 ## 2026-10-06 — 10.2: failure drills — the database freeze was the one that found things
 
 Harness `failure-drill.sh`: 20 live games on kind, a fault 60 s in, a 2-second timeline of what a new
