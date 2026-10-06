@@ -218,6 +218,12 @@ chess:
       - http://localhost:5173
       - http://localhost:3000
 
+  # Largest HTTP request body (RequestBodyLimitFilter, 10.1). A registration is a few hundred
+  # bytes; nothing else bounds a JSON body, and Spring parses it before the controller (and its
+  # rate limit) runs. Over the limit: 413.
+  http:
+    max-request-body: 16KB
+
   # Asynchronous events (Phase 5, ADR-008). The outbox is written in the game transaction;
   # the relay moves it to SQS. The relay runs only in the worker role (ADR-001).
   messaging:
@@ -277,6 +283,13 @@ chess:
 
 server:
   shutdown: graceful           # drain in-flight requests on SIGTERM (matters in Phase 8)
+  servlet:
+    context-parameters:
+      # Largest inbound WebSocket text frame; bigger ones close the socket with 1009. Tomcat's
+      # default, written down (10.1): it was the only thing bounding frames, and a default
+      # nobody chose can change under an upgrade. The largest real frame (MOVE) is ~250 bytes.
+      org.apache.tomcat.websocket.textBufferSize: 8192
+      org.apache.tomcat.websocket.binaryBufferSize: 8192
   error:
     include-message: never     # never leak exception messages to clients
     include-stacktrace: never
