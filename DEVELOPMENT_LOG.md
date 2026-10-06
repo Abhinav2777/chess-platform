@@ -5,6 +5,40 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-06 — 10.2: failure drills — the database freeze was the one that found things
+
+Harness `failure-drill.sh`: 20 live games on kind, a fault 60 s in, a 2-second timeline of what a new
+visitor gets, the outbox backlog and ratings; every game checked afterwards. Control first (clean),
+HPA removed (it had scaled to 4 on startup CPU and could change mid-drill).
+
+Before writing it: PostgreSQL's data in kind is an `emptyDir` — scaling it to zero would have
+deleted the database and the drill would have "found" data loss I caused. Faults keep the pod.
+
+**Crash** (SIGQUIT, restart, WAL recovery): back in < 4 s, 4 moves refused, nothing else. **Queue
+frozen / worker down 60 s:** games untouched; the outbox held 20 events; rated within 3 s / 14 s of
+recovery — the matrix's claims, now measured. **Freeze, first attempt:** my sampler's psql kept
+answering during a "freeze". The postmaster is PID 1 in its container and Linux ignores SIGSTOP to a
+namespace's init from inside it — only the backends froze. Re-done from the kind node.
+
+**The real freeze (30 s):** pods unready at ~+8 s, ingress 503 to new visitors (SPA too), sockets in
+games kept open (0 abnormal closes), 20/20 consistent. But a move waited **33.5 s** — no socket
+timeout anywhere — and **127** refused moves were `INTERNAL` with an ERROR line each. Fixed: socket
+timeout 10 s (none for migrate); `DatabaseUnavailable` → `SERVICE_UNAVAILABLE` / 503 + Retry-After,
+WARN. The integration test (a real paused container) found what the drill hid: a rollback on the
+evicted connection replaces the original exception, leaving HikariCP's SQLState-less "Connection is
+closed". After, same freeze: **2.9 s, all SERVICE_UNAVAILABLE, ERROR 127 → 1**.
+
+`docker build` failed on this machine's known DNS problem; layered the host-built application layer
+onto the main image instead (dependencies unchanged). My mutation loop first reported three
+survivors — Gradle says "1 test completed" for one test; my grep wanted "tests". Re-run: all caught.
+
+Kept, with numbers: `db` in readiness (deploy safety vs ~20 s of 503s for new visitors).
+Unit 113, integration 158.
+
+**Hours:** ~3.
+
+---
+
 ## 2026-10-06 — 10.1: the security review found that §10 described a different system
 
 Phase 10 scope: Extended (owner), ~16 h.
