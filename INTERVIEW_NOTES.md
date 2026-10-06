@@ -539,6 +539,27 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 10.6 — the demo
+
+### "Did recording a demo teach you anything?"
+It found a bug. I recorded two browsers playing while I restarted every API server underneath them,
+and the first clean take stalled: one move never arrived. The browser had sent it in the instant its
+server was draining — the frame died with the socket, and unlike my load-test client, the browser
+never sent it again. The player's move just vanished. The server already made a re-send safe — every
+move carries a client-generated ID — so the fix was on the client: keep the last unacknowledged move,
+and after reconnecting, re-send it if the board hasn't moved past it. I wrote a test that drops the
+move in the middle of the WebSocket and closes the connection the way a draining server does; it
+failed before the fix and passes after.
+
+### "How do you know the demo isn't staged?"
+It's a script anyone can run against the repo: real moves through the real server, a real
+`kubectl rollout restart`. Only the waiting is sped up, with a 4× badge on screen. And a take is
+rejected automatically if any infrastructure container restarted during it — one take was, because
+my laptop ran out of memory and killed the ingress controller, and I didn't want that in a demo
+claiming the system handles restarts.
+
+---
+
 ## Phase 10.3 — documentation
 
 ### "How do you keep architecture docs from going stale?"
