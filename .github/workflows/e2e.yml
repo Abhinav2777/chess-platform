@@ -61,6 +61,12 @@ jobs:
         working-directory: frontend
         run: npm run e2e:lobby
 
+      # A move lost with its socket (a server draining mid-game) is re-sent once with the same
+      # clientMoveId and applied once; a move that landed but lost its echo is not re-sent (10.6).
+      - name: 'Check: a move across a reconnect'
+        working-directory: frontend
+        run: npm run e2e:reconnect
+
       # The outage check only means something with Valkey fanout: in-JVM fanout carries no
       # moves through Valkey, so there would be nothing to degrade.
       - name: Restart backend with Valkey fanout
