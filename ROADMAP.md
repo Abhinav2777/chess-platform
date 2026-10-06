@@ -341,7 +341,7 @@ repository that is not backed by one of these files.**
 
 ---
 
-### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.4 done, ~11 h)**
+### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.4, 10.6 done, ~13.5 h; 10.5 deferred by the owner)**
 
 **Scope (owner, 2026-10-06): Extended, ~16 h** — ends near 145 h of 135–175.
 
@@ -351,8 +351,8 @@ repository that is not backed by one of these files.**
 | 10.2 | Failure drills on kind: stop PostgreSQL, SQS under live games; record; update the failure matrix | ✅ ~3 h — 5 drills, 20/20 games every time; DB freeze: waits 33.5 s → 2.9 s, `INTERNAL` → `SERVICE_UNAVAILABLE`, ERROR lines 127 → 1 → `docs/failure-drills.md` |
 | 10.3 | Docs truth pass (ARCHITECTURE drift), Mermaid diagrams, README with results | ✅ ~3 h — ~25 false statements corrected; 5 diagrams (rendered to validate); README leads with measurements. **Found a bug:** insufficient-material draws could not be stored (V9) |
 | 10.4 | Interview package: 3 resume bullets, 30 s / 2 min / 10 min explanations | ✅ ~1.5 h — INTERVIEW_NOTES: pitch (timed by word count), bullets traced to the ledger, top-10 index, limits, scaling ladder, fundamentals ("To be added" closed) |
-| 10.5 | One AWS session: hashing queue sized from measurement + 500 concurrent sockets | |
-| 10.6 | Demo recording / GIF | |
+| 10.5 | One AWS session: hashing queue sized from measurement + 500 concurrent sockets | deferred (owner, 2026-10-07): after 10.6 |
+| 10.6 | Demo recording / GIF | ✅ ~2.5 h — two scripted, synced GIFs (play; rolling restart mid-game, reconnect 453 / 275 ms). **Found a client bug:** a move made as a pod drained vanished — the browser now re-sends it (same clientMoveId) |
 
 **MI:** security review against the OWASP API Top 10 · verified failure-matrix drills
 (actually stop each dependency and record what happened) · all docs finalised · Mermaid

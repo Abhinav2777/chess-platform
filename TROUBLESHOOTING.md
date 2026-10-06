@@ -328,6 +328,9 @@ production — two milestones, here.
 
 ### `pkill -f ChessPlatformApplication` kills your own shell (exit 144)
 
+(Repeated on 2026-10-07 with `pkill -f "vite --port 5173"` — the pattern is in the shell's own
+command line. Find the PID with `ss -ltnp` for a port, then `kill <pid>`.)
+
 **Symptom:** the command that was meant to stop `bootRun` terminates the terminal command
 running it.
 **Cause:** `-f` matches the full command line — including the shell whose command line
@@ -501,6 +504,28 @@ If the fix is not yet in Ubuntu's archive either, `--ignore-unfixed` already ski
 The kernel's OOM killer. Seen when the full Testcontainers suite ran while the compose
 `--profile app` API and worker JVMs were also up on a 15 GB machine. Stop the app containers
 (`docker compose -f ops/docker/docker-compose.yml --profile app stop api worker`) first.
+
+### Browser errors during a rolling restart on kind: `ERR_SOCKET_NOT_CONNECTED`, ingress restarted
+
+**Seen:** 2026-10-07, recording the demo on a 16 GB laptop with an IDE and a browser open. The
+WebSocket reconnects failed at the TCP level and the ingress-nginx controller and Valkey had
+restarted: the **host** ran out of memory (`journalctl -k | grep -i "killed process"` — nginx) while
+the rolling restart briefly ran an extra API JVM. Not the application. **Check before blaming the
+app:** container restart counts before and after (`demo.mjs` now compares them and marks the take
+invalid), and the kernel log. **Fix:** free memory (`./gradlew --stop` released ~750 MB), or run
+fewer replicas.
+
+### Playwright: `Executable doesn't exist at …/ms-playwright/ffmpeg-NNNN/ffmpeg-linux`
+
+**Seen:** 2026-10-07, `recordVideo`. Playwright records through its own ffmpeg build;
+`npx playwright-core install ffmpeg` timed out on this machine's network. **Workaround:** a symlink
+to a system ffmpeg built with libvpx (`ffmpeg -encoders | grep libvpx`):
+`mkdir -p ~/.cache/ms-playwright/ffmpeg-1011 && ln -s /usr/bin/ffmpeg ~/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux`.
+
+### `ffmpeg` inside a `while read` loop: "Enter command:", the loop stops after one pass
+
+ffmpeg reads stdin by default (for interactive commands) and swallows the loop's input. Pass
+`-nostdin` to every ffmpeg in a loop (`docs/demo/make-gif.sh`).
 
 ### `kill -STOP` inside a container does not stop its main process
 

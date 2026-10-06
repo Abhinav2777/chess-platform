@@ -9,11 +9,22 @@ state correct under concurrency, network failure, pod death and rolling deployme
 clock that decides outcomes and therefore cannot be wrong — and then **measuring** whether it
 is, rather than asserting it.
 
-![Lobby](docs/screenshots/lobby.png)
+![Two browsers: seek, pair, checkmate, the rating arrives](docs/demo/1-play.gif)
 
-| Game (check after Qh5+) | Game over, rating updated | Phone |
+**And mid-game, both API pods replaced by a rolling restart** — the browsers reconnect in under half
+a second and play on from the same position
+([the clip](docs/demo/README.md#2-a-rolling-restart-mid-game), real `kubectl rollout restart`,
+waits shown at 4×).
+
+| Lobby | Game (check after Qh5+) | Game over, rating updated |
 |---|---|---|
-| ![Game](docs/screenshots/game.png) | ![Game over](docs/screenshots/game-over.png) | ![Phone](docs/screenshots/mobile-game.png) |
+| ![Lobby](docs/screenshots/lobby.png) | ![Game](docs/screenshots/game.png) | ![Game over](docs/screenshots/game-over.png) |
+
+<details><summary>On a phone</summary>
+
+![Phone](docs/screenshots/mobile-game.png)
+
+</details>
 
 ## Measured
 
