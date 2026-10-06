@@ -22,10 +22,13 @@ resource "aws_db_parameter_group" "postgres16" {
 
   # TLS required for every connection. The default since PG 15 on RDS, written down so it
   # cannot quietly change. pgjdbc's default sslmode=prefer negotiates TLS on its own.
+  # pending-reboot, not immediate: RDS reports this parameter back as pending-reboot whatever was
+  # sent, so "immediate" showed as a change on every plan (9.4). The value is the default anyway —
+  # nothing waits on a reboot.
   parameter {
     name         = "rds.force_ssl"
     value        = "1"
-    apply_method = "immediate"
+    apply_method = "pending-reboot"
   }
 
   # A session left "idle in transaction" holds row locks and blocks vacuum. The application
