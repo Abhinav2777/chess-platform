@@ -74,18 +74,29 @@ left half-migrated because a sub-milestone ended.
 
 | | |
 |---|---|
-| **Current phase** | Phase 9 — tracing, load testing, optimisation |
-| **Phase status** | 9.1–9.3 done; done-when files exist. 9.4 (AWS session) optional, chosen by the owner. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~9 of 10–14 |
-| **Cumulative hours (estimated)** | ~123 of 135–175 |
+| **Current phase** | Phase 10 — hardening & documentation |
+| **Phase status** | Phase 9 complete (9.1–9.4). Phase 10 not started. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14) |
+| **Cumulative hours (estimated)** | ~128.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 9.4 — the AWS session (§10) |
+| **Next milestone** | Phase 10 — scope it first (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 9 — Milestone 9.4 (2026-10-01 → 10-06): the AWS session — **Phase 9 complete**
+
+- k6 as a one-off ECS task inside the VPC (`loadgen.tf`, `aws-loadtest.sh`). Found: bcrypt inside
+  transactions emptied the pool (fixed `08fe129`); then bcrypt on virtual threads starved the
+  carriers (fixed PR #29: `BoundedPasswordEncoder`, 503 load shedding). Also WebSocket payload
+  validation and a harness reconnect storm. `docs/perf/optimisation-02.md`.
+- After: 50-game burst 50/50 with 0 error lines; 500 sign-ups 0 failures, move p99 120 ms. Fargate
+  measured to ~100 concurrent sockets (owner stopped on cost). Unit 103, integration 151.
+- Ops: Terraform crash on Ctrl+C recovered (force-unlock + import); tainted-but-healthy services
+  untainted; `rds.force_ssl` perpetual diff fixed. AWS destroyed and verified empty.
 
 ### Phase 9 — Milestones 9.2–9.3 (2026-10-01): baseline and one optimisation
 
@@ -689,6 +700,8 @@ imported zero Java 25 classes; fixed and guarded (ADR-001 correction). The histo
 | Conflict auto-resync not seen in a browser | The server half is integration-tested; the React half compiles but has not been watched (clock rendering was verified in 4.1c) | Hard to trigger from the UI; a browser test that injects a stale-ply MOVE would do it |
 | V5 backfill never exercised on real data | No ACTIVE games existed when it ran locally; correct by inspection | Only matters for a deployed database with games in flight |
 | No automatic access-token refresh in the client | A session lasts 15 min, then socket auth fails until sign-in | Phase 4 or 10 |
+| A move with `from` = `to` is a 500 / `INTERNAL` | `MoveIntent` throws `IllegalArgumentException`, which no handler maps (REST and WebSocket). Found in 9.4 review | Send `{"from":"e2","to":"e2"}`; Phase 10 hardening |
+| Hashing queue sized by guess (16) | Too deep for 0.5 vCPU: sign-up waits up to 27 s in a burst (optimisation-02) | Set ~2–4 per task from the measured ~0.9 vCPU-s per hash; verify on the next AWS run |
 
 ---
 
@@ -773,13 +786,13 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **9.4 — AWS session (owner chose it; ~2–3 h, ~$1):** apply the app stack with the new memory
-   settings (first deploy of them on ECS), run `games.js` as a one-off ECS task inside the VPC at the
-   baseline levels, compare with kind, destroy, checklist. Watch: 0.5 vCPU Fargate tasks will saturate
-   CPU long before the laptop did.
-2. Candidates recorded, not built: pool size or load shedding (next limit); relay poll → LISTEN/NOTIFY
-   (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress).
-3. **Phase 10 — hardening & docs.** Owner: MFA (deferred); Cost Explorer for 7.5 (§12).
+1. **Phase 10 — hardening & docs (10–14 h; ~6.5–46 h left in the 135–175 budget).** Scope it
+   first against ROADMAP's list: OWASP API Top 10 review, failure-matrix drills, docs/diagrams,
+   resume bullets and explanations, demo video. Owner: MFA (deferred).
+2. Candidates recorded, not built: hashing queue sized from measurement (§4); the from = to 500
+   (§4); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
+   (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500
+   concurrent sockets on Fargate (a ramp shorter than the play time).
 
 ---
 
@@ -822,9 +835,15 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Pairing latency (browser → ALB, from Hyderabad) | 4.8 s, both players on the board after the second seek | Headless Chromium → us-east-1 ALB, 2026-10-01 | `APP_URL=… npm run e2e:lobby` |
 | Game end → rating shown to both players (AWS) | 3.35 s (outbox → relay → SQS → worker on Spot → Valkey → API → browser) | Same | `npm run e2e:lobby` against the ALB |
 | ALB request distribution across the two API tasks | 25 / 25 over 30 min (one task per AZ) | CloudWatch `RequestCount` by AZ, 2026-10-01 | `get-metric-statistics` |
+| Fargate: sign-up burst, before → after the bounded hashing pool | 50 games, 30 s ramp: before 30/50 games, 15/100 sign-ups failed, pool `waiting=11`, 265 WARN/ERROR lines; after 50/50, 0 error lines, 6 shed (503) and retried; API CPU 100 % in both | ECS Fargate, 2 × 0.5 vCPU API, 2026-10-06 | `docs/perf/optimisation-02.md` |
+| Fargate: 500 sign-ups at ~0.8/s, ~50 concurrent games | 250/250 games consistent, 0 HTTP failures (HTTP p99 1.3 s), move ack p50/p95/p99 11/73/120 ms, API CPU max 76 % | Same | same report |
+| Carrier starvation by bcrypt (local experiment, 1 CPU) | 8 × bcrypt-12 burst: unrelated requests late p50 1,854–1,910 ms on virtual threads vs 0 ms on one platform thread; 0 ms with 16 carriers | Dev machine, JDK 25, `taskset` 1 CPU, 2026-10-06 | `loadtest/experiments/CarrierStarvation.java` |
+| JVM processors on a 0.5-vCPU Fargate task | 2 (`availableProcessors`) | ECS Fargate x86, 2026-10-06 | API startup log `Password hashing: … JVM sees 2 processor(s)` |
+| bcrypt-12 cost on Fargate | ~0.9 vCPU-s per hash (**estimate**: ~100 hashes ≈ 90 s of 2 × 0.5 vCPU saturated); laptop core 0.42 s (measured) | Same | optimisation-02, CloudWatch CPU |
+| AWS cost, 2026-10-01 (UTC day) | $0.20 total — the 7.5 deploy session **and** 9.4 session 1, full stack several hours | Cost Explorer, read 2026-10-06 | `aws ce get-cost-and-usage --granularity DAILY` |
 | Clock correct across a server kill | `kill -9` + cold restart; side to move lost 31,769 ms over 31,798 ms wall time (Δ −29 ms); other side 0 ms | Dev machine, local profile, 2026-09-28 | Scripted WebSocket snapshots before/after (DEVELOPMENT_LOG 2026-09-28, M3.3) |
 
-Not yet measured: the real AWS bill for the 7.5 session (Cost Explorer lagged; read it on
-2026-10-02 and add a row). Estimates currently in the repository, all clearly labelled as such: AWS monthly costs
+Not yet measured: the bill for 2026-10-06 (9.4 session 2) — not posted when written; read it and
+add a row. Estimates currently in the repository, all clearly labelled as such: AWS monthly costs
 (`ARCHITECTURE.md` §12.1, ADR-010), phase hour budgets (`ROADMAP.md`), the 1,000-connection
 target (`ARCHITECTURE.md` §2 — a *target*, not a result).

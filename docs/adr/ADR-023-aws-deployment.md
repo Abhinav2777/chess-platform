@@ -231,6 +231,44 @@ returned NotFound — it lags, and is not the source of truth for a destroy chec
 **Measured on AWS** (PROJECT_STATE §12): app start 60–75 s on 0.5 vCPU, ~100–122 s on 0.25 vCPU —
 the 180 s health-check grace was right, with little margin; a Phase 9 topic.
 
+## Phase 9.4 — load from inside the VPC (2026-10-01, 2026-10-06)
+
+**The load generator is a one-off ECS task** (`infra/app/loadgen.tf`, off unless `loadgen_enabled`):
+`grafana/k6` pinned by digest, the script passed in base64 from the repository. It is run and
+collected by `loadtest/aws-loadtest.sh` (run-task, wait, logs by pattern, CloudWatch). It targets
+the ALB's **private** address. Through the public name, traffic hairpins via the internet gateway,
+and the ALB's "from the load generator's security group" rule cannot match a public source address.
+`relaxed_auth_rate_limits` raises the sign-up limits for the session only, since every k6 user
+registers from one address. Both variables default off, so a normal apply has neither.
+
+**What it found** (`docs/perf/optimisation-02.md`): on 0.5 vCPU, password hashing, not chess, was
+the limit. It took the service down twice, for two different reasons:
+- **Inside a transaction** it held pooled connections.
+- **Outside one, on virtual threads,** it occupied every carrier, so connection holders could not
+  run.
+
+The fixes: a short transaction after the hash, then a bounded platform-thread pool with 503 load
+shedding. After them, the same burst ran 50/50 games with 0 error lines. A 500-sign-up run (about 50
+games at once) had 0 failures and move p99 120 ms.
+
+**Measured, and different from the assumption:** a 0.5-vCPU Fargate task shows the JVM **2
+processors**, so 2 virtual-thread carriers. The JVM sizes itself for more CPU than the task gets.
+Logged at startup since 9.4, because it cannot be seen in the task definition.
+
+**Operational lessons from the session** (TROUBLESHOOTING):
+- **Terraform crashed on Ctrl+C** mid-apply while writing state. The lock stayed behind, and the two
+  ECS services existed in AWS without being in state. Recovery: confirm no Terraform process is
+  alive, then force-unlock, import both services, destroy.
+- **Credentials expired** while Terraform waited for the services. They came up healthy but were
+  marked *tainted*, and `untaint` avoided replacing them.
+- **`rds.force_ssl` showed a change on every plan** (`apply_method` reported back as
+  `pending-reboot`). The config now says `pending-reboot`.
+
+**Cost:** Cost Explorer reports **$0.20** for 2026-10-01 (UTC), covering both the 7.5 deploy
+session and the first 9.4 session, with the full stack up for several hours. 2026-10-06 had not
+posted when this was written. The stack costs well under $0.25 an hour (estimate from that day). A load run is minutes of that. The expensive mistake is leaving the
+stack up.
+
 ## Alternatives considered
 
 | Alternative | Why not |

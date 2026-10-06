@@ -398,6 +398,52 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 9.4 — the AWS load test
+
+### "What happened when you load-tested on AWS?"
+Password hashing took the service down, twice, for two different reasons, and neither showed on my
+16-core laptop. First, sign-up hashed the password inside a database transaction, so every bcrypt
+held a pooled connection idle; about three sign-ups a second emptied the pool. I moved the hash out
+of the transaction, with a test that checks no connection is held while hashing. The next run still
+failed, which was the interesting part.
+
+### "Why did it still fail?"
+Virtual threads. They run on a few carrier threads, and they are never preempted — they give up the
+carrier only when they block. bcrypt never blocks. So a burst of hashes occupied every carrier, and a
+request that held a connection, got its query result back, and only needed a moment of CPU to finish
+and release it, couldn't run. The clue was in the pool's own error: it said it waited 4.8 seconds
+with a 3-second timeout — the thread doing the waiting wasn't being scheduled either. I reproduced it
+before fixing it: pinned to one CPU, unrelated requests were late by 1.9 s at the median with hashing
+on virtual threads, and 0 ms with hashing on a platform thread.
+
+### "How did you fix it?"
+Hashing runs on a small pool of platform threads — the OS preempts those, so requests keep getting
+CPU — with a bounded queue. When the queue is full the request gets a 503 with Retry-After
+immediately instead of waiting longer than the client will. Same burst afterwards: 50 of 50 games, 0
+errors, CPU still at 100 % — saturated but not failing. It's the general rule: CPU-heavy work doesn't
+belong on virtual threads.
+
+### "Why not just lower the bcrypt cost?"
+That trades password security to pass a load test. The capacity answer is CPU: on 0.5 vCPU a sign-up
+costs roughly 0.9 vCPU-seconds — about one sign-up a second for the whole deployment. That is a
+sizing fact to plan around — bigger tasks, scaling on CPU, or auth as its own service at real scale.
+
+### "What scale did you actually reach on AWS?"
+About 100 concurrent sockets, measured — and I'll be precise about why it isn't more: one run I
+labelled 250 games used a long ramp, so only about 50 games overlapped. I caught that from the
+arithmetic, not the dashboard. A thousand sockets is measured on kind, not on Fargate. Another
+correction: I predicted the JVM would see one processor on a half-vCPU task; I logged it, and it
+sees two.
+
+### "Tell me about an incident with your infrastructure tooling."
+A Ctrl+C during a Terraform apply crashed Terraform while it was saving state. The lock stayed, and
+two running ECS services weren't in state — destroy would never have removed them. I checked no
+Terraform process was alive, compared the state file with the declared resources and with AWS, found
+exactly the two missing, force-unlocked, imported them, and destroyed. Lesson: once an apply
+starts, let it finish.
+
+---
+
 ## Phase 9.2–9.3 — load testing
 
 ### "What was your bottleneck?"

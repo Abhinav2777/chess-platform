@@ -413,6 +413,45 @@ held behind dependency waits past the 5-minute signature window; the `aws login`
 under a long-running process). **Fix:** run `terraform destroy` again — it is idempotent; the
 second run finished. Then verify with direct service queries (DEPLOYMENT.md checklist), not the
 tagging API, which keeps listing deleted resources for a while.
+**Since:** probably the same cause as the `ExpiredTokenException` entry below — 2026-10-06 showed
+`aws login` credentials expiring under a long Terraform run. Refresh (`aws login`, `aws sts get-caller-identity`) right
+before any apply, destroy or long load run.
+
+### `TERRAFORM CRASH`: `Failed to serialize resource instance in state … ObjectStatus(0)` after Ctrl+C
+
+**Seen:** 2026-10-02, Terraform 1.16.4, one Ctrl+C during an apply. The graceful stop crashed while
+saving state. That left **the lock held** (`Error acquiring the state lock … PreconditionFailed`, Who:
+yourself, Operation: Apply) and **resources created but not in state**: here both ECS services,
+running. `destroy` would not know them, and deleting the cluster would fail while they existed.
+**Recover, in order:**
+1. **No Terraform still running:** `pgrep -a terraform`; also `pgrep -af terraform-provider` — a
+   crashed core can leave its provider process behind (kill it by PID).
+2. **What state holds:** `aws s3 cp s3://<state-bucket>/app/terraform.tfstate -`. Compare its
+   resources with the `resource` blocks declared in `*.tf` and with AWS itself (`aws ecs list-services`,
+   …). Here: 53 of 55 in state; the 2 missing existed.
+3. `terraform force-unlock <lock-id>` — **only** after step 1. Never to get past a live apply.
+4. `terraform import <address> <id>` for each missing one (ECS service id: `cluster/service`), with
+   the same `-var`s as the apply.
+5. `terraform destroy` (or re-plan), uninterrupted.
+
+**Avoid:** let an apply finish, then destroy. A second Ctrl+C ("Two interrupts received. Exiting
+immediately") skips saving state altogether.
+
+### Apply fails with `ExpiredTokenException` while "Still creating" the ECS services
+
+**Seen:** 2026-10-06, after about 15 minutes of apply. The services were created; only the wait
+for them to stabilise failed, so Terraform marked them **tainted** (`"status": "tainted"` in state),
+and the next apply would destroy and recreate them. **Check:** the service is healthy
+(`aws ecs describe-services` → running = desired, rollout `COMPLETED`; target group healthy). Then
+`terraform untaint aws_ecs_service.api` (and `.worker`) and `terraform plan`: no changes for them.
+**Cause:** the `aws login` session expired under the long-running process. Refresh first.
+
+### `terraform plan` always shows `rds.force_ssl`: `apply_method` `pending-reboot` → `immediate`
+
+**Seen:** every plan after an apply, 2026-10-06. A perpetual diff: RDS reports this parameter's
+apply method as `pending-reboot` whatever was sent, so applying changes nothing and the diff
+returns. The value (`1`) never changed. **Fixed:** the config says `pending-reboot`. Recognise the
+shape: a diff whose only change is how a setting is applied, not the setting itself.
 
 ### Deployed (plain HTTP): a click does nothing — no request, no console error
 
@@ -462,6 +501,17 @@ If the fix is not yet in Ubuntu's archive either, `--ignore-unfixed` already ski
 The kernel's OOM killer. Seen when the full Testcontainers suite ran while the compose
 `--profile app` API and worker JVMs were also up on a 15 GB machine. Stop the app containers
 (`docker compose -f ops/docker/docker-compose.yml --profile app stop api worker`) first.
+
+### Pool exhausted (`active=10, waiting=N`) though no transaction is long — on a small-CPU host only
+
+**Seen:** 2026-10-06, Fargate 0.5 vCPU, a burst of sign-ups. **The tell:** Hikari reports waiting
+**longer than its own `connection-timeout`** (`timed out after 4795ms` against 3,000). The waiting
+thread itself was not being scheduled. **Cause:** CPU-bound work (bcrypt) on virtual threads
+occupies every carrier. A virtual thread that holds a connection cannot run to release it, because
+virtual threads are never preempted. Invisible on a many-core laptop. **Fixed:**
+`BoundedPasswordEncoder` hashes on platform threads (docs/perf/optimisation-02.md). **General
+rule:** CPU-heavy work does not belong on virtual threads. **Check:** the startup line `JVM sees N
+processor(s)` (carrier count), CPU at 100 %, and `executor.queued{name=password.hashing}`.
 
 ---
 
