@@ -83,9 +83,12 @@ flowchart LR
     B <-->|WebSocket| E
     E --> REST
     E <--> WS
+    REST --> ID
+    WS --> ID
     REST --> GAME
     WS --> GAME
     WS --> MM
+    ID --> PG
     GAME -->|"one transaction per move;<br/>outbox row on game end"| PG
     MM --> VK
     GAME -->|publish after commit| VK
