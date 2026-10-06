@@ -2,11 +2,23 @@ package com.chessplatform.realtime.protocol;
 
 import com.chessplatform.chess.Promotion;
 import com.chessplatform.chess.Side;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PositiveOrZero;
 
 import java.util.List;
 import java.util.UUID;
 
-/** Payload bodies for the protocol. Records, so serialisation needs no annotations. */
+/**
+ * Payload bodies for the protocol. Records, so serialisation needs no annotations.
+ *
+ * <p>Inbound records carry Bean Validation constraints, checked when a frame is parsed
+ * ({@code WebSocketSender#parsePayload}): a missing or malformed field is a VALIDATION_FAILED
+ * error to the client, never an unhandled exception (Phase 9.4 — a load-test client sent
+ * SUBSCRIBE without a game id, and the server opened a transaction before failing with an
+ * ERROR-level "Unhandled error").
+ */
 public final class Payloads {
 
     private Payloads() {
@@ -17,7 +29,7 @@ public final class Payloads {
     public record Auth(String token) {
     }
 
-    public record Subscribe(UUID gameId) {
+    public record Subscribe(@NotNull UUID gameId) {
     }
 
     /**
@@ -25,11 +37,15 @@ public final class Payloads {
      * serves both transports; a second shape would be a second place for the rules to
      * drift apart.
      */
-    public record Move(UUID gameId, UUID clientMoveId, int expectedPly,
-                       String from, String to, Promotion promotion) {
+    public record Move(@NotNull UUID gameId,
+                       @NotNull UUID clientMoveId,
+                       @PositiveOrZero int expectedPly,
+                       @NotBlank @Pattern(regexp = "^[a-h][1-8]$") String from,
+                       @NotBlank @Pattern(regexp = "^[a-h][1-8]$") String to,
+                       Promotion promotion) {
     }
 
-    public record Resign(UUID gameId) {
+    public record Resign(@NotNull UUID gameId) {
     }
 
     /** Seconds, as the REST API takes them. Boxed so a missing field is detectable. */

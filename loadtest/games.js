@@ -14,6 +14,11 @@
 // Verified live, per player:
 //   - clocks never go up (increment 0): a clock rebuilt wrongly on another pod would show as a jump
 //
+// A game that cannot start (registration or creation failed) is counted in games_not_started and
+// opens no sockets (9.4: such games once looped AUTH -> AUTH_FAILED -> reconnect at ~48 sockets/s
+// and buried the run's signal). A 503 is retried after its Retry-After, as a client would: the
+// server sheds sign-ups under a burst by design, and requests_shed counts how often.
+//
 // Run with loadtest/rolling-deploy.sh, which triggers `kubectl rollout restart` mid-test.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -47,6 +52,10 @@ const clockAnomalies = new Counter('clock_anomalies');
 const gamesVerified = new Counter('games_verified');
 const gamesInconsistent = new Counter('games_inconsistent');
 const gamesFinished = new Counter('games_finished_naturally');
+const gamesNotStarted = new Counter('games_not_started');   // registration or creation failed
+const requestsShed = new Counter('requests_shed');          // 503 + Retry-After, then retried
+const authFailed = new Counter('ws_auth_failed');
+const MAX_ATTEMPTS = 5;
 
 export const options = {
   // p99 too: docs/perf/README.md requires p50/p95/p99, and k6's default summary stops at p95.
@@ -60,6 +69,8 @@ export const options = {
     ws_closes_abnormal: ['count==0'],
     moves_rejected: ['count==0'],
     games_verified: [`count==${GAMES}`],
+    games_not_started: ['count==0'],
+    ws_auth_failed: ['count==0'],
   },
 };
 
@@ -73,12 +84,25 @@ function uuid() {
   });
 }
 
+// POST, retrying a 503 after its Retry-After (load shedding) up to MAX_ATTEMPTS times.
+function postRetryingShed(url, body, params) {
+  let res;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    res = http.post(url, body, params);
+    if (res.status !== 503 || attempt === MAX_ATTEMPTS) return res;
+    requestsShed.add(1);
+    sleep(Number(res.headers['Retry-After'] || 1) + Math.random());
+  }
+  return res;
+}
+
 function register(name) {
-  const res = http.post(`${BASE}/api/auth/register`,
+  const res = postRetryingShed(`${BASE}/api/auth/register`,
     JSON.stringify({ username: name, email: `${name}@example.com`, password: 'correct-horse-battery' }),
     { headers: JSON_HEADERS });
-  check(res, { 'registered': (r) => r.status === 201 });
-  return res.json('accessToken');
+  const ok = check(res, { 'registered': (r) => r.status === 201 });
+  if (!ok) console.warn(`register ${name}: HTTP ${res.status} ${String(res.body).slice(0, 200)}`);
+  return ok ? res.json('accessToken') : null;
 }
 
 export default function () {
@@ -86,10 +110,15 @@ export default function () {
   const tag = `${__VU}${Date.now().toString(36).slice(-6)}`;
   const names = { WHITE: `lw${tag}`, BLACK: `lb${tag}` };
   const tokens = { WHITE: register(names.WHITE), BLACK: register(names.BLACK) };
-  const created = http.post(`${BASE}/api/games`, JSON.stringify({
+  if (!tokens.WHITE || !tokens.BLACK) { gamesNotStarted.add(1); return; }
+  const created = postRetryingShed(`${BASE}/api/games`, JSON.stringify({
     opponentUsername: names.BLACK, playAs: 'WHITE', initialSeconds: 600, incrementSeconds: 0,
   }), auth(tokens.WHITE));
-  check(created, { 'game created': (r) => r.status === 201 });
+  if (!check(created, { 'game created': (r) => r.status === 201 })) {
+    console.warn(`create game ${tag}: HTTP ${created.status} ${String(created.body).slice(0, 200)}`);
+    gamesNotStarted.add(1);
+    return;
+  }
 
   const game = {
     id: created.json('id'), ply: 0, sideToMove: 'WHITE', legal: null,
@@ -128,6 +157,13 @@ function makePlayer(side, token, game) {
 function onMessage(p, game, msg) {
   const body = msg.payload;
   switch (msg.type) {
+    case 'AUTH_FAILED':
+      // The token will not get better by retrying: stop, as the browser does (sign-in again).
+      authFailed.add(1);
+      console.warn(`game ${game.id} ${p.side}: AUTH_FAILED ${JSON.stringify(body)}`);
+      p.closingByUs = true;
+      break;
+
     case 'AUTH_OK':
       if (p.reconnectFrom !== null) {
         reconnectMs.add(Date.now() - p.reconnectFrom);

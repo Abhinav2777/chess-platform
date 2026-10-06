@@ -51,5 +51,11 @@ public enum ErrorCode {
     /** A rate limit refused the request. HTTP 429 with Retry-After; on the socket, an ERROR. */
     RATE_LIMITED,
     VALIDATION_FAILED,
-    CONFLICT
+    CONFLICT,
+    /**
+     * The server shed this request to protect everything else on the instance — today, a full
+     * password-hashing queue (Phase 9.4). HTTP 503 with Retry-After. Nothing about the request
+     * is wrong; the same request a moment later should succeed.
+     */
+    SERVER_BUSY
 }
