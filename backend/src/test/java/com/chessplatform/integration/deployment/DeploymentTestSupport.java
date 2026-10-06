@@ -43,6 +43,9 @@ abstract class DeploymentTestSupport {
         registry.add("chess.matchmaking.scheduler-enabled", () -> "false");
         // The aws profile moves actuator to its own port (8081); random here, like the server.
         registry.add("management.server.port", () -> "0");
+        // The aws profile has no development fallback for the signing key (10.1); in AWS it comes
+        // from Secrets Manager.
+        registry.add("chess.auth.jwt-secret", () -> "deployment-test-signing-key-at-least-32-bytes");
     }
 
     private final HttpClient http = HttpClient.newHttpClient();

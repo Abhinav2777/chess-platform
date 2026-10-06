@@ -30,3 +30,10 @@ management:
       # Status only. The ALB needs the HTTP code; nobody outside needs to learn the database
       # product or the Valkey version.
       show-details: never
+
+chess:
+  auth:
+    # No default here (10.1). application.yml's development fallback is a key published in this
+    # repository: a task started without CHESS_AUTH_JWT_SECRET — a renamed or dropped secret
+    # mapping — would sign tokens anyone can mint. Unresolvable placeholder = startup fails.
+    jwt-secret: ${CHESS_AUTH_JWT_SECRET}

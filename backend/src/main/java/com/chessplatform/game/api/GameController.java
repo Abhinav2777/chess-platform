@@ -96,11 +96,21 @@ public class GameController {
      * carry, so the two paths agree by construction rather than by discipline.
      */
     @GetMapping("/{gameId}")
-    public GameResponses.GameDetail get(@PathVariable UUID gameId) {
+    public GameResponses.GameDetail get(@PathVariable UUID gameId,
+                                        @AuthenticationPrincipal AuthenticatedUser caller) {
         // The same consistent snapshot the WebSocket's GAME_SNAPSHOT is built from.
         GameState state = gameFacade.state(gameId)
                 .orElseThrow(() -> new DomainException.NotFound(
                         ErrorCode.GAME_NOT_FOUND, "No such game."));
+
+        // Players only — the rule SUBSCRIBE has always enforced. Until 10.1 this endpoint served
+        // any game to any signed-in user, legal moves included: one authorisation rule per
+        // transport is how object-level access control breaks (OWASP API1). There is no
+        // spectating feature; if one is built, it is a deliberate rule for both transports.
+        GameView game = state.game();
+        if (!caller.id().equals(game.whitePlayerId()) && !caller.id().equals(game.blackPlayerId())) {
+            throw new DomainException.Rejected(ErrorCode.NOT_A_PLAYER, "You are not a player in this game.");
+        }
 
         List<GameResponses.PlayedMove> played = state.moves().stream()
                 .map(move -> new GameResponses.PlayedMove(
