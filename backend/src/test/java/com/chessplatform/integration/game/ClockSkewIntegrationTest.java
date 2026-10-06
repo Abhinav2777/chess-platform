@@ -129,7 +129,8 @@ class ClockSkewIntegrationTest extends IntegrationTestBase {
                 .as("nothing has expired").isEqualTo(GameStatus.ACTIVE);
 
         // REST: remaining time is computed "as of now" — the server's now.
-        GameResponses.GameSummary shown = controller.get(game.id()).game();
+        GameResponses.GameSummary shown = controller.get(game.id(),
+                new com.chessplatform.identity.AuthenticatedUser(white.id(), white.username())).game();
         assertThat(shown.whiteMsLeft())
                 .as("White is on move and has been thinking for milliseconds, not minutes")
                 .isGreaterThan(300_000L);

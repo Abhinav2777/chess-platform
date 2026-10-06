@@ -19,7 +19,11 @@ public record MoveIntent(String from, String to, Promotion promotion) {
         from = normaliseSquare(from, "from");
         to = normaliseSquare(to, "to");
         if (from.equals(to)) {
-            throw new IllegalArgumentException("from and to must differ: " + from);
+            // An illegal move a client can send — not a programming error. As an
+            // IllegalArgumentException it reached the catch-all: 500 over REST, INTERNAL over the
+            // socket, an ERROR log line per click (found in 10.1). The square checks below stay
+            // IllegalArgumentException: both transports validate the square format first.
+            throw new IllegalMoveException(from + to);
         }
     }
 
