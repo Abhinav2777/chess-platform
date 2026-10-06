@@ -75,17 +75,30 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 10 — hardening & documentation |
-| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.2 done. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~6.5 of ~16 |
-| **Cumulative hours (estimated)** | ~135 of 135–175 |
+| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.3 done. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~9.5 of ~16 |
+| **Cumulative hours (estimated)** | ~138 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 10.3 — docs truth pass and diagrams (§10) |
+| **Next milestone** | 10.4 — interview package (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 10 — Milestone 10.3 (2026-10-07): docs truth pass
+
+- `ARCHITECTURE.md` checked line by line against code, config and reports: ~25 statements
+  corrected (a diagram with a library the board doesn't use and a consumer that doesn't exist;
+  keyset pagination that is offset; NOT_YOUR_TURN that is CONFLICT; a DLQ alarm, VPC endpoints,
+  MDC keys, metric names, a Java agent, an EKS window — none real). NFR table now shows target
+  vs measured. `docs/diagrams/` (5, all rendered with mermaid-cli), README leads with measured
+  results, DEPLOYMENT gains kind and the load-test session, SETUP's actuator row fixed.
+- **Bug found by reading the schema against the enum:** `DRAW_INSUFFICIENT_MATERIAL` (26 chars)
+  in `VARCHAR(24)` — such a draw could never be stored, and an over-broad catch reported it as
+  "move already submitted". V9 widens the column; duplicate handling now requires SQLState 23505
+  (`UniqueViolation`, GameService and UserRegistrar). Test mutation-checked.
 
 ### Phase 10 — Milestone 10.2 (2026-10-06): failure drills
 
@@ -806,9 +819,10 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.3 — docs truth pass (ARCHITECTURE
-   drift beyond §10/§13: §14 "measured", §15 LocalStack, §16 react-chessboard), Mermaid diagrams,
-   README with results. Then 10.4 interview package, 10.5 AWS session, 10.6 demo. Owner: MFA (deferred).
+1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.4 — interview package (3 resume
+   bullets; 30 s / 2 min / 10 min explanations; INTERVIEW_NOTES "To be added" closed). Then 10.5
+   AWS session (hashing queue + 500 concurrent sockets; V9 applies on that deploy), 10.6 demo.
+   Owner: MFA (deferred).
 2. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
    SQS SDK call timeout (the relay holds its transaction across a stalled send, ~30 s — 10.2); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
    (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500

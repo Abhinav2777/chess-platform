@@ -2,6 +2,7 @@ package com.chessplatform.identity.internal;
 
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.common.error.UniqueViolation;
 import com.chessplatform.common.id.Uuid7;
 import com.chessplatform.identity.domain.User;
 import com.chessplatform.identity.domain.UserRepository;
@@ -124,6 +125,11 @@ public class UserRegistrar {
             // where we can translate it.
             return users.saveAndFlush(user);
         } catch (DataIntegrityViolationException lostTheRace) {
+            // Only a unique violation is the race described above; anything else is a bug and
+            // must not read as "registered a moment ago" (UniqueViolation).
+            if (!UniqueViolation.isCause(lostTheRace)) {
+                throw lostTheRace;
+            }
             throw new DomainException.Conflict(
                     ErrorCode.CONFLICT,
                     "That username or email was registered a moment ago. Please try again.");

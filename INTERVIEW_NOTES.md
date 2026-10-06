@@ -398,6 +398,25 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 10.3 — documentation
+
+### "How do you keep architecture docs from going stale?"
+I don't trust them to stay fresh; I check them. At the end I read the architecture document line by
+line against the code and found about twenty-five statements that weren't true — mostly plans from
+the first week that had changed during the build: a diagram showing a library I never used, a
+pagination strategy I'd deliberately not chosen, an alarm that didn't exist. Now every number
+links to a report with its date and environment, and anything not built says so.
+
+### "Did checking the docs find anything in the code?"
+A real bug. The column for how a game ended was 24 characters, and one of the values — draw by
+insufficient material — is 26. So that draw could never be saved. Worse, the move code caught every
+integrity error as "duplicate move", so the player was told their move was already submitted and to
+retry — a retry that could never work, logged as a normal event. I fixed the column with a
+migration and narrowed the catch to the one error code that really means duplicate. The lesson:
+catching a broad exception type to mean one specific thing is how bugs become invisible.
+
+---
+
 ## Phase 10.2 — failure drills
 
 ### "What happens when your database goes down mid-game?"

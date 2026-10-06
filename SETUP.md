@@ -69,8 +69,8 @@ is DOWN, the app is running but its dependencies are not — do not proceed.
 | PostgreSQL | localhost:5432 | `chess` / `chess` / db `chess` |
 | Valkey | localhost:6379 | none |
 | ElasticMQ (SQS, Phase 5) | http://localhost:9324 (API), http://localhost:9325 (UI) | none (the app sends dummy credentials) |
-| Actuator | http://localhost:8080/actuator | — |
-| Prometheus scrape | http://localhost:8080/actuator/prometheus | — |
+| Health | http://localhost:8080/actuator/health | open |
+| Other actuator endpoints (Prometheus, metrics) | http://localhost:8080/actuator/… | **401** locally: on the shared application port only health is open. On kind and AWS, actuator moves to its own port (8081), reachable only inside the network and open there (9.2). |
 
 These credentials are for local development only and are intentionally weak. Production
 credentials come from AWS Secrets Manager and never appear in this repository.
