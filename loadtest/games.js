@@ -38,6 +38,9 @@ const RAMP_SECONDS = Number(__ENV.RAMP_SECONDS || 0);
 const THINK_MIN_MS = Number(__ENV.THINK_MIN_MS || 800);
 const THINK_MAX_MS = Number(__ENV.THINK_MAX_MS || 2000);
 const CLOCK_TOLERANCE_MS = 5;
+// Resign each game at its deadline instead of abandoning it, so every game ends and produces a
+// rating event (10.2: the queue and worker drills need events in flight).
+const RESIGN_AT_END = __ENV.RESIGN_AT_END === '1';
 
 const goingAway = new Counter('ws_closes_going_away');      // 1001 — expected during a rollout
 const abnormal = new Counter('ws_closes_abnormal');         // anything else we did not ask for
@@ -223,6 +226,11 @@ function onMessage(p, game, msg) {
       } else {
         movesRejected.add(1);
         console.warn(`game ${game.id} ${p.side}: ERROR ${JSON.stringify(body)}`);
+        // What the browser does (useGame.ts): show the error, and the player chooses again.
+        // Without this a refused move left the player waiting forever (10.2: failure drills,
+        // where the server refuses moves while a dependency is down).
+        p.pending = null;
+        schedule(p, game);
       }
       break;
   }
@@ -255,7 +263,7 @@ function observeClocks(p, ply, white, black, kind) {
 
 function schedule(p, game) {
   if (game.ended) return;
-  if (Date.now() > game.deadline) return endGame(game);
+  if (Date.now() > game.deadline) return finish(game);
   if (game.over || game.sideToMove !== p.side || p.pending || p.moveTimer || !game.legal) return;
   p.moveTimer = setTimeout(() => { p.moveTimer = null; move(p, game); },
     THINK_MIN_MS + Math.random() * (THINK_MAX_MS - THINK_MIN_MS));
@@ -270,6 +278,13 @@ function move(p, game) {
     from: uci.slice(0, 2), to: uci.slice(2, 4), promotion };
   p.pending = { payload, expectedPly: game.ply, sentAt: Date.now() };
   p.send('MOVE', payload); // if the socket is down, the snapshot after reconnect re-sends it
+}
+
+function finish(game) {
+  if (!RESIGN_AT_END || game.over || game.resigning) return endGame(game);
+  game.resigning = true;
+  game.players[0].send('RESIGN', { gameId: game.id });
+  setTimeout(() => endGame(game), 5000); // GAME_FINISHED normally ends it first
 }
 
 function endGame(game) {
