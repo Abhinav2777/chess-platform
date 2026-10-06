@@ -1,12 +1,12 @@
-snapshot:  M8
-date:      2026-10-01
-contains:  Phases 1-8 complete: gameplay + clock + realtime, matchmaking, rate limiting,
+snapshot:  M9
+date:      2026-10-06
+contains:  Phases 1-9 complete: gameplay + clock + realtime, matchmaking, rate limiting,
            outbox + SQS + exactly-once Elo + push, container image, CI/CD, AWS deployment,
-           Kubernetes (kind) with graceful WebSocket drain
-migrations: V1 .. V7
+           Kubernetes (kind) with graceful WebSocket drain, tracing, load testing + 2 optimisations
+migrations: V1 .. V8
 aws:       infra/bootstrap LIVE (~$0.05/mo est.); infra/app destroyed (re-applyable) - ADR-023
 k8s:       kind + Kustomize (k8s/), cluster-up.sh + deploy.sh; migrate Job gates rollout - ADR-024
-proof:     40 live games through a rolling deploy: 0 lost, 0 clock anomalies
-           (docs/perf/2026-10-01-rolling-deploy-kind.md)
-verified:  2026-10-01 - unit 90, integration 146; kind browser flow green.
-next:      Phase 9 - tracing, load testing, optimisation (PROJECT_STATE §10)
+proof:     kind: 1,000 sockets flat (docs/perf/baseline.md); Fargate: sign-up burst 30/50 -> 50/50
+           games, 0 errors, after the bounded hashing pool (docs/perf/optimisation-02.md)
+verified:  2026-10-06 - unit 103, integration 151.
+next:      Phase 10 - hardening & documentation (PROJECT_STATE §10)
