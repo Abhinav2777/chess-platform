@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "e2e:lobby": "node e2e/lobby.mjs",
-    "e2e:outage": "node e2e/outage.mjs"
+    "e2e:outage": "node e2e/outage.mjs",
+    "e2e:reconnect": "node e2e/move-across-reconnect.mjs && MODE=lost-echo node e2e/move-across-reconnect.mjs",
+    "demo": "node e2e/demo.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

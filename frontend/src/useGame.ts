@@ -59,6 +59,12 @@ export function useGame(gameId: string) {
   const lastEventAt = useRef(performance.now());
   const lastPollAt = useRef(0);
   const awaitingEcho = useRef<number | null>(null);
+  // The last move sent and not yet seen applied. A move sent in the instant a server drains (a
+  // deploy) is lost with its socket — the server never applies it. Kept, so the snapshot after
+  // the reconnect can re-send it with the SAME clientMoveId: if the original did land, the server
+  // answers with the stored result instead of applying it twice (idempotency key, ADR-005).
+  // Found recording the demo (10.6): before this, the player's move silently vanished.
+  const pendingMove = useRef<{ request: MoveRequest; expectedPly: number } | null>(null);
   useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
   useEffect(() => { degradedRef.current = degraded; }, [degraded]);
 
@@ -67,6 +73,7 @@ export function useGame(gameId: string) {
     if (!current) return;
     const game = detail.game;
     // Forward only. A poll that raced a live event must never rewind the board.
+    if (pendingMove.current && game.ply > pendingMove.current.expectedPly) pendingMove.current = null;
     if (game.ply < current.ply || (game.ply === current.ply && game.status === current.status)) return;
     setSnapshot({
       ...current,
@@ -132,10 +139,23 @@ export function useGame(gameId: string) {
         setFailure(null);
         // Replaced, like everything else in the snapshot — never merged with what we had.
         setMoves((incoming.moves ?? []).map((san, index) => ({ ply: index + 1, san })));
+
+        // A move in flight across the reconnect: applied (the board is past it) — forget it;
+        // still our turn at the same ply — it never landed, send it again, same clientMoveId.
+        const pending = pendingMove.current;
+        if (pending) {
+          if (incoming.status !== 'ACTIVE' || incoming.ply > pending.expectedPly) {
+            pendingMove.current = null;
+          } else if (incoming.ply === pending.expectedPly && incoming.sideToMove === incoming.yourSide) {
+            awaitingEcho.current = pending.expectedPly + 1;
+            socket.move(pending.request);
+          }
+        }
       },
 
       onMove: (move) => {
         lastEventAt.current = performance.now();
+        if (pendingMove.current && move.ply > pendingMove.current.expectedPly) pendingMove.current = null;
         if (awaitingEcho.current !== null && move.ply >= awaitingEcho.current) {
           awaitingEcho.current = null;
         }
@@ -201,6 +221,7 @@ export function useGame(gameId: string) {
       onError: (incoming) => {
         // A refused move gets an ERROR instead of an echo; that is not a fanout problem.
         awaitingEcho.current = null;
+        pendingMove.current = null;
         if (incoming.code === 'CONFLICT') {
           // Our board was out of date — usually the opponent's move crossed ours in
           // flight. The server is right, so fetch its view instead of showing an error
@@ -224,7 +245,7 @@ export function useGame(gameId: string) {
   const submitMove = useCallback((from: string, to: string, promotion?: MoveRequest['promotion']) => {
     const current = socketRef.current;
     if (!current || !snapshot) return;
-    current.move({
+    const request: MoveRequest = {
       // Generated here, by the client, which is the entire point: the server cannot mint
       // this or a retry would look like a new move. randomUuid, not crypto.randomUUID —
       // the latter does not exist on a plain-HTTP origin (uuid.ts).
@@ -233,7 +254,9 @@ export function useGame(gameId: string) {
       from,
       to,
       promotion,
-    });
+    };
+    pendingMove.current = { request, expectedPly: snapshot.ply };
+    current.move(request);
 
     // Expect our own MOVE_MADE. If it has not come back in time, fanout is down: switch to
     // polling and fetch the result now rather than on the next tick.
