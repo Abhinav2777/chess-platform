@@ -729,18 +729,22 @@ pod memory.
 
 ## 13. Failure matrix
 
+Rows marked **Drilled** were caused on purpose under live games and measured — `docs/failure-drills.md`
+(10.2), the rolling-deploy report (8.3), the Valkey outage (4.3). The rest are design claims.
+
 | Failure | Behaviour | Degradation |
 |---|---|---|
-| PostgreSQL down | Moves rejected with 503; existing sockets stay open; no data loss | Hard — game pauses. Clocks are wall-clock derived so they keep running; on recovery a player may have flagged. **Accepted, documented.** |
+| PostgreSQL down | **Drilled (10.2):** crash → restart in < 4 s: 4 in-flight moves refused, nothing else. Frozen 30 s: moves refused with `SERVICE_UNAVAILABLE` (REST 503 + `Retry-After`), each answered within 2.9 s (socket and pool timeouts — was 33.5 s before 10.2); **existing sockets stay open** (0 abnormal closes); every pod unready, so ingress answers 503 to *new* visitors, SPA included, until ~10 s after recovery (a kept trade-off: `docs/failure-drills.md`); 20/20 games consistent, nothing acknowledged lost | Hard — play pauses. Clocks are wall-clock derived so they keep running; on recovery a player may have flagged. **Accepted, documented.** |
 | Valkey down | Moves still commit (DB path unaffected). Fanout stops. | Soft, **verified in a browser (4.3)** — clients detect it by their own missing `MOVE_MADE` echo (1.5 s) or by a silent socket on the opponent's turn (10 s), then poll `GET /games/{id}` every 2 s until events resume. One instance-wide circuit (ADR-018) stops every Valkey caller for 5 s after a failure. Measured: mover's first degraded move 1.9 s, steady state 0.9–2.0 s, waiting player ≤ ~11 s to first detection, recovery within the 5 s window. Matchmaking returns `MATCHMAKING_UNAVAILABLE`. Presence unavailable. Rate limiting fails open (ADR-017); the first request after the outage waits ~1 s (measured), then the circuit skips Valkey. |
-| SQS down | Game plays and finishes normally; rating updates queue in an outbox table | Soft — ratings lag, then catch up |
-| API pod crashes | Sockets drop; clients reconnect to another pod; snapshot restores state | Near-zero — a reconnect blip |
+| SQS down | **Drilled (10.2, queue frozen 60 s):** games unaffected (0 refusals); 20 rating events held in the outbox, all published and rated within 3 s of the queue returning | Soft — ratings lag, then catch up |
+| Worker down | **Drilled (10.2, 60 s):** games unaffected; events held in the outbox; drained 14 s after the worker returned (mostly JVM start) | Soft — ratings lag, then catch up |
+| API pod crashes | Sockets drop; clients reconnect to another pod; snapshot restores state. **Drilled (8.3):** SIGKILL under 20 games — 20/20 consistent | Near-zero — a reconnect blip |
 | Whole AZ fails | RDS Multi-AZ failover (~60–120s) if enabled; otherwise outage | Documented; Multi-AZ is Optional (cost) |
 | Client disconnects | Presence flips; clock keeps running (correct — chess does not pause for disconnects) | None |
 | Duplicate move | `uq_moves_client_id` → original result replayed | None |
 | Duplicate SQS delivery | `processed_events` PK → acknowledged, not re-applied | None |
 | Rating consumer fails 3× | Message → DLQ, alarm fires; game result unaffected | Soft |
-| Deploy during live game | Graceful shutdown → close frame → reconnect → snapshot | Near-zero |
+| Deploy during live game | Graceful shutdown → close frame → reconnect → snapshot. **Drilled (8.3):** rolling restart under 40 games — 40/40 consistent, 0 abnormal closes | Near-zero |
 | Both players abandon | Sweeper flags on time; a game where either player never made a first move is aborted after 30 s (implemented 3.2) | None |
 
 The row worth being honest about is **PostgreSQL down**: this architecture has a hard
