@@ -310,7 +310,7 @@ highlights incl. check, game-over dialog, phone layout. No UI libraries; browser
 
 ---
 
-### Phase 9 — Tracing, Load Testing & Optimisation · 10–14 h · Weeks 14–15 — **IN PROGRESS (9.1–9.3 done, ~9 h)**
+### Phase 9 — Tracing, Load Testing & Optimisation · 10–14 h · Weeks 14–15 — **COMPLETE (~14.5 h)**
 
 **Decisions (owner, 2026-10-01):** Boot 4 native OpenTelemetry (ADR-026), not the agent; baseline
 on kind **and** one AWS session (apply → measure → destroy, ~$1).
@@ -320,7 +320,7 @@ on kind **and** one AWS session (apply → measure → destroy, ~$1).
 | 9.1 | Tracing: Observation → OTel → OTLP; WS frame spans; traceparent through outbox + SQS; Grafana LGTM | ✅ ~3.5 h |
 | 9.2 | Baseline: k6 at 100 / 500 / 1,000 connections, fixed replicas, server-side histograms → `docs/perf/baseline.md` | ✅ ~2.5 h — flat to 1,000 sockets |
 | 9.3 | Bottleneck → one change → after → `docs/perf/optimisation-01.md` | ✅ ~3 h — pool saturates, memory killed the pods; budget fixed |
-| 9.4 | AWS session: repeat the baseline from inside the VPC | |
+| 9.4 | AWS session: repeat the baseline from inside the VPC | ✅ ~5.5 h — bcrypt took the service down twice (pool, then carriers); bounded hashing pool → `docs/perf/optimisation-02.md`. Measured to ~100 concurrent sockets on Fargate; stopped there on cost (owner) |
 
 
 **MU:** trace context propagation across async boundaries · p50/p95/p99 and why means
