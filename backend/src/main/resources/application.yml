@@ -51,6 +51,14 @@ spring:
       minimum-idle: 2
       connection-timeout: 3000   # fail fast; a 30s stall looks like a hang, not an error
       leak-detection-threshold: 20000
+      data-source-properties:
+        # Seconds a read may wait for PostgreSQL to answer before the connection is abandoned.
+        # pgjdbc's default is 0 — forever. Found in the 10.2 drill: with PostgreSQL frozen,
+        # requests on pooled connections hung for the whole freeze (33.5 s). A silent network
+        # partition (a failover leaving connections black-holed) would hang them for TCP's
+        # retransmission timeout, ~15 minutes. The longest real query is milliseconds; 10 s is
+        # far above it. The migrate profile turns it off: a migration may legitimately run long.
+        socketTimeout: ${CHESS_DB_SOCKET_TIMEOUT_SECONDS:10}
 
   jpa:
     open-in-view: false

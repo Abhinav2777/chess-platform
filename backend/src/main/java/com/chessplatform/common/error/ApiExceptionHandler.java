@@ -132,7 +132,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ProblemDetail handleUnexpected(Exception exception, HttpServletRequest request) {
+    public ResponseEntity<ProblemDetail> handleUnexpected(Exception exception, HttpServletRequest request) {
+        // The database being unreachable is an outage, not a bug: 503 + Retry-After, logged at
+        // WARN without a stack trace — once per request, so an outage is visible, but not as an
+        // ERROR that pages (10.2: a 30 s freeze was 127 ERROR lines).
+        if (DatabaseUnavailable.isCause(exception)) {
+            log.warn("Database unavailable on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                    exception.getClass().getSimpleName());
+            return handleUnavailable(DatabaseUnavailable.exception(), request);
+        }
+
         // Correlates the opaque client-facing response with the full server-side trace.
         String incidentId = java.util.UUID.randomUUID().toString();
         log.error("Unhandled exception [{}] on {} {}",
@@ -145,7 +154,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setType(URI.create(TYPE_PREFIX + "internal"));
         problem.setProperty("incidentId", incidentId);
         problem.setProperty("timestamp", Instant.now());
-        return problem;
+        return ResponseEntity.internalServerError().body(problem);
     }
 
     private static HttpStatus statusFor(DomainException exception) {
