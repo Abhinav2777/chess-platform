@@ -5,6 +5,37 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-07 — 10.6: recording the demo found a client bug
+
+Two clips from two real browsers on kind: play (seek → scholar's mate → rating) and a real
+`kubectl rollout restart` mid-game. Scripted end to end so it can be regenerated: `demo.mjs`
+drives both browsers, records, triggers the restart, and writes phase marks; `make-gif.sh` cuts,
+synchronises and speeds up only the waits (4×, badged). Move lines checked legal with chesslib.
+
+The takes found things, in order. Playwright's ffmpeg download timed out — a symlink to the system
+ffmpeg (libvpx) works. First take: the two videos were out of step — each starts with its own page,
+1.5 s apart — so cuts are now per-video. The 760 px layout hid the connection badge; 1000 px shows
+it. Second take: WebSocket errors — the **laptop** had OOM-killed the ingress controller and Valkey
+during the restart's extra JVM (IDE and browser open); freed the Gradle daemon, and the script now
+rejects a take if any infrastructure container restarted. Third take: **a move never arrived.** The
+browser had sent it in the instant its pod drained; it died with the socket, and the browser — unlike
+the k6 player — never re-sent it. My own rolling-deploy diagram had claimed it did.
+
+Fix: `useGame` keeps the last unacknowledged move; on the snapshot after a reconnect it re-sends it
+with the same `clientMoveId` if the board is still at that ply, and forgets it if the board is past
+it. `move-across-reconnect.mjs` drops the move (or its echo) in a Playwright WebSocket route and
+closes the socket with 1001 — red on the old image, green 3/3 on the new, both modes; also through the
+Vite/CI path; added to the nightly browser checks. The lost-echo branch was not mutation-checked
+(it would need another image rebuild).
+
+Final take: no page errors, no infrastructure restarts, browsers back in 453 / 275 ms, 36 plies
+identical. A last cut ended mid-move (32 vs 31 plies on the two boards) — re-cut to end on a settled
+board. Repeated a known mistake (`pkill -f` matched my own shell); TROUBLESHOOTING notes it twice now.
+
+**Hours:** ~2.5.
+
+---
+
 ## 2026-10-07 — 10.4: the interview package
 
 The pitch at three lengths, timed by word count rather than guessed — the first "30-second"
