@@ -1,5 +1,9 @@
 package com.chessplatform.platform.security;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -9,7 +13,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Map;
 
 @Configuration
+@EnableConfigurationProperties(PasswordHashingProperties.class)
 public class PasswordEncoderConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(PasswordEncoderConfig.class);
 
     /**
      * bcrypt with cost factor 12.
@@ -44,10 +51,19 @@ public class PasswordEncoderConfig {
      * gain at this stage; bcrypt at cost 12 is not a weak position.
      */
     @Bean
-    public PasswordEncoder passwordEncoder() {
+    public PasswordEncoder passwordEncoder(PasswordHashingProperties hashing, MeterRegistry metrics) {
         String defaultEncoderId = "bcrypt";
         Map<String, PasswordEncoder> encoders = Map.of(
                 defaultEncoderId, new BCryptPasswordEncoder(12));
-        return new DelegatingPasswordEncoder(defaultEncoderId, encoders);
+        PasswordEncoder bcrypt = new DelegatingPasswordEncoder(defaultEncoderId, encoders);
+
+        // Bounded, on platform threads: see BoundedPasswordEncoder (Phase 9.4). The processor
+        // count is logged because it is the number the whole argument rests on — on a fractional
+        // vCPU it is 1, and that is invisible from the task definition.
+        int processors = Runtime.getRuntime().availableProcessors();
+        int threads = hashing.effectiveThreads(processors);
+        log.info("Password hashing: {} platform thread(s), queue {}; JVM sees {} processor(s)",
+                threads, hashing.queueCapacity(), processors);
+        return new BoundedPasswordEncoder(bcrypt, threads, hashing.queueCapacity(), metrics);
     }
 }

@@ -80,11 +80,27 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DomainException.RateLimited.class)
     public ResponseEntity<ProblemDetail> handleRateLimited(DomainException.RateLimited exception,
                                                            HttpServletRequest request) {
-        // Whole seconds, rounded up: rounding down would tell a client to retry too early.
-        long seconds = Math.max(1, (exception.retryAfter().toMillis() + 999) / 1000);
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .header(HttpHeaders.RETRY_AFTER, retryAfterSeconds(exception.retryAfter()))
                 .body(handleDomain(exception, request));
+    }
+
+    /**
+     * 503, with {@code Retry-After} when the thrower knows a useful wait (load shedding does;
+     * an open circuit to a dependency may not).
+     */
+    @ExceptionHandler(DomainException.Unavailable.class)
+    public ResponseEntity<ProblemDetail> handleUnavailable(DomainException.Unavailable exception,
+                                                          HttpServletRequest request) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE);
+        exception.retryAfter().ifPresent(wait ->
+                response.header(HttpHeaders.RETRY_AFTER, retryAfterSeconds(wait)));
+        return response.body(handleDomain(exception, request));
+    }
+
+    /** Whole seconds, rounded up: rounding down would tell a client to retry too early. */
+    private static String retryAfterSeconds(java.time.Duration wait) {
+        return Long.toString(Math.max(1, (wait.toMillis() + 999) / 1000));
     }
 
     /**
