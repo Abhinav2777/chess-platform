@@ -75,17 +75,26 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 10 — hardening & documentation |
-| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.3 done. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~9.5 of ~16 |
-| **Cumulative hours (estimated)** | ~138 of 135–175 |
+| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.4 done. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~11 of ~16 |
+| **Cumulative hours (estimated)** | ~139.5 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 10.4 — interview package (§10) |
+| **Next milestone** | 10.5 — the AWS session (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 10 — Milestone 10.4 (2026-10-07): interview package
+
+- `INTERVIEW_NOTES.md` opens with the pitch at 30 s / 2 min (timed by word count: 76 and 287 words)
+  and a 10-minute outline; three resume bullets, each traced to the ledger with its environment
+  and its likely follow-up; the ten questions to rehearse; limits and what would close them; the
+  1K → 1M scaling answer; and "To be added" replaced by answers on Spring Security, `@Version` and
+  isolation, transaction boundaries, backpressure, Lua atomicity, TTL/eviction, cache invalidation,
+  Docker layering and reading a p99 — each checked against the code.
 
 ### Phase 10 — Milestone 10.3 (2026-10-07): docs truth pass
 
@@ -819,10 +828,9 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.4 — interview package (3 resume
-   bullets; 30 s / 2 min / 10 min explanations; INTERVIEW_NOTES "To be added" closed). Then 10.5
-   AWS session (hashing queue + 500 concurrent sockets; V9 applies on that deploy), 10.6 demo.
-   Owner: MFA (deferred).
+1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.5 — one AWS session: hashing
+   queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent sockets (play > ramp);
+   V9 applies on that deploy. Then 10.6 demo. Owner: MFA (deferred).
 2. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
    SQS SDK call timeout (the relay holds its transaction across a stalled send, ~30 s — 10.2); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
    (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500
