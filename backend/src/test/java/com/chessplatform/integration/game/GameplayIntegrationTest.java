@@ -50,6 +50,8 @@ class GameplayIntegrationTest extends IntegrationTestBase {
     private UserRegistrar registrar;
     @Autowired
     private UserRepository users;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private User white;
     private User black;
@@ -128,6 +130,28 @@ class GameplayIntegrationTest extends IntegrationTestBase {
             assertThat(finished.result()).isEqualTo(GameResult.WHITE_WIN);
             assertThat(finished.finishedAt()).isNotNull();
             assertThat(moves.findByGameIdOrderByPlyAsc(game.id())).hasSize(7);
+        }
+
+        /**
+         * Found in 10.3 by reading the schema against the enum: {@code DRAW_INSUFFICIENT_MATERIAL}
+         * is 26 characters and the column was {@code VARCHAR(24)}, so the move that left bare
+         * kings could not be stored — the transaction rolled back and the game could never end
+         * that way. The rules test covered the outcome; nothing had ever persisted it.
+         */
+        @Test
+        @DisplayName("a capture that leaves insufficient material draws, and the draw is stored")
+        void drawsOnInsufficientMaterial() {
+            // White's king is in check from the d2 pawn and takes it; bare kings remain.
+            jdbc.update("UPDATE games SET fen = ? WHERE id = ?",
+                    "8/8/8/4k3/8/8/3p4/4K3 w - - 0 1", game.id());
+
+            GameService.MoveAccepted capture = play(white, 0, "e1", "d2");
+
+            assertThat(capture.gameOver()).isTrue();
+            Game finished = games.findById(game.id()).orElseThrow();
+            assertThat(finished.status()).isEqualTo(GameStatus.FINISHED);
+            assertThat(finished.termination()).isEqualTo(Termination.DRAW_INSUFFICIENT_MATERIAL);
+            assertThat(finished.result()).isEqualTo(GameResult.DRAW);
         }
 
         /**

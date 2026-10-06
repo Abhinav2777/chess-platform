@@ -4,7 +4,8 @@
 repository, GitHub OIDC role (`infra/bootstrap`, ~$0.05/month, estimated). **The app stack
 (`infra/app`) is not deployed.** Measured AWS spend: see `PROJECT_STATE.md` §12.
 
-Filled in through Phase 7 (ADR-023).
+Covers the AWS stack (Phase 7, ADR-023; load-test sessions 9.4) and Kubernetes on kind (Phase 8,
+ADR-024).
 
 ---
 
@@ -82,9 +83,9 @@ running (expand → deploy → contract).
 
 | Path | Stack | Lifetime | Est. monthly cost |
 |---|---|---|---|
-| A — always-on demo | 1× t3.small EC2, Docker Compose | permanent | ~$15 |
-| B — production reference | Terraform: VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, ECR, Secrets Manager | on demand | ~$60–80 if left running |
-| C — Kubernetes | `kind` locally; EKS for a 2–3 day window | mostly local | ~$0 / ~$20 per window |
+| A — always-on demo | 1× t3.small EC2, Docker Compose | permanent | ~$15 — **not built** (owner chose B only) |
+| B — production reference | Terraform: VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, ECR, Secrets Manager | on demand | ~$60–80 if left running — **built**, applied per session |
+| C — Kubernetes | `kind` locally | local | $0 — **built** (the EKS window was not used) |
 
 All figures are **estimates** derived from published us-east-1 on-demand pricing, not
 billing observations. Actual costs go in `PROJECT_STATE.md` §12 once observed.
@@ -138,6 +139,32 @@ cd ../../frontend && APP_URL=$U npm run e2e:lobby              # full game flow,
 
 From a non-allowlisted address the ALB does not answer at all — by design (ADR-023).
 
+### Load-test session (9.4)
+
+Two variables, both off by default, add a k6 task inside the VPC and raise the sign-up limits
+(every k6 user registers from one address):
+
+```bash
+V="-var image_tag=$SHA -var loadgen_enabled=true -var relaxed_auth_rate_limits=true"
+terraform apply $V
+loadtest/aws-loadtest.sh 50 120 30        # <games> <play seconds> <ramp seconds>, one level at a time
+terraform destroy $V                       # the SAME -vars as the apply
+```
+
+For N concurrent games, play must outlast the ramp (`play ≥ ramp + measurement window`): with a
+long ramp and short play, games finish before the last starts and concurrency is far below N
+(optimisation-02 records the run where that happened).
+
+### Operating safely
+
+- **Refresh credentials first** (`aws login`, then `aws sts get-caller-identity`). Sessions that
+  expired mid-apply left healthy services *tainted*; `terraform untaint` them rather than letting
+  the next apply replace them (TROUBLESHOOTING).
+- **Do not interrupt an apply.** A Ctrl+C once crashed Terraform while it saved state: the lock
+  stayed held and two running services were missing from state. Recovery is in TROUBLESHOOTING;
+  avoiding it is letting the apply finish, then destroying.
+- `terraform force-unlock` only after confirming no Terraform process is running.
+
 ### 4. Destroy — and prove it
 
 ```bash
@@ -145,6 +172,19 @@ cd infra/app
 terraform destroy -var image_tag=$SHA      # if it ends in RequestExpired: run it again (TROUBLESHOOTING)
 terraform state list | grep -v '^data\.'   # must print nothing
 ```
+
+## Kubernetes on kind (Phase 8, ADR-024)
+
+```bash
+k8s/cluster-up.sh                  # one node, ingress-nginx on host port 80, images preloaded (~70 s)
+k8s/deploy.sh <image tag>          # migrate Job gates the rollout; then api ×2 + worker (~50 s)
+# http://localhost — the SPA, the API and the socket on one origin
+kind delete cluster --name chess   # everything, including the in-cluster PostgreSQL (an emptyDir)
+```
+
+The image must exist locally (`docker build -f backend/Dockerfile -t chess-platform:<tag> .`,
+or pull a CI-built one from ECR and tag it). The HPA (2–4 pods on CPU) scales up on JVM start;
+load tests and drills remove it and fix the replicas, so results are attributable.
 
 ## Destroy checklist (Phase 7 onward)
 
