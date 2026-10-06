@@ -57,5 +57,11 @@ public enum ErrorCode {
      * password-hashing queue (Phase 9.4). HTTP 503 with Retry-After. Nothing about the request
      * is wrong; the same request a moment later should succeed.
      */
-    SERVER_BUSY
+    SERVER_BUSY,
+    /**
+     * A dependency every request needs — today, PostgreSQL — cannot be reached. HTTP 503 with
+     * Retry-After; on the socket, an ERROR. Retry later; nothing about the request is wrong
+     * (Phase 10.2, {@link DatabaseUnavailable}).
+     */
+    SERVICE_UNAVAILABLE
 }
