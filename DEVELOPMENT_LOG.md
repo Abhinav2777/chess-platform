@@ -5,6 +5,48 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-01 → 10-06 — 9.4: the AWS session, where bcrypt took the service down twice
+
+**Built:** a k6 load generator as a one-off ECS task inside the VPC (`loadgen.tf`, aimed at the
+ALB's private address; public would hairpin past the security-group rule), `aws-loadtest.sh`, and
+session-only relaxed sign-up limits.
+
+**Session 1 (10-01):** every level failed at once — pool timeouts on `register`. bcrypt (cost 12)
+ran inside `@Transactional`, so each hash held a connection; ~3 sign-ups/s emptied the pool on 0.5
+vCPU. Fix `08fe129`: hash, then a short transaction; a test records "no transaction, no connection"
+at the moment of hashing (red before). The script also lost the k6 summaries to pagination + `set -e`.
+
+**Session 2, run 1 (10-06):** **still failing** — 20/50 games never created, pool `waiting=11`. No
+hash held a connection any more. The tell: Hikari waited 4,795 ms against a 3,000 ms timeout — the
+waiting thread was not being scheduled. bcrypt on virtual threads occupies the carriers and a
+connection holder cannot run to release it. Measured locally before believing it
+(`CarrierStarvation.java`, one CPU): requests late by p50 1.9 s with hashing on virtual threads, 0 ms
+on a platform thread, 0 ms with 16 carriers — why kind never showed it. My first experiment started
+the clock inside the probe and said "~5 ms, no effect"; measuring from arrival found it.
+
+**The change (PR #29):** `BoundedPasswordEncoder` — platform threads, bounded queue, 503 +
+Retry-After when full, executor metrics, processor count logged. Also: the harness looped
+AUTH_FAILED reconnects at 48 sockets/s for games that never started (14,405 sessions for 100
+players) — now `games_not_started`, no sockets, 503s retried; and SUBSCRIBE without a game id was an
+ERROR-level unhandled exception inside a transaction — WebSocket payloads now carry the REST bodies'
+constraints. Unit 103, integration 151, each change mutation-checked.
+
+**After:** the same 50-game burst 50/50, 0 error lines, 6 shed-and-retried, CPU still 100 %;
+500 sign-ups at ~0.8/s: 250/250, 0 HTTP failures, move p99 120 ms. **Corrected by measurement:** the
+JVM on a 0.5-vCPU task sees **2** processors, not the 1 I predicted. **Corrected by arithmetic:** my
+"250 games" run had ~50 concurrent — a 600 s ramp with 120 s of play; I proposed it. Fargate is
+measured to ~100 concurrent sockets; the owner stopped there on cost. Queue of 16 is too deep for
+this hardware (sign-up waits to 27 s) — next tuning step, not done mid-session.
+
+**Operations:** a Ctrl+C crashed Terraform while saving state (lock held, both ECS services outside
+state) — recovered by diffing state against `*.tf` and AWS, force-unlock, import, destroy. Later
+`aws login` credentials expired mid-apply → services tainted though healthy → untaint. A perpetual
+`rds.force_ssl` diff fixed. Cost Explorer: $0.20 for all of 2026-10-01 (UTC) — the 7.5 deploy and 9.4 session 1 together.
+
+**Hours:** ~5.5 (Phase 9 ~14.5 of 10–14 — at the top of the budget).
+
+---
+
 ## 2026-10-01 — 9.2–9.3: a flat baseline, then the stress that killed both pods
 
 **Tooling:** `games.js` (renamed; ramp + think-time knobs), `server-metrics.py` (scrapes pods via

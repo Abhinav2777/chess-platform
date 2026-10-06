@@ -43,9 +43,10 @@ aws logs filter-log-events --log-group-name "$LOGS" --log-stream-names "k6/k6/${
   --query 'events[].message' --output text | tr '\t' '\n' > "$tag.k6.log" || true
 aws logs filter-log-events --log-group-name "$LOGS" --log-stream-names "k6/k6/${task##*/}" \
   --filter-pattern '"K6_SUMMARY_JSON"' --query 'events[-1].message' --output text \
-  | sed 's/^K6_SUMMARY_JSON //' > "$tag.k6.json" || true
+  | grep -m1 '^K6_SUMMARY_JSON ' | sed 's/^K6_SUMMARY_JSON //' > "$tag.k6.json" || true
+# The CLI applies --query per page, and an empty page prints "None": keep only the real line.
 exit_line=$(aws logs filter-log-events --log-group-name "$LOGS" --log-stream-names "k6/k6/${task##*/}" \
-  --filter-pattern '"K6_EXIT"' --query 'events[-1].message' --output text || true)
+  --filter-pattern '"K6_EXIT"' --query 'events[-1].message' --output text | grep -m1 '^K6_EXIT' || true)
 # 99 = k6 thresholds failed (a result, not an error): keep going and report it.
 echo "${exit_line:-K6_EXIT unknown} (99 = thresholds failed)" | tee -a "$tag.txt"
 
