@@ -68,8 +68,20 @@ public abstract class DomainException extends RuntimeException {
      * unlike 500, which says the server itself is broken.
      */
     public static final class Unavailable extends DomainException {
+        /** A hint for {@code Retry-After}, or null when there is no useful one to give. */
+        private final java.time.Duration retryAfter;
+
         public Unavailable(ErrorCode code, String message) {
+            this(code, message, null);
+        }
+
+        public Unavailable(ErrorCode code, String message, java.time.Duration retryAfter) {
             super(code, message);
+            this.retryAfter = retryAfter;
+        }
+
+        public java.util.Optional<java.time.Duration> retryAfter() {
+            return java.util.Optional.ofNullable(retryAfter);
         }
     }
 
