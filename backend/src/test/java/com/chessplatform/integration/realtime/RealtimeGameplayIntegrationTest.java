@@ -187,6 +187,21 @@ class RealtimeGameplayIntegrationTest {
             }
         }
 
+        /**
+         * Frames are bounded before they are parsed (10.1): the limit is pinned in
+         * application.yml rather than left to Tomcat's default, which was the only thing
+         * enforcing it.
+         */
+        @Test
+        @DisplayName("closes a socket that sends a frame over 8 KB with 1009, even before AUTH")
+        void closesOversizedFrame() throws Exception {
+            try (TestWebSocketClient client = new TestWebSocketClient(json).connect(port)) {
+                client.send(ClientMessage.AUTH, new Payloads.Auth("x".repeat(16 * 1024)));
+
+                assertThat(client.awaitCloseStatus(5_000).getCode()).isEqualTo(1009);
+            }
+        }
+
         @Test
         @DisplayName("refuses every command before AUTH")
         void refusesCommandsBeforeAuth() throws Exception {
