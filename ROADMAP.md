@@ -341,7 +341,7 @@ repository that is not backed by one of these files.**
 
 ---
 
-### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.2 done, ~6.5 h)**
+### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.3 done, ~9.5 h)**
 
 **Scope (owner, 2026-10-06): Extended, ~16 h** — ends near 145 h of 135–175.
 
@@ -349,7 +349,7 @@ repository that is not backed by one of these files.**
 |---|---|---|
 | 10.1 | Security review vs OWASP API Top 10; fix findings; correct §10 → `docs/security-review.md` | ✅ ~3.5 h — 7 findings, 6 fixed (body size, signing-key fallback, REST BOLA, CSP, 72-byte passwords, from=to) + 1 pinned |
 | 10.2 | Failure drills on kind: stop PostgreSQL, SQS under live games; record; update the failure matrix | ✅ ~3 h — 5 drills, 20/20 games every time; DB freeze: waits 33.5 s → 2.9 s, `INTERNAL` → `SERVICE_UNAVAILABLE`, ERROR lines 127 → 1 → `docs/failure-drills.md` |
-| 10.3 | Docs truth pass (ARCHITECTURE drift), Mermaid diagrams, README with results | |
+| 10.3 | Docs truth pass (ARCHITECTURE drift), Mermaid diagrams, README with results | ✅ ~3 h — ~25 false statements corrected; 5 diagrams (rendered to validate); README leads with measurements. **Found a bug:** insufficient-material draws could not be stored (V9) |
 | 10.4 | Interview package: 3 resume bullets, 30 s / 2 min / 10 min explanations | |
 | 10.5 | One AWS session: hashing queue sized from measurement + 500 concurrent sockets | |
 | 10.6 | Demo recording / GIF | |
