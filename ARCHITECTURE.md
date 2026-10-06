@@ -616,22 +616,26 @@ We have none of these, and Kafka's operational cost (or MSK's ~$150+/month) is r
 
 ## 10. Security
 
+Reviewed against the OWASP API Security Top 10 in Phase 10.1: `docs/security-review.md` (findings,
+fixes, and the claims below that were corrected).
+
 | Concern | Decision |
 |---|---|
-| Passwords | bcrypt via Spring Security `DelegatingPasswordEncoder`, cost 12 |
+| Passwords | bcrypt via Spring Security `DelegatingPasswordEncoder`, cost 12, on a bounded platform-thread pool (503 when full — 9.4); 12 characters to **72 bytes** (bcrypt's limit) |
 | Access token | JWT, HS256 (single service), 15-min TTL, `sub`+`jti`+`ver` |
 | Refresh token | Opaque random 256-bit, hashed at rest, rotating, httpOnly SameSite=Strict cookie |
 | Why JWT | Stateless verification lets any pod authenticate a WebSocket without a shared session store or sticky sessions — the same property that makes §5.4 work |
 | WS auth | First message (§5.3), 5s timeout, unauthenticated-socket cap |
 | WS authz | Every `SUBSCRIBE` re-checks that the user is a player in that game |
 | Rate limiting | Lua token bucket in Valkey (ADR-017, not Bucket4j): login 10/min per IP + 5/min per username, register 5/min per IP, moves 20/s per user across REST and WS, seeks 10/30 s. 429 + `Retry-After`. Fails open behind a 5 s circuit |
-| Transport | TLS terminated at ALB; WSS only in production |
-| Secrets | AWS Secrets Manager (RDS creds) + SSM Parameter Store (config); never in env files committed to git |
+| Transport | **HTTP only** in the AWS deployment — no domain, so no certificate (ADR-023); ALB restricted to an address allowlist. TLS to RDS (forced) and Valkey. HTTPS is a domain, an ACM certificate and one listener away |
+| Secrets | AWS Secrets Manager (RDS-managed credentials, the JWT key); configuration from task-definition environment. On AWS a missing JWT key fails startup — no fallback to the development key (10.1) |
 | SQLi | Parameterised queries via JPA/JDBC only; zero string-concatenated SQL |
-| XSS | React escapes by default; no `dangerouslySetInnerHTML`; strict CSP header |
-| CSRF | Not applicable to the JWT-in-header API; applicable to the refresh cookie endpoint, which uses SameSite=Strict + a double-submit token |
-| Headers | HSTS, X-Content-Type-Options, X-Frame-Options: DENY, CSP |
-| IAM | Task role per service, least privilege: worker gets `sqs:ReceiveMessage`+`DeleteMessage` on one queue, nothing more |
+| XSS | React escapes by default; no `dangerouslySetInnerHTML`; same-origin CSP, no `unsafe-*` (since 10.1) |
+| CSRF | Not applicable to the JWT-in-header API. The refresh cookie: `SameSite=Strict`, `HttpOnly`, path `/api/auth`, CORS allowlist — **no double-submit token** (reasoning: `docs/security-review.md`) |
+| Headers | CSP, `Referrer-Policy: same-origin`, `X-Content-Type-Options`, `X-Frame-Options: DENY`; HSTS only on HTTPS requests (none while HTTP-only) |
+| IAM | Task role per service, least privilege: the worker gets SQS on its queue only; the API and migrate tasks have **no** AWS permissions. CI deploys through OIDC, no long-lived keys |
+| Resource limits | Request bodies 16 KB (413), WebSocket frames 8 KB (1009), page size 50, unauthenticated sockets 100 / 5 s, rate limits as above (10.1) |
 
 ### What the client is never authoritative about
 

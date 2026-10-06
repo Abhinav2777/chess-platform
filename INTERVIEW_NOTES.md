@@ -398,6 +398,37 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 10.1 — security review
+
+### "How did you review your API's security?"
+Against the OWASP API Top 10, in three passes: first I checked every security claim in my own
+architecture document against the code — five were untrue, including a CSP and a CSRF token that
+didn't exist. Then I probed the running app. Then I fixed each finding with a test over real HTTP,
+and checked each test fails when the fix is removed.
+
+### "What was the worst thing you found?"
+No limit on request body size. Spring parses the JSON body before the controller runs, so my login
+rate limit never saw it. I measured it: four 100 MB login requests took the heap from 58 MB to
+2.4 GB. On AWS a task has a 512 MB heap — one unauthenticated request would have killed it. The fix
+is a filter at the very front: reject a declared oversize body before reading a byte, and cap
+chunked bodies while reading.
+
+### "Anything subtle?"
+Two. The deployed signing key: the config had a development default, so if the secret mapping in
+the task definition ever broke, the service would have started signing tokens with a key that's
+public on GitHub. Now the AWS profile has no default — a missing secret stops startup. And
+authorisation: the WebSocket refused to show a game to a non-player, but the REST endpoint served
+it. Same data, two rules. That's what broken object-level authorisation usually looks like — not a
+missing check everywhere, a missing check in one of two places.
+
+### "Why no CSRF token?"
+The API authenticates with a header, which a cross-site page can't set. The one cookie — the refresh
+token — is SameSite=Strict, HttpOnly and scoped to /api/auth, so the browser never sends it
+cross-site. A token would add nothing there. The residual risk is sibling subdomains, which SameSite
+treats as same-site — I wrote that down rather than pretending it doesn't exist.
+
+---
+
 ## Phase 9.4 — the AWS load test
 
 ### "What happened when you load-tested on AWS?"
