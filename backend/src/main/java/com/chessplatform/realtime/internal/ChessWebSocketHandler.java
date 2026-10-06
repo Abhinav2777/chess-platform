@@ -2,6 +2,7 @@ package com.chessplatform.realtime.internal;
 
 import com.chessplatform.chess.MoveIntent;
 import com.chessplatform.chess.Side;
+import com.chessplatform.common.error.DatabaseUnavailable;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
 import com.chessplatform.common.ratelimit.RateLimit;
@@ -214,6 +215,13 @@ public class ChessWebSocketHandler extends TextWebSocketHandler {
             // REST API uses, so a client has one error model rather than two.
             sender.sendError(session, rejected.code().name(), rejected.getMessage());
         } catch (Exception unexpected) {
+            if (DatabaseUnavailable.isCause(unexpected)) {
+                // An outage, not a bug: the client may retry, and nobody is paged (10.2).
+                log.warn("Database unavailable on session {}: {}", session.getId(),
+                        unexpected.getClass().getSimpleName());
+                sender.sendError(session, ErrorCode.SERVICE_UNAVAILABLE.name(), DatabaseUnavailable.MESSAGE);
+                return;
+            }
             log.error("Unhandled error on session {}", session.getId(), unexpected);
             sender.sendError(session, "INTERNAL", "Something went wrong.");
         } finally {

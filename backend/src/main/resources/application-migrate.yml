@@ -13,6 +13,12 @@
 spring:
   main:
     web-application-type: none
+  datasource:
+    hikari:
+      data-source-properties:
+        # No read timeout for migrations (application.yml sets 10 s for the application): DDL on
+        # a large table can legitimately take minutes, and a migration cut off half-way is worse.
+        socketTimeout: 0
 chess:
   clock:
     sweeper-enabled: false
