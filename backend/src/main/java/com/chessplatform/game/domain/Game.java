@@ -96,7 +96,7 @@ public class Game {
     private GameResult result;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "termination", length = 24)
+    @Column(name = "termination", length = 32)
     private Termination termination;
 
     /**

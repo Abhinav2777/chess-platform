@@ -7,6 +7,7 @@ import com.chessplatform.chess.Position;
 import com.chessplatform.chess.Side;
 import com.chessplatform.common.error.DomainException;
 import com.chessplatform.common.error.ErrorCode;
+import com.chessplatform.common.error.UniqueViolation;
 import com.chessplatform.common.id.Uuid7;
 import com.chessplatform.game.domain.Game;
 import com.chessplatform.game.domain.GameRepository;
@@ -264,6 +265,12 @@ public class GameService {
             throw new DomainException.Conflict(ErrorCode.CONFLICT,
                     "Someone moved first. Refresh the position and try again.");
         } catch (DataIntegrityViolationException duplicate) {
+            // Only a unique violation means "already exists". Anything else — a value too long
+            // for its column, a CHECK — is a bug, and must not be reported as a duplicate the
+            // client should retry (10.3: an insufficient-material draw was exactly that).
+            if (!UniqueViolation.isCause(duplicate)) {
+                throw duplicate;
+            }
             // The idempotency key or the (game_id, ply) primary key fired. Both mean this
             // move, or another at this ply, already exists.
             //

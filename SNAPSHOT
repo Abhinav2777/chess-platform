@@ -1,12 +1,12 @@
 snapshot:  M9
-date:      2026-10-06
+date:      2026-10-07
 contains:  Phases 1-9 complete: gameplay + clock + realtime, matchmaking, rate limiting,
            outbox + SQS + exactly-once Elo + push, container image, CI/CD, AWS deployment,
            Kubernetes (kind) with graceful WebSocket drain, tracing, load testing + 2 optimisations
-migrations: V1 .. V8
+migrations: V1 .. V9
 aws:       infra/bootstrap LIVE (~$0.05/mo est.); infra/app destroyed (re-applyable) - ADR-023
 k8s:       kind + Kustomize (k8s/), cluster-up.sh + deploy.sh; migrate Job gates rollout - ADR-024
 proof:     kind: 1,000 sockets flat (docs/perf/baseline.md); Fargate: sign-up burst 30/50 -> 50/50
            games, 0 errors, after the bounded hashing pool (docs/perf/optimisation-02.md)
-verified:  2026-10-06 - unit 103, integration 151.
+verified:  2026-10-07 - unit 115, integration 159.
 next:      Phase 10 - hardening & documentation (PROJECT_STATE §10)
