@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -32,6 +33,10 @@ public class SecurityConfig {
 
     private static final String PROBLEM_TYPE_PREFIX = "https://chess-platform.dev/errors/";
 
+    static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; "
+            + "style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; "
+            + "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtAuthenticationFilter jwtFilter,
@@ -49,6 +54,19 @@ public class SecurityConfig {
                 // the browser sending it on any cross-site request at all.
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // Spring's defaults stay (nosniff, X-Frame-Options DENY, no-store on API
+                // responses; HSTS on HTTPS requests only — this deployment is HTTP, ADR-023).
+                // Added in 10.1: a CSP, which ARCHITECTURE.md had claimed since Phase 0 and
+                // nothing sent. The SPA loads nothing from elsewhere — pieces and favicon are
+                // data: URIs, styles a bundled file, no inline script — so everything is
+                // same-origin. 'self' covers the same-origin WebSocket in current browsers
+                // (verified in Chromium by e2e:lobby). If XSS ever lands, it cannot load a
+                // script from, or send data to, another origin.
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+                        .referrerPolicy(referrer -> referrer.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.SAME_ORIGIN)))
 
                 // No session, no JSESSIONID. Every request carries its own credential, so
                 // any instance can serve any request — the property that later makes

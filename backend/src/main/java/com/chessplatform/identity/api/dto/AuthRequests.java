@@ -23,8 +23,10 @@ public final class AuthRequests {
      *                 arbitrary Unicode invites homoglyph impersonation.
      * @param password Minimum 12, no composition rules. Length dominates entropy —
      *                 "must contain a symbol" produces {@code Password1!} and nothing
-     *                 else. Maximum 72 because bcrypt silently truncates beyond that,
-     *                 which would make longer passwords weaker than they appear.
+     *                 else. At most 72 <em>bytes</em>: bcrypt's input limit. The encoder
+     *                 refuses anything longer — so a limit of 72 <em>characters</em> alone
+     *                 let 20 emoji (80 bytes) through validation and into a 500 (found in
+     *                 10.1). {@code @Size} stays for the minimum and the readable message.
      */
     public record Register(
             @NotBlank @Size(min = 3, max = 32)
@@ -34,7 +36,7 @@ public final class AuthRequests {
 
             @NotBlank @Email @Size(max = 255) String email,
 
-            @NotBlank @Size(min = 12, max = 72) String password) {
+            @NotBlank @Size(min = 12, max = 72) @MaxUtf8Bytes(72) String password) {
     }
 
     /**
