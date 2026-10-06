@@ -178,6 +178,15 @@ chess:
     # CHESS_AUTH_REFRESH_COOKIE_SECURE=false and gets a startup WARN for it (ADR-023).
     refresh-cookie-secure: true
 
+    # The password-hashing pool (BoundedPasswordEncoder, Phase 9.4). bcrypt runs on these
+    # platform threads, never on a request's virtual thread: on one carrier (a fractional-vCPU
+    # task) a hash there stops every other request on the instance. 0 threads = one per processor.
+    # The queue is the latency budget (worst wait ~ capacity x hash time / threads); a full queue
+    # answers 503 with Retry-After instead of making callers wait longer than they will.
+    hashing:
+      threads: 0
+      queue-capacity: 16
+
   realtime:
     # How long a socket may stay open without authenticating. The pre-auth window is
     # unavoidable — the browser cannot set handshake headers (ADR-009) — so it is bounded
