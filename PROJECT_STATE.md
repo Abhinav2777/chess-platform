@@ -75,17 +75,27 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 10 — hardening & documentation |
-| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1 done. |
-| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~3.5 of ~16 |
-| **Cumulative hours (estimated)** | ~132 of 135–175 |
+| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.2 done. |
+| **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~6.5 of ~16 |
+| **Cumulative hours (estimated)** | ~135 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
-| **Next milestone** | 10.2 — failure drills on kind (§10) |
+| **Next milestone** | 10.3 — docs truth pass and diagrams (§10) |
 | **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
 
 ---
 
 ## 2. Completed
+
+### Phase 10 — Milestone 10.2 (2026-10-06): failure drills
+
+- `docs/failure-drills.md`, `loadtest/failure-drill.sh`: PostgreSQL crash and 30 s freeze, queue
+  frozen, worker down, control — 20 live games each, all 20/20 consistent, 0 clock anomalies, 0
+  abnormal closes, 0 API restarts. Fixed: no bound on a query's wait (socket timeout 10 s; migrate
+  none) — freeze waits 33.5 s → 2.9 s; DB outage was `INTERNAL` + ERROR — now `SERVICE_UNAVAILABLE`
+  (REST 503 + Retry-After), WARN; ERROR lines 127 → 1. Kept with numbers: `db` in readiness.
+- `ARCHITECTURE.md` §13 rows marked Drilled with measurements. `DatabaseOutageIntegrationTest`
+  freezes a real PostgreSQL (mutation-checked ×3).
 
 ### Phase 10 — Milestone 10.1 (2026-10-06): security review
 
@@ -796,10 +806,11 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.2 failure drills on kind — stop
-   PostgreSQL and the queue under live games, record what players see, update ARCHITECTURE §13.
-   Then 10.3 docs, 10.4 interview package, 10.5 AWS session, 10.6 demo. Owner: MFA (deferred).
-2. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
+1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Next: 10.3 — docs truth pass (ARCHITECTURE
+   drift beyond §10/§13: §14 "measured", §15 LocalStack, §16 react-chessboard), Mermaid diagrams,
+   README with results. Then 10.4 interview package, 10.5 AWS session, 10.6 demo. Owner: MFA (deferred).
+2. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
+   SQS SDK call timeout (the relay holds its transaction across a stalled send, ~30 s — 10.2); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
    (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500
    concurrent sockets on Fargate (a ramp shorter than the play time).
 
@@ -844,6 +855,9 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Pairing latency (browser → ALB, from Hyderabad) | 4.8 s, both players on the board after the second seek | Headless Chromium → us-east-1 ALB, 2026-10-01 | `APP_URL=… npm run e2e:lobby` |
 | Game end → rating shown to both players (AWS) | 3.35 s (outbox → relay → SQS → worker on Spot → Valkey → API → browser) | Same | `npm run e2e:lobby` against the ALB |
 | ALB request distribution across the two API tasks | 25 / 25 over 30 min (one task per AZ) | CloudWatch `RequestCount` by AZ, 2026-10-01 | `get-metric-statistics` |
+| PostgreSQL frozen 30 s under 20 live games (kind) | before: longest move wait 33.5 s, 127 refusals as `INTERNAL`, 127 ERROR lines; after: 2.9 s, 155 as `SERVICE_UNAVAILABLE`, 1 ERROR line; both 20/20 games consistent, 0 abnormal closes; new visitors 503 for ~20 s, pods ready ~10 s after recovery | kind v0.33.0, dev machine, 2 API pods fixed, 2026-10-06 | `docs/failure-drills.md` |
+| PostgreSQL crash (immediate shutdown) under live games | database back < 4 s; 4 moves refused; readiness never flipped; 20/20 consistent | Same | same report |
+| Queue frozen / worker down 60 s | games unaffected; 20 events held in the outbox; rated within 3 s of the queue / 14 s of the worker returning | Same | same report |
 | Large request bodies, before the body limit (local) | 4 concurrent 100 MB login bodies: heap 58 → 2,463 MB (~600 MB each); after: 413 in 2 ms | Dev machine, local profile, 2026-10-06 | `docs/security-review.md` finding 1 |
 | Fargate: sign-up burst, before → after the bounded hashing pool | 50 games, 30 s ramp: before 30/50 games, 15/100 sign-ups failed, pool `waiting=11`, 265 WARN/ERROR lines; after 50/50, 0 error lines, 6 shed (503) and retried; API CPU 100 % in both | ECS Fargate, 2 × 0.5 vCPU API, 2026-10-06 | `docs/perf/optimisation-02.md` |
 | Fargate: 500 sign-ups at ~0.8/s, ~50 concurrent games | 250/250 games consistent, 0 HTTP failures (HTTP p99 1.3 s), move ack p50/p95/p99 11/73/120 ms, API CPU max 76 % | Same | same report |

@@ -398,6 +398,39 @@ locally the image was just `chess-platform:dev`.
 
 ---
 
+## Phase 10.2 — failure drills
+
+### "What happens when your database goes down mid-game?"
+I drilled it rather than guessing: 20 live games, PostgreSQL frozen for 30 seconds. Every game came
+out consistent — nothing a player saw acknowledged was lost — and players already in a game kept
+their sockets. Moves were refused while the database was gone, and players carried on afterwards.
+What I didn't expect: a request could wait the whole 30 seconds, because the JDBC driver's socket
+timeout defaults to forever, and every refusal looked like a server bug — INTERNAL and an ERROR log
+line, 127 of them. Now each request is bounded — 2.9 seconds worst case — and the client gets a
+retryable "service unavailable", logged as a warning. 127 ERROR lines became one.
+
+### "Why does a socket timeout matter if the database restarts in seconds?"
+Because the bad case isn't a restart — it's a silent partition, like a failover that leaves old
+connections pointing at nothing. No packet ever says "closed", so without a timeout a request waits
+for TCP to give up, which is around fifteen minutes. A crash is the easy failure; a hang is the one
+that takes systems down.
+
+### "Your readiness probe checks the database. Isn't that a cascading-failure anti-pattern?"
+It does cascade, and I measured it: in a database outage every pod goes unready and new visitors
+get the ingress's 503 for about twenty seconds. I kept it anyway, because it's what stops a new
+version that can't reach the database from ever taking traffic — the rollout just stalls. I removed
+Valkey from readiness for the opposite reason: the app works without it. The rule I use: readiness
+lists what the instance cannot serve without.
+
+### "Anything go wrong in the drills themselves?"
+Two things worth telling. My first database "freeze" didn't freeze it: PostgreSQL's main process is
+PID 1 inside its container, and Linux ignores SIGSTOP sent to a namespace's init from inside it — I
+caught it because my own monitoring query kept getting answers. And the database's storage was an
+emptyDir, so the obvious way to "stop" it — scaling to zero — would have deleted the data and I'd
+have reported data loss I caused myself.
+
+---
+
 ## Phase 10.1 — security review
 
 ### "How did you review your API's security?"
