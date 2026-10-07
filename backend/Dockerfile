@@ -15,7 +15,7 @@
 # Build-only: nothing from this stage but dist/ reaches the runtime image, so Node and
 # node_modules are neither shipped nor scanned. Lockfile first, so a source-only change
 # reuses the npm layer.
-FROM node:24-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
