@@ -1,7 +1,7 @@
 # Baseline — live games at 100 / 500 / 1,000 WebSocket connections (kind)
 
 **Date:** 2026-10-01 · **Scenario:** `loadtest/games.js` driven by `loadtest/baseline.sh`
-(server metrics: `loadtest/server-metrics.py`) · **Image:** `chess-platform:9.2-b` (main @ 3373a9f
+(server metrics: `loadtest/server-metrics.py`) · **Image:** `chess-platform:9.2-b` (main @ 9bb98c1
 + 9.2 changes) · **Phase:** 9.2
 
 ## Environment

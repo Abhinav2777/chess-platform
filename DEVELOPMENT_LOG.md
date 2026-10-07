@@ -149,7 +149,7 @@ session-only relaxed sign-up limits.
 
 **Session 1 (10-01):** every level failed at once — pool timeouts on `register`. bcrypt (cost 12)
 ran inside `@Transactional`, so each hash held a connection; ~3 sign-ups/s emptied the pool on 0.5
-vCPU. Fix `08fe129`: hash, then a short transaction; a test records "no transaction, no connection"
+vCPU. Fix `9b8c848`: hash, then a short transaction; a test records "no transaction, no connection"
 at the moment of hashing (red before). The script also lost the k6 summaries to pagination + `set -e`.
 
 **Session 2, run 1 (10-06):** **still failing** — 20/50 games never created, pool `waiting=11`. No
