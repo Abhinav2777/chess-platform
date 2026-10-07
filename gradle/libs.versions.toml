@@ -34,8 +34,8 @@ java                 = "25"
 # Licence is Apache 2.0 (an earlier note in this repo said MIT — that was also wrong).
 chesslib             = "1.3.7"    # verified 2026-09-06 against the project README
 logstashEncoder      = "9.0"      # verified 2026-09-30: 9.x is on Jackson 3, the line Boot 4 uses; 8.x dragged Jackson 2 in
-springCloudAws       = "4.1.1"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x is Boot 3.5). Tested upstream on Boot 4.0.8.
-awsSdk               = "2.55.6"   # BOM, imported after Spring Cloud AWS's so the SDK version is ours (ADR-020).
+springCloudAws       = "4.2.0"    # Spring Cloud AWS 4.x = the Boot 4 line (3.x is Boot 3.5). 2026-10-07: full suite green on Boot 4.1.1.
+awsSdk               = "2.55.11"  # BOM, imported after Spring Cloud AWS's so the SDK version is ours (ADR-020). 2026-10-07.
 
 # JDBC spans for Micrometer Observation (Phase 9). Not Boot-managed; 2.3.0 is built against
 # Boot 4.1.1 (its POM), verified 2026-10-01.
