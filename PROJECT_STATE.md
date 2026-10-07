@@ -69,6 +69,12 @@ half-migrated because a sub-milestone ended.
 
 ## 2. Completed
 
+### Dependency triage (2026-10-07)
+
+- Spring Cloud AWS 4.1.1 → 4.2.0 (fixes duplicate batch-delete ids on SQS redelivery; flushes
+  acknowledgements on shutdown) and AWS SDK 2.55.6 → 2.55.11: full suite green (unit 115,
+  integration 159). Vite 8.3.1 → 8.3.2 (build fixes). Node 26 deferred to its LTS date (§10).
+
 ### Phase 10 — Milestone 10.6 (2026-10-07): demo
 
 - `docs/demo/`: two GIFs from two real browsers on kind — play (seek → mate → rating) and a real
@@ -819,8 +825,9 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 1. **Phase 10 (Extended, 2026-10-06; ROADMAP).** Remaining: 10.5 — one AWS session, deferred: hashing queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent
    sockets (play > ramp); V9 applies on that deploy. Also to do: MFA on the AWS account (deferred).
-2. Dependabot PRs open since 2026-10-06 (#26 node 24 → 26 in the image build, #27 Gradle
-   minor/patch, #28 vite 8.3.2) — triage before Phase 10 closes.
+2. **Node 24 → 26 on or after 2026-10-28** (Node 26 enters LTS that day, per the Node.js release
+   schedule): `backend/Dockerfile` (frontend stage), `ci.yml` and `e2e.yml` `node-version`, together
+   — one Node version for the image and CI. Dependabot will not re-offer 26 (its PR was closed).
 3. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
    SQS SDK call timeout (the relay holds its transaction across a stalled send, ~30 s — 10.2); connection-pool size or shedding for moves (kind stress limit); relay poll → LISTEN/NOTIFY
    (1 s of rating latency); `MALLOC_ARENA_MAX` / more margin (11 % headroom under stress); 500

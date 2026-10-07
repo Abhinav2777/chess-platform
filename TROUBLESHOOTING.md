@@ -527,6 +527,16 @@ to a system ffmpeg built with libvpx (`ffmpeg -encoders | grep libvpx`):
 ffmpeg reads stdin by default (for interactive commands) and swallows the loop's input. Pass
 `-nostdin` to every ffmpeg in a loop (`docs/demo/make-gif.sh`).
 
+### Integration tests fail with timeouts across unrelated classes
+
+**Seen:** 2026-10-07, a full run: "timed out waiting for AUTH_OK / MATCH_FOUND", a Valkey command at
+2,707 ms against a 2,500 ms bound, an `ExceptionInInitializerError` starting a container, a context
+timing out while creating ElasticMQ queues. **Check first:** `free -m` — 1.1 GB was available, with
+a kind cluster still running. Free memory (`kind delete cluster --name chess`, `./gradlew --stop`)
+and re-run before suspecting the change under test; it was green. **Also:** `--tests … ` alone may
+not re-run anything — Gradle reuses an up-to-date result; pass `--rerun` (identical timings across
+"runs" are the tell).
+
 ### `kill -STOP` inside a container does not stop its main process
 
 **Seen:** 2026-10-06, a PostgreSQL "freeze" drill (`pkill -STOP postgres` via `kubectl exec`): the

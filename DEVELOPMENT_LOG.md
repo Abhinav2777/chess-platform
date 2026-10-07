@@ -5,6 +5,25 @@ decided, what was learned, what went wrong.
 
 ---
 
+## 2026-10-07 — Dependency triage
+
+Three updates: Spring Cloud AWS 4.2.0 + AWS SDK 2.55.11, Vite 8.3.2, Node 26. Read the release
+notes against what this code relies on. Spring Cloud AWS 4.2.0 changes `SqsTemplate.sendMany` —
+the call the outbox relay makes, and the one ADR-026's trace propagation depends on not being
+observed — so it was verified locally before merging: the outbox, relay, rating-consumer and
+trace-propagation tests, then the full suite.
+
+The first full run failed — six timeouts across realtime and Valkey tests, and the relay test's
+context timing out creating queues. All timing: "timed out waiting for AUTH_OK", 2,707 ms against a
+2,500 ms ceiling. The machine had 1.1 GB free (a demo kind cluster still running). Forced re-runs of
+the relay test passed (a first "re-run" had only been Gradle reusing the cached result — the
+identical timings gave it away); with the cluster deleted, the full suite was green: 115 / 159.
+Taken: Spring Cloud AWS 4.2.0 (fixes duplicate batch-delete ids on SQS redelivery — the consumer's
+exact path — and flushes acknowledgements on shutdown), the SDK patch, Vite 8.3.2. Deferred:
+Node 26 until its LTS date (2026-10-28), then image and CI together.
+
+---
+
 ## 2026-10-07 — 10.6: recording the demo found a client bug
 
 Two clips from two real browsers on kind: play (seek → scholar's mate → rating) and a real
