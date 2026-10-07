@@ -11,7 +11,7 @@ outbox row is sent later by a scheduled relay, SQS delivers it to the rating con
 naive setup yields two unrelated traces. The roadmap asks for exactly this: "trace context
 injected into SQS message attributes so traces span the queue".
 
-Owner's decision: **Boot 4 native OpenTelemetry**, not the OpenTelemetry Java agent.
+Decision: **Boot 4 native OpenTelemetry**, not the OpenTelemetry Java agent.
 
 ## Decision
 
@@ -60,7 +60,7 @@ Owner's decision: **Boot 4 native OpenTelemetry**, not the OpenTelemetry Java ag
 - Pub/sub (Valkey fan-out of RATING_UPDATED to other instances) is not yet a propagated boundary;
   only the queue is. Recorded.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How do you trace a request across a message queue?"
 **A:** The producer puts the W3C traceparent in the message attributes and the consumer continues it.

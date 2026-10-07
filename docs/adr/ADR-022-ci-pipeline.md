@@ -14,7 +14,7 @@ had only `users/Abhinav/initial` (the default branch), no PRs, zero workflow run
 
 ## Decision
 
-**Branching (owner's choice):** `main` is the protected default branch; work lands through
+**Branching:** `main` is the protected default branch; work lands through
 PRs. Protection is code — `.github/branch-protection.json`, applied with one `gh api` call —
 requiring `backend`, `frontend` and `image`, strict (up to date with `main`), enforced for
 admins, no force pushes or deletion.
@@ -30,7 +30,7 @@ admins, no force pushes or deletion.
 - **Scan before push.** Build and load locally, scan, then push with the same inputs from
   cache. An unscanned image never reaches the registry.
 - **Tags:** full commit SHA (immutable — what Phase 7 deploys) + `main` (moving).
-- **GHCR now, ECR in Phase 7 (owner's choice).** Free for a public repo, authenticated by the
+- **GHCR now, ECR in Phase 7.** Free for a public repo, authenticated by the
   built-in `GITHUB_TOKEN`, no AWS account needed yet. Phase 7 adds an ECR push via OIDC.
 - **Least privilege:** `contents: read` by default; `packages: write` on the image job only,
   used only on `main`. Fork PRs never see registry credentials.
@@ -39,7 +39,7 @@ admins, no force pushes or deletion.
   rewrote tags. Dependabot updates the pins.
 - **`--ignore-unfixed`:** blocking on a CVE nobody can fix teaches people to ignore the scan.
 
-**`.github/workflows/e2e.yml` (owner's choice: nightly + manual):** compose dependencies,
+**`.github/workflows/e2e.yml` (nightly + manual):** compose dependencies,
 `bootRun`, Vite, the runner's Chrome; `e2e:lobby`, then a restart with Valkey fanout for
 `e2e:outage`. Not a PR gate: minutes long and timing-sensitive; it guards the whole path
 without making every PR wait on it.
@@ -71,7 +71,7 @@ docker (base images); weekly, minor + patch grouped.
 
 ## Amendment, 2026-10-01 — docs-only changes skip the build
 
-Raised by the owner: a docs PR ran the full pipeline (~5 min) for markdown. Pushing docs straight
+Found in practice: a docs PR ran the full pipeline (~5 min) for markdown. Pushing docs straight
 to `main` was considered and rejected — protection is `enforce_admins`, so it would mean weakening
 it for every change, "docs-only" is not something GitHub can enforce on a push, and a push to
 `main` triggers the full run (image build + ECR push) anyway.
@@ -83,7 +83,7 @@ change to the workflow itself is code. The Terraform matrix became two named job
 matrix job reports under its unexpanded name, which would leave `terraform (bootstrap)` /
 `terraform (app)` pending forever. Checked against real ranges from this repo's history.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "What does your pipeline do, and what does it refuse?"
 **A:** Every PR runs backend unit, architecture and Testcontainers integration tests, the

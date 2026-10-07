@@ -74,7 +74,7 @@ means.**
 - `GameplayIntegrationTest` — a knight shuffle through the real pipeline draws on ply 8,
   counting the starting position, and not on plies 1–7.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Your rules engine is stateless and FEN carries no history. How do you detect
 threefold repetition?"

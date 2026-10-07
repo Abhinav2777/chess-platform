@@ -39,7 +39,7 @@ newer JSON protocol — against ElasticMQ: send batch, receive, delete, queue cr
 - Emulator fidelity is a risk for edge cases (exact redrive timing, attribute formats). The
   Phase 7 deployment includes a smoke test against real SQS.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Your roadmap said LocalStack. Why isn't it there?"
 **A:** I checked before building and found LocalStack had started requiring an account and

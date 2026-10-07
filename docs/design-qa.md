@@ -1,133 +1,22 @@
-# INTERVIEW NOTES
+# Design Q&A
 
-Questions this project should let you answer, with the answer you should be able to give
-unprompted. Grows every phase. The detailed reasoning lives in `docs/adr/` — this file
-is the rehearsal script.
+The questions this system raises — about its architecture, its trade-offs and what went wrong
+building it — answered in the first person by its author. The full reasoning behind each decision
+is in `docs/adr/`; every figure is in `PROJECT_STATE.md` §12 with the environment it was measured
+in ("on kind", "on Fargate").
 
-**Rule:** if you cannot answer a question here without reading it, that part of the
-system is not finished, regardless of whether the code works.
-
-**Numbers:** every figure below is in `PROJECT_STATE.md` §12 with its environment. Say the
-environment with the number — "on kind", "on Fargate" — before an interviewer has to ask.
-
-**Order:** the pitch and the resume bullets first; then the questions by phase (newest phases
-first after Phase 6, as they were written); the fundamentals the project exercises at the end.
+Organised by phase. Phases 0–6 come first in build order; from Phase 7 on, newest first, as they
+were written; the fundamentals the project exercises are at the end.
 
 ---
 
-## The pitch
-
-### 30 seconds
-
-> I built a real-time multiplayer chess platform as a backend project — Spring Boot, PostgreSQL,
-> Valkey, WebSockets, on AWS and Kubernetes. The problem is keeping shared state correct while
-> things fail: the clock is computed from database time, so any server can die mid-game, and moves
-> stay consistent without locks. Then I measured it — load tests and failure drills found three real
-> problems, and each fix has a before-and-after number in the repo.
-
-### 2 minutes
-
-> **What it is.** Two players matched by rating, playing over WebSockets with a server-side clock,
-> results rated asynchronously. One Spring Boot application — a modular monolith, boundaries
-> checked by ArchUnit — deployed as three roles from one image: API, worker, migrations.
->
-> **The three hard parts.** *The clock:* it never ticks; remaining time is computed from stored
-> values and PostgreSQL's `now()`, so it's identical on every server and survives a crash — I
-> killed a server mid-game and the clock was off by 29 milliseconds over 32 seconds. *Concurrency:*
-> exactly one move per turn without a distributed lock — a client idempotency key, an optimistic
-> version column, and a primary key on game and ply; under 16-way contention for 100 rounds there
-> was exactly one winner each time. *Realtime across servers:* players are usually on different
-> pods, so moves fan out through Valkey after the transaction commits, and anyone who misses one
-> gets a full snapshot on reconnect — which is what lets a pod leave mid-game. A rolling deploy
-> during 40 live games lost nothing.
->
-> **Asynchronous ratings** go through a transactional outbox and SQS with an idempotent consumer:
-> at-least-once delivery, exactly-once effect.
->
-> **What measuring found.** On AWS, half-vCPU tasks collapsed under a burst of sign-ups: bcrypt on
-> virtual threads occupied every carrier thread, so requests holding database connections couldn't
-> run. A bounded platform-thread pool with load shedding took that burst from 30 of 50 games to 50
-> of 50, zero errors. Freezing PostgreSQL showed requests could wait the whole freeze — 33 seconds —
-> now 2.9. The security review found an unauthenticated 100 MB request could take 600 MB of heap.
-> Every number is in a report in the repository with its environment.
-
-### 10 minutes — outline
-
-Draw the system diagram (`docs/diagrams/README.md` §1) while talking. About a minute per line;
-stop wherever they want to dig.
-
-1. **The problem (1 min).** Shared mutable state, turn by turn, under failure. A clock that decides
-   outcomes. Why chess: two writers, strict alternation, an obvious correctness invariant.
-2. **Shape (1 min).** Modular monolith (ADR-001) — one image, three roles; module boundaries
-   enforced by ArchUnit, and the story of the ArchUnit test that was green while checking nothing.
-3. **The clock (1.5 min).** Naive per-game timers and their five failure modes; computed clock;
-   database time; lazy check plus a `SKIP LOCKED` sweeper; the client clock that anchors rather
-   than ticks. Evidence: kill -9 mid-game, Δ −29 ms.
-4. **Concurrency (1.5 min).** The three layers, why each exists, why Redlock would add a failure
-   mode. Evidence: 16 contenders × 100 rounds; `chess.move.conflicts`.
-5. **Realtime across pods (1 min).** First-frame auth, Valkey fanout after commit, snapshot on
-   reconnect, graceful drain. Evidence: 40 games through a rolling deploy, 0 lost.
-6. **Asynchronous ratings (1 min).** Outbox in the game's transaction, relay with `SKIP LOCKED`,
-   SQS Standard, `processed_events`. Evidence: queue down 60 s → rated within 3 s of recovery.
-7. **Deployment (1 min).** Terraform on ECS Fargate, no NAT gateway, OIDC in CI, apply-measure-
-   destroy ($0.20 for a full session day); kind with probes, PDB, `maxUnavailable: 0`.
-8. **What measurement found (1.5 min)** — pick two: the bcrypt/virtual-thread starvation (9.4), the
-   database freeze (10.2), the 100 MB body (10.1), the 24-character column found by reading docs
-   against the schema (10.3).
-9. **Limits, honestly (0.5 min).** Fargate measured only to ~100 sockets; no alerting; HTTP-only;
-   single-AZ database. What would close each.
-
----
-
-## Resume bullets
-
-Each is defensible line by line from the ledger. The environment is part of the claim.
-
-- **Built a real-time multiplayer chess backend** (Java 25, Spring Boot 4, PostgreSQL, Valkey,
-  WebSockets) as a modular monolith with a database-time computed clock and lock-free move
-  consistency (idempotency key + optimistic locking + composite key) — exactly one winner in
-  16-way contention over 100 rounds; 0 lost games across 1,000 concurrent WebSockets on Kubernetes
-  and a rolling deploy under 40 live games.
-- **Deployed on AWS ECS Fargate with Terraform** (RDS, ElastiCache, SQS, ALB, OIDC-based CI) and
-  load-tested it with k6, finding that bcrypt on virtual threads starved carrier threads on 0.5
-  vCPU tasks; a bounded platform-thread pool with 503 load shedding took a sign-up burst from
-  30/50 games completed to 50/50, with zero error-log lines (excess load shed and retried).
-- **Hardened it with failure drills and an OWASP API security review:** bounded database waits
-  (worst case 33.5 s → 2.9 s with PostgreSQL frozen under live load; ERROR logs 127 → 1),
-  exactly-once rating updates over at-least-once SQS via a transactional outbox, and closed an
-  unauthenticated request-body DoS (one 100 MB request ≈ 600 MB of heap) with a 16 KB limit.
-
-**What each will be asked:** (1) "How do you know it was exactly one?" — the concurrency test and
-the per-game move verification in every k6 run. (2) "Why did virtual threads make it worse?" —
-cooperative scheduling, no preemption, one or two carriers on a fractional vCPU. (3) "What's a
-transactional outbox?" — the event row commits with the game, or neither does.
-
----
-
-## If you rehearse only ten questions
-
-1. Walk me through the architecture — Phase 0.
-2. What's the hardest problem? (the clock) — Phase 0, Milestone 3.3.
-3. How do you prevent two moves at the same ply? Why not a Redis lock? — Phase 0.
-4. What happens to open WebSockets when you deploy? — Phase 8.1, 8.3.
-5. SQS delivers twice — how isn't a rating applied twice? — Milestone 5.2.
-6. What was your bottleneck? — Phase 9.2–9.3, 9.4.
-7. What happens when the database goes down mid-game? — Phase 10.2.
-8. Tell me about a test that was lying to you. — Milestone 4.1.
-9. What was the worst security issue you found? — Phase 10.1.
-10. What would you do differently / what doesn't it do? — below.
-
----
-
-## Limits, and what I would do next
-
-Say these before they are found.
+## Known limits, and what would close them
 
 | Limit | Why it is so | What would close it |
 |---|---|---|
 | Fargate measured to ~100 concurrent sockets | The larger run was stopped on cost | A run with play time longer than the ramp, ~$0.10 (10.5) |
 | No alerting | The AWS stack lives for measurement sessions | Alarms on `chess.outbox.oldest_age_seconds` and DLQ depth first |
-| HTTP-only deployment | No domain, by the owner's decision (ADR-023) | A domain, an ACM certificate, one HTTPS listener |
+| HTTP-only deployment | No domain — a deliberate cost decision (ADR-023) | A domain, an ACM certificate, one HTTPS listener |
 | Single-AZ RDS, single Valkey node | Cost | Multi-AZ RDS (roughly double the database cost — estimate); the app already tolerates Valkey loss |
 | Sign-up capacity ~1/s on 0.5 vCPU | bcrypt cost 12 by design | Larger tasks, scaling on CPU, or authentication as its own service |
 | Access tokens live 15 min after logout | Stateless JWT (ADR-009) | A deny-list in Valkey keyed by token ID, if a requirement demanded it |
@@ -371,7 +260,7 @@ CI runs 10 rounds; `-Pchess.concurrency.rounds=100` reproduces the soak.
 
 ## Milestone 4.1 — matchmaking, and a test that checked nothing
 
-### "Tell me about a test that was lying to you." (strongest story in the project)
+### "Tell me about a test that was lying to you."
 My ArchUnit module-boundary test had been green since Phase 1 — and checking nothing. The
 library version couldn't parse Java 25 bytecode; it logged a warning per class, imported
 zero, and every rule had `allowEmptyShould(true)` so the empty project could go green in

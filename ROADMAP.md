@@ -176,7 +176,7 @@ skewing a pod's system clock by 5 seconds does not affect any game's timing.
 4.1b WebSocket seek + `MATCH_FOUND` push ✅ (plus the ArchUnit fix — see DEVELOPMENT_LOG) · 4.1c lobby UI ✅ · 4.2 rate limiting ✅ (Lua token bucket, ADR-017 — not Bucket4j) · 4.3 Valkey outage end to end ✅ · 4.3 full game
 with Valkey stopped + client polling fallback. **Changed from the plan (ADR-016):** the
 `game:{id}:state` read cache is dropped (no measured need); matches are pushed over
-WebSocket rather than polled (owner's choice, ~2–3 h).
+WebSocket rather than polled (~2–3 h, for UX and real-time depth).
 
 **MU:** Valkey ZSET operations · Lua script atomicity and why it replaces a lock ·
 TTL and eviction policies · cache invalidation as a correctness question.
@@ -198,7 +198,7 @@ entries; `docker stop valkey` degrades to polling without any move being lost.
 
 **Progress:** 5.1 outbox + relay + SQS ✅ · 5.2 Elo consumer ✅ (all three done-when proven) ·
 5.3 `RATING_UPDATED` push ✅ (browser-verified, 0.8 s after the game ends). **Changed from the plan:** ElasticMQ instead of LocalStack, which
-now needs an account (ADR-019); Spring Cloud AWS 4.1.1 instead of the SDK directly (ADR-020); ratings pushed to players (owner's choice, ~1.5 h, previously
+now needs an account (ADR-019); Spring Cloud AWS 4.1.1 instead of the SDK directly (ADR-020); ratings pushed to players (~1.5 h, previously
 SKIP).
 
 **MU:** at-least-once delivery · transactional outbox and the window it closes ·
@@ -220,9 +220,8 @@ worker crash mid-processing.
 ### Phase 6 — Docker + CI/CD · 8–10 h · Week 10 — **COMPLETE (~6.5 h)**
 
 **Progress:** 6.1 image ✅ (ADR-021; Trivy found 3 CRITICAL + 2 HIGH in Boot-managed Tomcat/
-Jackson — overridden, rescanned clean) · 6.2 CI + Dependabot ✅ (written and linted; runs once `main` exists — owner's step) · 6.3 done-when
-(failing-test PR goes red; merge pushes a scanned image). **Changed from the plan (owner's
-choices):** images to **GHCR** now, ECR in Phase 7; browser checks **nightly + manual**.
+Jackson — overridden, rescanned clean) · 6.2 CI + Dependabot ✅ (written and linted; runs once `main` exists) · 6.3 done-when
+(failing-test PR goes red; merge pushes a scanned image). **Changed from the plan:** images to **GHCR** now, ECR in Phase 7; browser checks **nightly + manual**.
 **Found:** CI had never run — 0 workflow runs; no `main` on GitHub.
 
 **MI:** Renovate or Dependabot on `libs.versions.toml` (~30 min — closes the gap that
@@ -259,7 +258,7 @@ already owned · WAF · multi-region.
 deployment; `terraform destroy` leaves no billable resources; DEPLOYMENT.md is accurate
 enough for a stranger to follow.
 
-**Scope decisions (owner, 2026-09-30 — ADR-023):** Path B only (no always-on Path A);
+**Scope decisions (2026-09-30 — ADR-023):** Path B only (no always-on Path A);
 `us-east-1`; **no domain → HTTP + WS**, ALB ingress limited to an allowlist. The done-when's
 "HTTPS + WSS" becomes "HTTP + WS from allowlisted addresses". State locking uses S3's native
 lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
@@ -276,7 +275,7 @@ lock file, not DynamoDB (deprecated for the S3 backend since Terraform 1.11).
 
 ### Phase 8 — Kubernetes · 12–16 h · Weeks 13–14 — **COMPLETE (~10 h)**
 
-**Decisions (owner, 2026-10-01 — ADR-024):** kind only, no EKS window; Kustomize.
+**Decisions (2026-10-01 — ADR-024):** kind only, no EKS window; Kustomize.
 
 | # | Milestone | Status |
 |---|---|---|
@@ -305,14 +304,14 @@ or corrupted clocks — demonstrated with a k6 run across the deploy.
 
 ### Interlude — Frontend UI pass · 6–8 h box · **COMPLETE (~4 h)** — ADR-025
 
-Owner's request after Phase 8. App shell, redesigned sign-in / lobby / game, SVG pieces, board
+Added after Phase 8. App shell, redesigned sign-in / lobby / game, SVG pieces, board
 highlights incl. check, game-over dialog, phone layout. No UI libraries; browser checks kept green.
 
 ---
 
 ### Phase 9 — Tracing, Load Testing & Optimisation · 10–14 h · Weeks 14–15 — **COMPLETE (~14.5 h)**
 
-**Decisions (owner, 2026-10-01):** Boot 4 native OpenTelemetry (ADR-026), not the agent; baseline
+**Decisions (2026-10-01):** Boot 4 native OpenTelemetry (ADR-026), not the agent; baseline
 on kind **and** one AWS session (apply → measure → destroy, ~$1).
 
 | # | Milestone | Status |
@@ -320,7 +319,7 @@ on kind **and** one AWS session (apply → measure → destroy, ~$1).
 | 9.1 | Tracing: Observation → OTel → OTLP; WS frame spans; traceparent through outbox + SQS; Grafana LGTM | ✅ ~3.5 h |
 | 9.2 | Baseline: k6 at 100 / 500 / 1,000 connections, fixed replicas, server-side histograms → `docs/perf/baseline.md` | ✅ ~2.5 h — flat to 1,000 sockets |
 | 9.3 | Bottleneck → one change → after → `docs/perf/optimisation-01.md` | ✅ ~3 h — pool saturates, memory killed the pods; budget fixed |
-| 9.4 | AWS session: repeat the baseline from inside the VPC | ✅ ~5.5 h — bcrypt took the service down twice (pool, then carriers); bounded hashing pool → `docs/perf/optimisation-02.md`. Measured to ~100 concurrent sockets on Fargate; stopped there on cost (owner) |
+| 9.4 | AWS session: repeat the baseline from inside the VPC | ✅ ~5.5 h — bcrypt took the service down twice (pool, then carriers); bounded hashing pool → `docs/perf/optimisation-02.md`. Measured to ~100 concurrent sockets on Fargate; stopped there on cost |
 
 
 **MU:** trace context propagation across async boundaries · p50/p95/p99 and why means
@@ -341,23 +340,22 @@ repository that is not backed by one of these files.**
 
 ---
 
-### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.4, 10.6 done, ~13.5 h; 10.5 deferred by the owner)**
+### Phase 10 — Hardening & Documentation · 10–14 h · Weeks 15–16 — **IN PROGRESS (10.1–10.4, 10.6 done, ~13.5 h; 10.5 deferred)**
 
-**Scope (owner, 2026-10-06): Extended, ~16 h** — ends near 145 h of 135–175.
+**Scope (2026-10-06): Extended, ~16 h** — ends near 145 h of 135–175.
 
 | # | Milestone | Status |
 |---|---|---|
 | 10.1 | Security review vs OWASP API Top 10; fix findings; correct §10 → `docs/security-review.md` | ✅ ~3.5 h — 7 findings, 6 fixed (body size, signing-key fallback, REST BOLA, CSP, 72-byte passwords, from=to) + 1 pinned |
 | 10.2 | Failure drills on kind: stop PostgreSQL, SQS under live games; record; update the failure matrix | ✅ ~3 h — 5 drills, 20/20 games every time; DB freeze: waits 33.5 s → 2.9 s, `INTERNAL` → `SERVICE_UNAVAILABLE`, ERROR lines 127 → 1 → `docs/failure-drills.md` |
 | 10.3 | Docs truth pass (ARCHITECTURE drift), Mermaid diagrams, README with results | ✅ ~3 h — ~25 false statements corrected; 5 diagrams (rendered to validate); README leads with measurements. **Found a bug:** insufficient-material draws could not be stored (V9) |
-| 10.4 | Interview package: 3 resume bullets, 30 s / 2 min / 10 min explanations | ✅ ~1.5 h — INTERVIEW_NOTES: pitch (timed by word count), bullets traced to the ledger, top-10 index, limits, scaling ladder, fundamentals ("To be added" closed) |
-| 10.5 | One AWS session: hashing queue sized from measurement + 500 concurrent sockets | deferred (owner, 2026-10-07): after 10.6 |
+| 10.4 | Design Q&A: every open topic answered against the code; known limits and what would close them; the scaling ladder | ✅ ~1.5 h — `docs/design-qa.md` |
+| 10.5 | One AWS session: hashing queue sized from measurement + 500 concurrent sockets | deferred (2026-10-07): after 10.6 |
 | 10.6 | Demo recording / GIF | ✅ ~2.5 h — two scripted, synced GIFs (play; rolling restart mid-game, reconnect 453 / 275 ms). **Found a client bug:** a move made as a pod drained vanished — the browser now re-sends it (same clientMoveId) |
 
 **MI:** security review against the OWASP API Top 10 · verified failure-matrix drills
 (actually stop each dependency and record what happened) · all docs finalised · Mermaid
-diagrams committed · `INTERVIEW_NOTES.md` completed · 3 resume bullets · 30-second /
-2-minute / 10-minute explanations · recorded demo video.
+diagrams committed · design Q&A completed · recorded demo.
 
 **Done when:** a stranger can clone, run locally, understand the architecture, and find
 the reasoning for every major decision without asking a question.
@@ -397,7 +395,7 @@ explaining one afterwards.
 |---|---|
 | **Estimated time used** | ~110 h (through Phase 7 ~100, Phase 8 ~10) |
 | **Estimated remaining** | ~25–65 h of the 135–175 plan |
-| **Schedule status** | **On track** — Phase 8 under its 12–16 h, helped by skipping EKS (owner's choice). |
+| **Schedule status** | **On track** — Phase 8 under its 12–16 h, helped by skipping EKS. |
 | **Scope status** | **On track** — done-when met and measured: a rolling deploy under 40 live games, zero lost games, zero clock anomalies (`docs/perf/2026-10-01-rolling-deploy-kind.md`). EKS skipped (ADR-024). |
 | **What it found** | The readiness probe never saw the drain, and listed Valkey — a Valkey outage would have pulled every instance (ECS too). A blank page from a proxy reporting the wrong port. `--grace-period=0 --force` is not a crash. |
 | **Recommended adjustment** | Phase 9 starts from measured questions: per-pod CPU under load (what scaled the HPA), JVM start on small CPU, socket-to-pod attribution, and capacity on kind before deciding whether an AWS load-test session is worth its cost. |
@@ -429,7 +427,7 @@ explaining one afterwards.
 |---|---|
 | **Estimated time used** | ~76.5 h (Phases 0–4 ~67.5, Phase 5 ~9) |
 | **Estimated remaining** | ~58–98 h of the 135–175 plan |
-| **Schedule status** | **On track, ahead on Phase 5** — ~9 h against 10–14 planned (12–15 revised), including the Spring Cloud AWS migration and the owner-added rating push. |
+| **Schedule status** | **On track, ahead on Phase 5** — ~9 h against 10–14 planned (12–15 revised), including the Spring Cloud AWS migration and the added rating push. |
 | **Scope status** | **On track, with recorded changes:** ElasticMQ (ADR-019), Spring Cloud AWS 4.1.1 (ADR-020), rating push (previously SKIP). Done-when met: duplicate delivery rates once, three failures reach the DLQ, a crash mid-transaction is applied once. |
 | **Recommended adjustment** | None. Phase 6 (Docker + CI/CD, 8–10 h). The Dockerfile must pass `--enable-native-access=ALL-UNNAMED` (ADR-020) and the worker role needs its own run configuration (ADR-001). |
 
@@ -440,7 +438,7 @@ explaining one afterwards.
 | **Estimated time used** | ~67 h (Phases 0–3 ~55, Phase 4 ~12) |
 | **Estimated remaining** | ~68–108 h of the 135–175 plan |
 | **Schedule status** | **On track.** Phase 4 inside its 12–16 h budget, including ~1.5 h of unplanned ArchUnit repair. |
-| **Scope status** | **On track, with recorded changes.** Dropped: `game:{id}:state` cache (no measured need). Changed: matches pushed over WebSocket (owner's choice, +~2 h, absorbed by the dropped cache); Lua token bucket instead of Bucket4j (ADR-017). Done-when met: 20 players paired with no duplicates; Valkey down mid-game loses no move and the client degrades to polling (browser-verified). |
+| **Scope status** | **On track, with recorded changes.** Dropped: `game:{id}:state` cache (no measured need). Changed: matches pushed over WebSocket (+~2 h, absorbed by the dropped cache); Lua token bucket instead of Bucket4j (ADR-017). Done-when met: 20 players paired with no duplicates; Valkey down mid-game loses no move and the client degrades to polling (browser-verified). |
 | **Recommended adjustment** | Done in a ~1.5 h follow-up (ADR-018): the 4.8 s was traced to a 2 s local timeout override plus four uncircuited Valkey callers; now 1.9 s. Phase 4 total ~13.5 h. Start Phase 5. |
 
 ## Time checkpoint — end of Phase 3 (Milestone 3.3)

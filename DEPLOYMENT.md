@@ -83,7 +83,7 @@ running (expand → deploy → contract).
 
 | Path | Stack | Lifetime | Est. monthly cost |
 |---|---|---|---|
-| A — always-on demo | 1× t3.small EC2, Docker Compose | permanent | ~$15 — **not built** (owner chose B only) |
+| A — always-on demo | 1× t3.small EC2, Docker Compose | permanent | ~$15 — **not built** (B only, by decision) |
 | B — production reference | Terraform: VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, ECR, Secrets Manager | on demand | ~$60–80 if left running — **built**, applied per session |
 | C — Kubernetes | `kind` locally | local | $0 — **built** (the EKS window was not used) |
 
