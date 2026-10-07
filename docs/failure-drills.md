@@ -8,7 +8,7 @@ fault injection + a 2-second timeline) · **Test:** `DatabaseOutageIntegrationTe
 | | |
 |---|---|
 | Cluster | kind v0.33.0, one node, Kubernetes v1.37.0, on the development laptop (as `docs/perf/baseline.md`) |
-| Image | `main` at `4a05e9c` (from ECR), then the same image with this milestone's fixes layered on (`10.2-fix`) |
+| Image | `main` at `886a38d` (from ECR), then the same image with this milestone's fixes layered on (`10.2-fix`) |
 | API | **2 pods, fixed** — the HPA removed for the drills (it had scaled to 4 on startup CPU, and could change mid-drill); readiness `readinessState,db` every 5 s, 2 failures; liveness = the JVM only |
 | Data | PostgreSQL 16, Valkey 8, ElasticMQ — in-cluster, single pods |
 | Load | 20 games (40 sockets), 0.8–2.0 s think time, k6 on the same host. Every game resigns at its deadline, so every game produces a rating event |

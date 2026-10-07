@@ -32,7 +32,7 @@ run logged **7,754 sockets closed with 1008** and `INTERNAL` errors.
 takes its pooled connection when it begins, so the connection sat idle for the whole hash. At
 about 3 registrations a second, 10 connections were all held by hashes.
 
-**Change (`9b8c848`):** hash first, then a short transaction. The lookup in `login` is its own short
+**Change (`b2f20e3`):** hash first, then a short transaction. The lookup in `login` is its own short
 read, and `matches()` runs with nothing held. `PasswordHashingConnectionIntegrationTest` records,
 at the moment of hashing, that no transaction is open and no connection is checked out. It was
 red before the change (mutation-checked).
