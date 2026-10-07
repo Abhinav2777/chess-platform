@@ -122,7 +122,7 @@ half-migrated because a sub-milestone ended.
 ### Phase 9 — Milestone 9.4 (2026-10-01 → 10-06): the AWS session — **Phase 9 complete**
 
 - k6 as a one-off ECS task inside the VPC (`loadgen.tf`, `aws-loadtest.sh`). Found: bcrypt inside
-  transactions emptied the pool (fixed `08fe129`); then bcrypt on virtual threads starved the
+  transactions emptied the pool (fixed `9b8c848`); then bcrypt on virtual threads starved the
   carriers (fixed PR #29: `BoundedPasswordEncoder`, 503 load shedding). Also WebSocket payload
   validation and a harness reconnect storm. `docs/perf/optimisation-02.md`.
 - After: 50-game burst 50/50 with 0 error lines; 500 sign-ups 0 failures, move p99 120 ms. Fargate
