@@ -395,7 +395,7 @@ unaffected.
 **Workarounds used to verify the image (Phase 6):** a temporary forwarder
 (`docker run -d --name tmp-dns --network host 4km3/dnsmasq --keep-in-foreground
 --listen-address=172.17.0.1 --bind-interfaces --no-resolv --server=<LAN resolver>`) plus
-`docker build --network=host`. **Permanent fixes (owner's choice):** remove the `dns` entry
+`docker build --network=host`. **Permanent fixes (a machine-configuration choice):** remove the `dns` entry
 from daemon.json (or run the resolver it expects), and allow forwarding from `docker0`.
 
 ### kind: blank page, the SPA's JavaScript gets 403 (empty MIME type)

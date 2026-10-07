@@ -61,7 +61,7 @@ as the documented alternative if first-message auth proves awkward.
   window; a `jti` denylist in Valkey is the escape hatch if immediate revocation is ever
   needed.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How do you authenticate a WebSocket?"
 **A:** The browser WebSocket API won't let you set an `Authorization` header on the

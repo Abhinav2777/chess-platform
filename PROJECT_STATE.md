@@ -1,13 +1,13 @@
 # PROJECT_STATE
 
-> **This is the primary recovery document.** If development resumes in another
-> environment, with another engineer, or with another AI assistant, read this file
-> first, then `ARCHITECTURE.md`, then `docs/adr/`.
+> **This is the primary recovery document.** If development resumes after a break, in
+> another environment, or with another engineer, read this file first, then
+> `ARCHITECTURE.md`, then `docs/adr/`.
 >
 > Update this file at the end of every milestone. A stale PROJECT_STATE is worse than
 > none, because it will be trusted.
 
-**SNAPSHOT: M6 (2026-09-30)** — see the `SNAPSHOT` file at the repository root.
+**SNAPSHOT: M9 (2026-10-07)** — see the `SNAPSHOT` file at the repository root.
 If a build fails in a way that contradicts this document, check that file first: you may
 be building an older extracted copy.
 
@@ -16,7 +16,7 @@ be building an older extracted copy.
 
 ---
 
-## 0. Handoff workflow (established 2026-09-14)
+## 0. Working rules (established 2026-09-14)
 
 **Two rules, both established after being broken:**
 
@@ -24,49 +24,31 @@ be building an older extracted copy.
    framework-touching code.** Four separate round trips in Milestone 1.2 were caused by
    Boot 4 changes already recorded in this repository's own ADRs and logs, but not
    consulted.
-2. **Documentation ships with the code that changed it — in the same turn, every turn.**
-   Not "doc-only, it'll land with the export." Every deferral has produced a divergence:
-   a patch that would not apply, and then a set of markdown files silently a week out of
-   date. If a fix updates an ADR, `TROUBLESHOOTING.md` or the log, those files go out
-   with the fix.
+2. **Documentation ships with the code that changed it — in the same commit.** Every
+   deferral produced a divergence: a patch that would not apply, and then a set of markdown
+   files silently a week out of date. If a fix updates an ADR, `TROUBLESHOOTING.md` or the
+   log, those files change in the same commit as the fix.
 
-
-**No archive is produced per milestone.** Archives are created only at a **major phase
-boundary**, or when explicitly requested, or when there is a technical reason one is
-necessary. Downloading and re-extracting the tree for every small change was costing more
-than it delivered, and twice caused work to be done against a stale copy.
-
-### How changes reach the repository
+### How changes reach `main`
 
 | | |
 |---|---|
-| **Source of truth** | The git repository on the development machine. Not any archive, and not Claude's workspace. |
-| **During a session** | Claude holds a working copy and delivers changes as file contents in chat — new files in full, edits as precise instructions. |
-| **Applying them** | Save them into the tree and commit. The commit is what makes "what changed" answerable. |
-| **Phase boundary** | One archive, uniquely named `chess-platform-<snapshot>-<date>.tar.gz`, plus a written summary (files changed, tests, commands, env requirements, ADRs, verification list). |
-
-### Claude's workspace is ephemeral
-
-It resets between sessions. If a session starts cold, either upload the current tree or
-point Claude at this file — `PROJECT_STATE.md` plus `docs/adr/` is designed to be enough
-to reconstruct intent, though not the code.
+| **Source of truth** | The git repository. Nothing else — not an exported archive, not a copy on another machine. |
+| **A change** | A branch, a PR, CI green (backend, frontend, image, Terraform), then merge. `main` is protected; nothing is pushed to it directly. |
+| **Phase boundary** | A `SNAPSHOT` update and a written summary: files changed, tests, commands, environment requirements, ADRs, verification. |
 
 ### Git is not optional for this project
 
-Every delivery problem so far — stale extracted trees, a file silently overwritten by a
-same-named file, "which version am I running" — is a problem git already solves.
-`git status` after applying changes answers in one second what has otherwise taken a
-debugging round trip each time.
-
-```bash
-git init && git add -A && git commit -m "Phase 0 + Milestone 1.1"
-```
+Every early delivery problem — stale extracted trees, a file silently overwritten by a
+same-named file, "which version am I running", a working copy lost mid-milestone — is a
+problem git already solves. `git status` after a change answers in one second what
+otherwise takes a debugging round trip.
 
 ### Rule this does not relax
 
-**Milestone size is unchanged.** Fewer handoffs means larger coherent units of work, not
-shallower ones. The repository must be internally consistent at every handoff — never
-left half-migrated because a sub-milestone ended.
+**Milestone size is unchanged.** Fewer, larger commits mean larger coherent units of work, not
+shallower ones. The repository must be internally consistent at every merge — never left
+half-migrated because a sub-milestone ended.
 
 ---
 
@@ -75,13 +57,13 @@ left half-migrated because a sub-milestone ended.
 | | |
 |---|---|
 | **Current phase** | Phase 10 — hardening & documentation |
-| **Phase status** | Phase 10 in progress — Extended scope (owner); 10.1–10.4 and 10.6 done; 10.5 (AWS) deferred by the owner. |
+| **Phase status** | Phase 10 in progress — Extended scope; 10.1–10.4 and 10.6 done; 10.5 (AWS) deferred. |
 | **Hours used (estimated)** | Phase 0 ~5, Phase 1 ~14, Phase 2 ~18, Phase 3 ~18 (done). Phase 4: ~13.5 (done). Phase 5: ~9 (done). Phase 6: ~6.5 (done). Dependabot triage ~1.5. Phase 7: ~15.5 (done). Phase 8: ~10 (done). UI pass ~4 (done). Phase 9: ~14.5 (done; top of 10–14). Phase 10: ~13.5 of ~16 |
 | **Cumulative hours (estimated)** | ~142 of 135–175 |
 | **Schedule status** | On track; Phase 3 finished inside budget, near the top |
 | **Scope status** | On track — no P2 feature built (`ROADMAP.md` § Time checkpoint — end of Phase 3) |
 | **Next milestone** | 10.5 — the AWS session (deferred; §10) |
-| **Handoff mode** | In-place edits; archive only at phase boundaries (see §0) |
+| **Working mode** | Branch → PR → CI → merge; docs change with the code (see §0) |
 
 ---
 
@@ -97,14 +79,12 @@ left half-migrated because a sub-milestone ended.
   the same `clientMoveId` (or drops it if the board is past it). `e2e/move-across-reconnect.mjs`
   intercepts the socket (lost move / lost echo); red before the fix, green after; in nightly CI.
 
-### Phase 10 — Milestone 10.4 (2026-10-07): interview package
+### Phase 10 — Milestone 10.4 (2026-10-07): design Q&A
 
-- `INTERVIEW_NOTES.md` opens with the pitch at 30 s / 2 min (timed by word count: 76 and 287 words)
-  and a 10-minute outline; three resume bullets, each traced to the ledger with its environment
-  and its likely follow-up; the ten questions to rehearse; limits and what would close them; the
-  1K → 1M scaling answer; and "To be added" replaced by answers on Spring Security, `@Version` and
-  isolation, transaction boundaries, backpressure, Lua atomicity, TTL/eviction, cache invalidation,
-  Docker layering and reading a p99 — each checked against the code.
+- `docs/design-qa.md`: known limits and what would close them; the 1K → 1M scaling answer; and
+  the remaining open topics answered against the code — Spring Security, `@Version` and
+  isolation, transaction boundaries, backpressure, Lua atomicity, TTL/eviction, cache
+  invalidation, Docker layering and reading a p99.
 
 ### Phase 10 — Milestone 10.3 (2026-10-07): docs truth pass
 
@@ -146,7 +126,7 @@ left half-migrated because a sub-milestone ended.
   carriers (fixed PR #29: `BoundedPasswordEncoder`, 503 load shedding). Also WebSocket payload
   validation and a harness reconnect storm. `docs/perf/optimisation-02.md`.
 - After: 50-game burst 50/50 with 0 error lines; 500 sign-ups 0 failures, move p99 120 ms. Fargate
-  measured to ~100 concurrent sockets (owner stopped on cost). Unit 103, integration 151.
+  measured to ~100 concurrent sockets (stopped there on cost). Unit 103, integration 151.
 - Ops: Terraform crash on Ctrl+C recovered (force-unlock + import); tainted-but-healthy services
   untainted; `rds.force_ssl` perpetual diff fixed. AWS destroyed and verified empty.
 
@@ -165,7 +145,7 @@ left half-migrated because a sub-milestone ended.
   live. Finding: ~1 s of the rating push is the relay's poll interval.
 
 
-### Interlude — frontend UI pass (2026-10-01, owner's request, ADR-025)
+### Interlude — frontend UI pass (2026-10-01, ADR-025)
 
 - Dark, lichess-like redesign: app shell, sign-in, lobby, game screen, SVG pieces (Cburnett,
   CC BY-SA 3.0), highlights incl. check, game-over dialog, phone layout. No UI libraries.
@@ -232,7 +212,7 @@ left half-migrated because a sub-milestone ended.
   review), state bucket (versioned, SSE, TLS-only, prevent_destroy, S3-native locking; own state
   migrated in), ECR (immutable, scan on push, keep 3), GitHub OIDC role scoped to `main`.
 - CI pushes the SHA tag to ECR via OIDC when `AWS_ECR_PUSH_ROLE_ARN` is set.
-- Owner removed the IAM user's access key; now `aws login`. MFA still to enable.
+- The IAM user's access key removed; now `aws login`. MFA still to enable.
 
 
 ### Phase 7 — Milestone 7.1 (2026-09-30): deployable application
@@ -285,7 +265,7 @@ left half-migrated because a sub-milestone ended.
 
 ### Phase 6 — Milestone 6.1: the container image (2026-09-29, verified)
 
-- **Decided with the owner:** `main` + PR flow; GHCR now, ECR in Phase 7; browser checks
+- **Decided:** `main` + PR flow; GHCR now, ECR in Phase 7; browser checks
   nightly + manual.
 - **Found:** CI has never run (0 workflow runs; no `main` on GitHub; default branch
   `users/Abhinav/initial`) — Phase 0's "CI confirmed working" had no run behind it.
@@ -347,11 +327,11 @@ left half-migrated because a sub-milestone ended.
 
 ### Phase 5 — Milestone 5.1: outbox, relay, SQS (2026-09-28, green)
 
-- **Decided with the owner:** ElasticMQ instead of LocalStack (ADR-019 — LocalStack needs an
+- **Decided:** ElasticMQ instead of LocalStack (ADR-019 — LocalStack needs an
   account since March 2026); ratings will be pushed (`RATING_UPDATED`, 5.3).
 - `V6__outbox.sql`: `outbox` (UUIDv7 id = event id, jsonb payload, `published_at`,
   `attempts`, `last_error`), partial index on unpublished, `UNIQUE(event_type, aggregate_id)`.
-- **Migrated to Spring Cloud AWS 4.1.1 at the owner's request (ADR-020)** — 3.4.0, as first
+- **Migrated to Spring Cloud AWS 4.1.1 (ADR-020)** — 3.4.0, as first
   proposed, is the Boot 3.5 line; 4.1.1 verified on Boot 4.1 + Netty 4.2 by the suite. Our
   `SqsTemplate` uses `QueueNotFoundStrategy.FAIL` (tested); `--enable-native-access` for Netty.
 - New **`messaging` module**: `Outbox.append` (`MANDATORY`), `OutboxRelay` (SKIP LOCKED claim
@@ -407,11 +387,11 @@ left half-migrated because a sub-milestone ended.
 
 - **ADR-017.** `common.ratelimit.RateLimiter.enforce(limit, subject)`; `token-bucket.lua`
   (lazy refill, Valkey `TIME`, TTL = one full refill). Bucket4j evaluated and rejected
-  (Lettuce 6 vs 7, separate native connection); decided with the owner.
+  (Lettuce 6 vs 7, separate native connection).
 - Limits: login 10/min per IP + 5/min per username; register 5/min per IP; moves 20/s per
   user (REST and WS share the bucket); seeks 10/30 s. `local` profile raises auth limits.
 - `429` + `Retry-After` (`DomainException.RateLimited`); socket `ERROR RATE_LIMITED`.
-- **Fail open behind a 5 s circuit** (owner chose fail-open for login too). Measured: first
+- **Fail open behind a 5 s circuit** (fail-open chosen for login too). Measured: first
   move after a Valkey outage 1,037 ms, then no cost.
 - **Found:** test contexts without Valkey configured were talking to the dev machine's
   compose Valkey — pass in CI, fail locally. Limiter disabled in `IntegrationTestBase` and
@@ -534,9 +514,9 @@ left half-migrated because a sub-milestone ended.
   **The previous version never finalised a game in production** (self-invocation).
 - `ClockIntegrationTest` disables the scheduler and drives sweeps explicitly, since a working
   sweeper races the assertions.
-- `TimeControl` static-initialisation order fixed by the project owner.
-- Workspace reset mid-milestone; restored from the owner's upload. Four lost documentation
-  updates restored against the real files.
+- `TimeControl` static-initialisation order fixed.
+- A working copy was lost mid-milestone; four documentation updates that existed only in it
+  were rewritten against the real files.
 
 ### Phase 3 (in progress) — Milestone 3.1: the server-authoritative clock
 
@@ -724,9 +704,8 @@ working on the development machine.
 - `.gitignore` rewritten for Gradle (it was still Maven-era, ignoring `target/` and
   nothing Gradle produces) with explicit negations so `gradle-wrapper.jar` is committed.
 - CI now validates the wrapper jar checksum before any Gradle execution.
-- Build tool changed to **Gradle** (Kotlin DSL + version catalog) at the project owner's
-  request. ADR-011 rewritten; the Maven argument was portfolio legibility, which loses
-  to the owner's existing fluency.
+- Build tool changed to **Gradle** (Kotlin DSL + version catalog). ADR-011 rewritten; the
+  Maven argument was portfolio legibility, which loses to my existing fluency.
 - Spring Boot target corrected twice: 3.5.x → 4.0.x → **4.1.x**. 3.5 reached OSS
   end-of-life on 2026-06-30 and was the last of the 3.x line; 4.0.x support ends
   December 2026, inside this project's timeline.
@@ -838,9 +817,8 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ## 10. Next recommended tasks
 
-1. **Phase 10 (Extended, owner 2026-10-06; ROADMAP).** Remaining: 10.5 — one AWS session, deferred
-   by the owner: hashing queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent
-   sockets (play > ramp); V9 applies on that deploy. Owner: MFA (deferred).
+1. **Phase 10 (Extended, 2026-10-06; ROADMAP).** Remaining: 10.5 — one AWS session, deferred: hashing queue sized from the measured ~0.9 vCPU-s per hash, then 500 concurrent
+   sockets (play > ramp); V9 applies on that deploy. Also to do: MFA on the AWS account (deferred).
 2. Dependabot PRs open since 2026-10-06 (#26 node 24 → 26 in the image build, #27 Gradle
    minor/patch, #28 vite 8.3.2) — triage before Phase 10 closes.
 3. Candidates recorded, not built: hashing queue sized from measurement (§4, → 10.5); an explicit
@@ -850,7 +828,7 @@ Nothing is deployed. No AWS resources exist. No domain registered.
 
 ---
 
-## 11. Open questions for the project owner
+## 11. Open questions
 
 Answered 2026-09-30 (ADR-023): existing account with a $20 budget alarm; `us-east-1`; no
 domain — HTTP only; Path B only. None open.
@@ -881,8 +859,8 @@ If it is not in this table, it is an estimate and must be labelled as one.
 | Degraded play, Valkey paused (browser) — after ADR-018 | Healthy ~0.13 s; first outage move 1.9 s (mover) / 10.3 s (waiting opponent); steady state 0.9–2.0 s; recovery after the 5 s window, then ~0.13 s | Same | `npm run e2e:outage` |
 | Degraded move visible via REST (server) | Worst 1,039 ms per move with Valkey paused | Testcontainers, 2026-09-28 | `ValkeyOutageIntegrationTest` prints `MEASURED` |
 | Rate limiter cost during a Valkey outage | First move after Valkey stops: 1,037 ms (= 1 s Redis command timeout); later moves within 5 s skip Valkey (circuit) | Testcontainers, 2026-09-28 | `ValkeyFanoutIntegrationTest.survivesValkeyOutage` prints `MEASURED` |
-| `terraform apply` from zero (first attempt) | 11 m 59 s to the migrate step; RDS 8 m 43 s, ElastiCache 4 m 41 s | AWS us-east-1, 2026-10-01 | owner's terminal output (DEVELOPMENT_LOG 7.5) |
-| `terraform destroy` | 10 m 16 s (ElastiCache 3 m 18 s); a second run finished the rest | AWS us-east-1, 2026-10-01 | owner's terminal output |
+| `terraform apply` from zero (first attempt) | 11 m 59 s to the migrate step; RDS 8 m 43 s, ElastiCache 4 m 41 s | AWS us-east-1, 2026-10-01 | terminal output (DEVELOPMENT_LOG 7.5) |
+| `terraform destroy` | 10 m 16 s (ElastiCache 3 m 18 s); a second run finished the rest | AWS us-east-1, 2026-10-01 | terminal output |
 | Flyway, all 7 migrations against RDS over TLS | 0.9 s | RDS db.t4g.micro, 2026-10-01 | migrate task log |
 | App start on Fargate (to "Started") | api 0.5 vCPU: 60–75 s (4 starts); worker 0.25 vCPU: ~122 s (2); migrate 0.25 vCPU: 98–113 s (2) | ECS Fargate x86, 2026-10-01 | CloudWatch Logs, `Started ChessPlatformApplication` |
 | First PostgreSQL TLS connection from a 0.25-vCPU task | ~4 s (HikariPool start → first connection) | Same | migrate task log |

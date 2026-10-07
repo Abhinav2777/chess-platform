@@ -8,7 +8,7 @@
 
 Phase 7 deploys Path B — Terraform, VPC, ALB, ECS Fargate, RDS, ElastiCache, SQS, Secrets
 Manager, ECR — as a stack that is applied, measured and destroyed, never left running
-(DEPLOYMENT.md rule 2). Owner's decisions, 2026-09-30: existing account, `us-east-1`,
+(DEPLOYMENT.md rule 2). Decisions, 2026-09-30: existing account, `us-east-1`,
 **Path B only**, **no domain, HTTP only**.
 
 No domain means no HTTPS on the ALB: ACM will not issue a certificate for
@@ -23,7 +23,7 @@ CloudFront→ALB leg as plain HTTP anyway.
 The done-when becomes: *`terraform apply` from zero produces a working HTTP + WS deployment
 reachable from the allowlisted addresses; `terraform destroy` leaves nothing billable.*
 Credentials over plaintext are acceptable only because nobody else can reach it: the ALB's
-security group admits `allowed_ingress_cidrs` (the owner's address), not `0.0.0.0/0`.
+security group admits `allowed_ingress_cidrs` (the operator's own address), not `0.0.0.0/0`.
 HTTPS later = a domain, an ACM certificate, a 443 listener, and
 `CHESS_AUTH_REFRESH_COOKIE_SECURE` removed.
 
@@ -273,12 +273,12 @@ stack up.
 
 | Alternative | Why not |
 |---|---|
-| **Buy a domain** (~$3–15/yr) | The better option and the recommended one; declined by the owner. Recorded as the path to HTTPS. |
+| **Buy a domain** (~$3–15/yr) | The better option and the recommended one; not taken. Recorded as the path to HTTPS. |
 | **CloudFront default certificate** | HTTPS to the browser, plaintext CloudFront→ALB; adds a service the roadmap skips. |
 | **SPA on S3 website hosting** | HTTP-only, cross-origin: breaks the `SameSite=Strict` refresh cookie and brings CORS back. |
 | **Read X-Forwarded-For in the controller** | Any client can set it; takes the attacker's value unless every hop is validated — which is exactly what RemoteIpValve does. |
 | **Drop `Secure` unconditionally** | Weakens every environment for the sake of one. |
-| **ElastiCache Serverless for Valkey** (raised by the owner, 7.3) | Cheaper: 100 MB minimum × $0.084/GB-h = $0.0084/h vs $0.0128/h for cache.t4g.micro; ECPUs ~$0 at our volume (Pricing API, 2026-10-01). Saves ~$0.10/day applied — ~$0.50 over Phases 7–9. But Serverless is cluster-mode: `seek.lua` touches four slots and `pair.lua`/`cancel.lua` derive keys at runtime (ADR-016), so matchmaking would fail with CROSSSLOT in AWS while every single-node Testcontainers test passed. Making it safe — one `{mm}` hash tag for all matchmaking keys, a cluster-mode client, a clustered Valkey in tests — is ~4–6 h. Poor ROI; revisit only if the cache becomes long-lived. |
+| **ElastiCache Serverless for Valkey** (considered in 7.3) | Cheaper: 100 MB minimum × $0.084/GB-h = $0.0084/h vs $0.0128/h for cache.t4g.micro; ECPUs ~$0 at our volume (Pricing API, 2026-10-01). Saves ~$0.10/day applied — ~$0.50 over Phases 7–9. But Serverless is cluster-mode: `seek.lua` touches four slots and `pair.lua`/`cancel.lua` derive keys at runtime (ADR-016), so matchmaking would fail with CROSSSLOT in AWS while every single-node Testcontainers test passed. Making it safe — one `{mm}` hash tag for all matchmaking keys, a cluster-mode client, a clustered Valkey in tests — is ~4–6 h. Poor ROI; revisit only if the cache becomes long-lived. |
 
 ## Consequences
 
@@ -287,7 +287,7 @@ stack up.
 - `internal-proxies` is coupled to the VPC CIDR (`10.0.0.0/16`); changing one means the other.
 - A frontend-only change rebuilds and redeploys the backend image.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Your rate limit is per IP. What does it see behind a load balancer?"
 **A:** The load balancer's address — so at first, one bucket for everyone. I turned on Tomcat's

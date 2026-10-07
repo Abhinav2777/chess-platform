@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Format: Context → Decision → Alternatives considered → Consequences → Interview angle.
+Format: Context → Decision → Alternatives considered → Consequences → Questions this decision raises.
 
 An ADR is immutable once accepted. If a decision changes, write a new ADR that
 supersedes the old one and mark the old one `Superseded by ADR-NNN`.

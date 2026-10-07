@@ -21,7 +21,6 @@ can be down, and ADR-004 says a Valkey outage must never stop chess.
   connection lifecycle beside the fail-fast timeouts tuned in 2.2. The bucket is ~20 lines
   on the script machinery matchmaking already uses. Callers see only
   `RateLimiter.enforce(limit, subject)`, so Bucket4j can replace it inside one class.
-  Decided with the project owner.
 - **Limits** (`chess.ratelimit.policies`): login per IP 10/min and per username 5/min
   (a botnet defeats the first, a single attacker the second); register per IP 5/min; moves
   per user 20/s, **one bucket for REST and WebSocket**; seeks per user 10 per 30 s. The
@@ -35,7 +34,7 @@ can be down, and ADR-004 says a Valkey outage must never stop chess.
 - **Response:** `429` + `Retry-After` (whole seconds, rounded up) with problem+json
   `RATE_LIMITED`; on the socket, `ERROR {code: RATE_LIMITED}`.
 - **Failure: fail open, behind a circuit.** If Valkey is unreachable the request is
-  allowed (the owner chose this for login too: bcrypt cost 12 still costs an attacker
+  allowed (chosen for login too: bcrypt cost 12 still costs an attacker
   ~250 ms of server time per guess). After a failure the limiter stops consulting Valkey for
   `circuit-open-for` (5 s), so an outage costs **one slow request per 5 s per instance**
   instead of a timeout on every move — measured: the first move after Valkey dies commits
@@ -83,7 +82,7 @@ refill, TTL, HTTP 429 + `Retry-After` on the sixth login). Realtime: 25 `MOVE` f
 `RATE_LIMITED` after about one bucket. `ValkeyFanoutIntegrationTest` measures the
 post-outage delay.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How does your rate limiter work across instances?"
 **A:** A token bucket per key in Valkey, updated by a Lua script so refill-and-take is

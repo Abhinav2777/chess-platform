@@ -65,7 +65,7 @@ real attempts via `chess.valkey.circuit.trips`. `ValkeyOutageIntegrationTest` wa
 window after unpause before asserting recovery. `frontend/e2e/outage.mjs` does the same and
 fails if the labels do not return to "Live".
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "You measured something you couldn't explain. What did you do?"
 **A:** I traced it rather than guessing: WebSocket frames and poll responses from the
