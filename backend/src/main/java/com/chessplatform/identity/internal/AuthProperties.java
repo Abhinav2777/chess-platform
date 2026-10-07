@@ -35,7 +35,7 @@ import java.time.Duration;
  *                        {@code true}: turning it off must be a visible, deliberate act. Off
  *                        only for a deployment served over plain HTTP, where browsers drop a
  *                        {@code Secure} cookie and every reload would sign the user out
- *                        (Phase 7, HTTP-only by the owner's choice — ADR-023).
+ *                        (Phase 7, HTTP-only by decision — ADR-023).
  */
 @ConfigurationProperties(prefix = "chess.auth")
 @Validated
