@@ -119,7 +119,7 @@ library is a third-party dependency behind a port, checked by perft node counts 
 
 | Risk | Why accepted | Revisit when |
 |---|---|---|
-| HTTP-only deployment | No domain (owner's decision, ADR-023); allowlisted | A domain is bought: ACM certificate + HTTPS listener; HSTS then applies |
+| HTTP-only deployment | No domain (a deliberate decision, ADR-023); allowlisted | A domain is bought: ACM certificate + HTTPS listener; HSTS then applies |
 | No CAPTCHA / email verification | Scope; rate limits slow mass sign-up | Public launch |
 | No per-IP limit on authenticated reads | Portfolio scale; WAF costs more than it protects here | Public launch |
 | Access tokens not revocable for 15 min | ADR-009 | A security requirement demands it |

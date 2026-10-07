@@ -58,7 +58,7 @@ loses queued work, so a finished game could never get rated.
 - Outbox adds a small relay component and a table. Justified: without it, "game finished
   but never rated" is a real, silent data bug.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Why SQS and not Kafka?"
 **A:** Kafka's value is the durable, replayable, ordered log — replay for rebuilding

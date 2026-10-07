@@ -120,7 +120,7 @@ outage becomes a full outage. Rejected on the same grounds as ADR-004.
 - `RefreshTokenService` logs reuse at WARN. That log line is the security signal — it
   should eventually be an alert (Phase 9).
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "You rotate refresh tokens. What does that actually buy you?"
 **A:** On its own, not much — it shortens the window a stolen token is useful. The value

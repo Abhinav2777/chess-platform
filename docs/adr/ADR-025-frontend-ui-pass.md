@@ -5,19 +5,19 @@
 
 ## Context
 
-After Phase 8 the owner asked for "a great looking and best UX frontend". The UI was a
+After Phase 8 the goal was a great-looking frontend with the best UX the budget allowed. The UI was a
 functional prototype: Unicode-glyph pieces (font-dependent; white pieces washed out on light
 squares), no coordinates, no app shell or sign-out, a lobby made of default buttons and long
 explanatory paragraphs, no game-over moment, and a desktop column squeezed onto phones.
 
-CLAUDE.md ranks the frontend 10th of 10 priorities, and the budget stood at ~110 h of 135–175 with
+The project's priority list ranks the frontend 10th of 10, and the budget stood at ~110 h of 135–175 with
 Phases 9 and 10 (10–14 h each) ahead. A polished UI has real portfolio value — it is what a
 recruiter clicks and what the Phase 10 demo video shows — and almost no backend-interview value.
 
 ## Decision
 
-**A focused pass, time-boxed at 6–8 h (owner's choice over a 12–15 h redesign or a 3 h polish),
-in a modern dark, lichess-like style (owner's choice).**
+**A focused pass, time-boxed at 6–8 h (chosen over a 12–15 h redesign or a 3 h polish),
+in a modern dark, lichess-like style.**
 
 In scope: app shell (brand, rating chip, sign-out); redesigned sign-in, lobby (time-control cards,
 seeking state, challenge card, game list with status badges) and game screen (player bars with

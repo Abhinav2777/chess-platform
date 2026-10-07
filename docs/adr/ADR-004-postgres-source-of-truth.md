@@ -50,7 +50,7 @@ cache is a minor addition on top.
   matchmaking pause. This is testable and will be tested.
 - We accept a hard dependency on PostgreSQL availability (see ARCHITECTURE.md §13).
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Why use Redis at all if PostgreSQL is already there?"
 **A:** For three things PostgreSQL is bad at: cross-instance pub/sub fanout, atomic

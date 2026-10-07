@@ -33,7 +33,7 @@ import java.util.Map;
  *
  * <p>If Valkey cannot be reached, requests are <strong>allowed</strong>. A rate limiter is a
  * guard, not a dependency: a cache outage must never stop a move (ADR-004), and for login
- * the project owner chose availability — bcrypt at cost 12 still makes each guess cost
+ * availability was chosen — bcrypt at cost 12 still makes each guess cost
  * ~250 ms of server time.
  *
  * <p>Failing open alone is not enough: every call would still wait out the Valkey timeout

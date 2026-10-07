@@ -738,7 +738,7 @@ alarm a long-lived deployment would add is `chess.outbox.oldest_age_seconds` and
 
 | Path | What | Status |
 |---|---|---|
-| **A — always-on demo** (t3.small + Compose) | a live URL, ~$15/month (estimate) | **Not built** — the owner chose Path B only (ADR-023) |
+| **A — always-on demo** (t3.small + Compose) | a live URL, ~$15/month (estimate) | **Not built** — Path B only, by decision (ADR-023) |
 | **B — production reference** | Terraform (`infra/`): VPC, ALB, ECS Fargate (api ×2, worker on Spot, migrate one-off), RDS PostgreSQL, ElastiCache Valkey, SQS + DLQ, Secrets Manager, ECR; GitHub OIDC deploys | **Built.** Applied for verification and load-test sessions, then destroyed |
 | **C — Kubernetes** | kind + Kustomize (`k8s/`) | **Built** on kind (ADR-024). The EKS window was not used — kind proves the manifests at no cost |
 
