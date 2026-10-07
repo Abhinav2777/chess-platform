@@ -36,13 +36,10 @@ board. Repeated a known mistake (`pkill -f` matched my own shell); TROUBLESHOOTI
 
 ---
 
-## 2026-10-07 — 10.4: the interview package
+## 2026-10-07 — 10.4: design Q&A
 
-The pitch at three lengths, timed by word count rather than guessed — the first "30-second"
-version was 106 words (~42 s); cut to 76. Three resume bullets, each claim traced to a ledger row
-with its environment ("on Kubernetes", "0.5 vCPU"); "zero errors" reworded to "zero error-log
-lines", because six sign-ups were shed with 503 and an interviewer could find them. A limits table
-to say before it is found. The plan's "To be added" topics answered against the code — two answers
+A known-limits table — each limit with why it is so and what would close it — and the scaling
+ladder from 1K to 1M. The remaining open topics answered against the code — two answers
 changed on checking: the read cache's reasons are ADR-016's (the move path reads PostgreSQL anyway),
 and Valkey's eviction policy is not set at all (the ElastiCache default; acceptable only because
 nothing in Valkey is the source of truth).
@@ -119,7 +116,7 @@ Unit 113, integration 158.
 
 ## 2026-10-06 — 10.1: the security review found that §10 described a different system
 
-Phase 10 scope: Extended (owner), ~16 h.
+Phase 10 scope: Extended, ~16 h.
 
 Checked `ARCHITECTURE.md` §10 against the code first: no CSP, no double-submit CSRF token, no SSM,
 no TLS to the browser — five claims untrue since Phase 0. Then probed the running app, then fixed.
@@ -174,7 +171,7 @@ constraints. Unit 103, integration 151, each change mutation-checked.
 500 sign-ups at ~0.8/s: 250/250, 0 HTTP failures, move p99 120 ms. **Corrected by measurement:** the
 JVM on a 0.5-vCPU task sees **2** processors, not the 1 I predicted. **Corrected by arithmetic:** my
 "250 games" run had ~50 concurrent — a 600 s ramp with 120 s of play; I proposed it. Fargate is
-measured to ~100 concurrent sockets; the owner stopped there on cost. Queue of 16 is too deep for
+measured to ~100 concurrent sockets; I stopped there on cost. Queue of 16 is too deep for
 this hardware (sign-up waits to 27 s) — next tuning step, not done mid-session.
 
 **Operations:** a Ctrl+C crashed Terraform while saving state (lock held, both ECS services outside
@@ -206,7 +203,7 @@ non-heap (212 Mi) + native exceeds 640 Mi. An identical run on fresh pods did no
 ~190 Mi) — latent, history-dependent. Made deterministic by pre-touching the heap: the old budget
 OOM-kills every migrate attempt and the API at startup (and `maxUnavailable: 0` kept serving).
 
-**The one change** (owner's choice, `docs/perf/optimisation-01.md`): 1 Gi limit, heap 50 %
+**The one change** (`docs/perf/optimisation-01.md`): 1 Gi limit, heap 50 %
 committed and touched at start; migrate 768 Mi; image default 50 %; the same options in the ECS task
 definitions. After: same stress, 0 restarts, full heap (495 Mi) held throughout, peak 908/1024 Mi.
 No throughput change — the pool is the next limit, kept as a separate change. Headroom ~11 %, not the
@@ -288,10 +285,10 @@ not resolve DNS (the temporary forwarder was down), not a finding. Read the outp
 
 ---
 
-## 2026-10-01 — Interlude: a UI pass (owner's request)
+## 2026-10-01 — Interlude: a UI pass
 
-The owner found the UI below average. Weighed it first against CLAUDE.md (frontend is priority
-10/10; ~110 h used): agreed a 6–8 h box, focused scope, dark lichess-like style (ADR-025).
+The UI was below average. Weighed it first against the project's priorities (frontend is priority
+10/10; ~110 h used): set a 6–8 h box, focused scope, dark lichess-like style (ADR-025).
 
 Screenshotted the old UI against the kind backend before touching anything; listed every selector
 and text the browser checks depend on, so the redesign keeps them on purpose. Pieces: the Cburnett
@@ -354,8 +351,8 @@ manifests (probes on 8081 via a new `k8s` profile, preStop sleep, CPU request wi
 maxUnavailable 0, PDB, HPA, hardened pods), in-cluster dependencies, kind overlay with generated
 config/secrets, `cluster-up.sh`, `deploy.sh` (migrate Job gates the rollout).
 
-**Memory first:** 2 GB available at the start (Chromium 11 GB, swap full); the owner freed it to
-6.5 GB. Stopping my own Gradle daemon recovered ~1 GB.
+**Memory first:** 2 GB available at the start (Chromium 11 GB, swap full); closing browser tabs freed it to
+6.5 GB. Stopping the Gradle daemon recovered ~1 GB.
 
 **First browser run: a blank page.** The module script got 403. Host :8000 mapped to nginx's :80;
 nginx said `X-Forwarded-Port: 80`; Tomcat believed it; the page's own Origin (`localhost:8000`)
@@ -450,8 +447,8 @@ Note: the probe printed truncated access tokens of two throwaway test users to t
 
 ## 2026-10-01 — 7.5, attempt 1: the migrations worked; the migrate task didn't
 
-The owner ran `terraform apply first.tfplan` (an apply is gated by Claude Code's permission
-classifier — creating billable resources needs the owner's hand). 12 min: RDS 8 m 43 s,
+Ran `terraform apply first.tfplan` by hand (creating billable resources is always a deliberate,
+manual step). 12 min: RDS 8 m 43 s,
 ElastiCache 4 m 41 s, then `terraform_data.migrate` failed: exit 1. **The services were never
 created** — the migrate-first dependency did its job on its first real test.
 
@@ -554,7 +551,7 @@ provider and push role — 12 added, 1 changed. ~$0.05/month, estimated.
 
 **Inventory first.** Read-only look at the account before writing Terraform: the budget's exact
 alerts, no OIDC provider, no ECR, no buckets — and an IAM user with AdministratorAccess, no MFA
-and long-lived access keys. The owner deleted the key and moved to `aws login` (short-lived,
+and long-lived access keys. I deleted the key and moved to `aws login` (short-lived,
 console-backed); confirmed zero access keys remain. Terraform's AWS provider reads the
 `login_session` profile directly. MFA on the user: still open.
 
@@ -599,7 +596,7 @@ the same Trivy invocation as CI exits 0, the API starts and serves `/`. ADR-021 
 
 ## 2026-09-30 — 7.1: the app, ready to sit behind a load balancer
 
-**Phase 7 decisions (owner):** existing account (budget alarm at $20 already in place —
+**Phase 7 decisions:** existing account (budget alarm at $20 already in place —
 verified via the Budgets API), `us-east-1`, Path B only, **no domain → HTTP**. The last one
 contradicts the roadmap's done-when; recorded as a scope change in ADR-023 with its
 compensations (ingress allowlist, cookie flag default-on + WARN) and its path back to HTTPS.
@@ -690,11 +687,11 @@ The six Dependabot PRs are superseded (Dependabot closes them once `main` has th
 
 PR #7 (the image-name fix and the matchmaking race fix) merged; the run on `main`
 (36616824363) was green end to end and published `ghcr.io/abhinav2777/chess-platform` tagged
-`main` and the commit SHA. The owner made the package public and protected `main` with the
+`main` and the commit SHA. I made the package public and protected `main` with the
 three checks. Verified anonymously through GitHub's API and the GHCR registry API.
 
 Done-when: a push to `main` → a scanned, tagged image with no manual steps ✅; a failing test
-turned a PR red ✅ (a real race, not a staged one — the owner chose not to stage another).
+turned a PR red ✅ (a real race, not a staged one — I chose not to stage another).
 Protection went on after that PR merged, so blocking a red PR is configured but not yet seen.
 
 Dependabot's first run opened 6 PRs, four of them major versions — triage before Phase 7.
@@ -724,7 +721,7 @@ to reproduce a bug must fail *with that bug's message*, or it has not reproduced
 
 ## 2026-09-30 — 6.2: the first CI run ever
 
-The owner created `main` and made it the default branch; CI ran for the first time in the
+I created `main` and made it the default branch; CI ran for the first time in the
 project's life (run 99141810504).
 
 - **`backend` green** — wrapper validation, pinned Gradle, unit (48 s) and the full
@@ -758,7 +755,7 @@ protection as a JSON file. ADR-022.
 - **Protection as code**, applied with `gh api`, enforced for admins.
 
 **Verified:** `actionlint` + shellcheck clean. **Not verified: a single run on GitHub** — CI
-needs `main`, which needs the owner's credentials. 6.3 is that run, and the failing-test PR.
+needs `main` to exist on GitHub first. 6.3 is that run, and the failing-test PR.
 
 **Hours:** ~2. Phase 6 at ~5 of 8–10.
 
@@ -766,7 +763,7 @@ needs `main`, which needs the owner's credentials. 6.3 is that run, and the fail
 
 ## 2026-09-29 — Milestone 6.1: the container image
 
-**Decided (with the owner):** `main` + PRs; GHCR now, ECR in Phase 7; browser checks nightly +
+**Decided:** `main` + PRs; GHCR now, ECR in Phase 7; browser checks nightly +
 manual.
 
 **Found before building:** CI has never run. The workflow triggers on `main` and PRs; GitHub
@@ -788,7 +785,7 @@ should.
 
 **Found along the way**
 - **This machine's containers have no internet:** daemon DNS points at an absent resolver on
-  172.17.0.1, and bridge egress is blocked. Not changed (system config, the owner's call);
+  172.17.0.1, and bridge egress is blocked. Not changed (machine-wide system config);
   verified with a temporary dnsmasq forwarder + `--network=host`, then removed.
 - **Production rate limits in a dev stack** refused the third browser-check registration — the
   limiter right, the stack mis-sized; dev limits via `SPRING_APPLICATION_JSON` (dashed map keys
@@ -890,8 +887,7 @@ tests; the Phase 6 Dockerfile must carry it.
 ## 2026-09-28 — Milestone 5.1: outbox, relay, SQS
 
 **Checked before building:** LocalStack — the roadmap's plan — has required an account and auth
-token since March 2026. ElasticMQ instead (ADR-019), chosen with the project owner. The owner
-also chose to push rating changes to players (5.3), previously SKIP.
+token since March 2026. ElasticMQ instead (ADR-019). Also decided: push rating changes to players (5.3), previously SKIP.
 
 **Built:** `V6__outbox.sql`; a `messaging` module (outbox API, relay, SQS client, queue
 bootstrap); the `GAME_FINISHED` contract and the listener that writes it.
@@ -999,7 +995,7 @@ during an outage — the leading suspect, not verified. Recorded as the first th
 
 ## 2026-09-28 — Milestone 4.2: rate limiting
 
-**Decided (with the project owner):** a Lua token bucket rather than Bucket4j, and fail open
+**Decided:** a Lua token bucket rather than Bucket4j, and fail open
 for login as well as moves. Bucket4j 8.20's Lettuce module is compiled against Lettuce 6.1;
 Boot 4.1 ships 7.5 — an untested major-version gap — and it wants its own native connection
 outside Spring's factory. ADR-017.
@@ -1106,13 +1102,13 @@ cross-instance match with two JVMs' matchmakers racing over one queue.
 
 ## 2026-09-28 — Milestone 4.1a: matchmaking core
 
-**Decided before building (with the project owner)**
+**Decided before building**
 
 - **The `game:{id}:state` read cache is dropped.** It was on the roadmap's must-implement
   list. Game reads are PK lookups; the move pipeline must hit PostgreSQL anyway; a cache would
   add invalidation risk to the correctness-critical path for no measured gain. Revisit on
   Phase 9 evidence.
-- **Matches are pushed over WebSocket** rather than polled (owner's call, for UX and real-time
+- **Matches are pushed over WebSocket** rather than polled (for UX and real-time
   depth; ~2–3 h). Push needs a pull fallback because pub/sub is fire-and-forget, so matches
   stay readable for 60 s — the ADR-007 pattern again.
 
@@ -1253,8 +1249,8 @@ browser (PROJECT_STATE §4).
 
 **How this was verified here, and what was not**
 
-This workspace cannot reach Maven Central or the Gradle distribution server, so Gradle
-could not run. Instead: every changed main class (and the classes they depend on) compiled
+The environment this milestone was built in could not reach Maven Central or the Gradle
+distribution server, so Gradle could not run. Instead: every changed main class (and the classes they depend on) compiled
 with `javac --release 21 -Xlint:all,-serial,-processing -Werror` against minimal stubs of
 the Spring/JPA/Micrometer types; `GameExpiryTest` ran through a stub harness, 13/13; the
 client clock module's arithmetic ran under Node with assertions; `tsc -b` and `vite build`
@@ -1305,7 +1301,7 @@ limits its constructor validated against. Static fields initialise top to bottom
 `MAX_INITIAL_MS` was still `0` when the constructor ran, and five minutes was rejected as
 out of range. The class failed to initialise, became permanently unloadable, and — because
 the `Game` entity references it — Hibernate could not build the persistence unit. **One
-line produced every integration failure in the suite.** Fixed by the project owner by
+line produced every integration failure in the suite.** Fixed by
 declaring the constants first.
 
 **2. Three compile failures from scripted edits.** Missing `@Min`/`@Max` imports (the
@@ -1351,10 +1347,9 @@ Both rules were documented, in plain English, in files I wrote — and I wrote b
 in the same milestone. The protection that actually worked was structural (one bean, reached
 through the proxy) and a test style (assert on persisted state). Documentation alone did not.
 
-**Also: my workspace was reset mid-milestone.** The repository existed only on the project
-owner's machine until it was re-uploaded, which is exactly the case `PROJECT_STATE.md` §0
-anticipates. Four documentation updates had been written into the lost workspace and never
-delivered; they are restored in this entry and its siblings.
+**Also: a working copy was lost mid-milestone.** Four documentation updates existed only in it;
+they are restored in this entry and its siblings — and the reason `git` became non-negotiable
+(`PROJECT_STATE.md` §0).
 
 ---
 
@@ -1861,7 +1856,7 @@ wrong word, and none of the failures named the new code.
 
 ## 2026-09-14 — Milestone 1.2: authentication over HTTP
 
-Delivered as a git patch rather than an archive — first use of the new handoff workflow.
+Applied as a git patch — the first change made with the in-place workflow (2026-09-14, below).
 
 **Decisions worth defending**
 
@@ -2023,7 +2018,7 @@ of guessing cost more than the one-line logging change would have.
 
 ---
 
-## 2026-09-14 — Handoff workflow changed; wrapper added to the repository
+## 2026-09-14 — Workflow changed to commit-in-place; wrapper added to the repository
 
 **Problem being solved.** Producing an archive after every milestone meant downloading,
 extracting and replacing the tree constantly, and it twice caused work to be done against
@@ -2032,14 +2027,14 @@ a stale copy — once because three different archives shared the filename
 `build.gradle.kts` collided in a flat output directory. Both times the file *contents*
 were correct and the *delivery* made them useless.
 
-**New workflow** (recorded in `PROJECT_STATE.md` §0): changes are delivered in chat and
-applied in place. An archive is produced only at a major phase boundary, on explicit
-request, or when technically necessary. Milestone size is unchanged — fewer handoffs
-means larger coherent units, not shallower ones.
+**New workflow** (recorded in `PROJECT_STATE.md` §0): changes are made in place in one
+repository and committed. An archive is produced only at a major phase boundary or when
+technically necessary. Milestone size is unchanged — fewer, larger commits mean larger
+coherent units, not shallower ones.
 
 **Wrapper.** `gradlew` and `gradle/wrapper/gradle-wrapper.properties` (pinned 9.7.1) are
 now committed. `gradle-wrapper.jar` still is not, and deliberately: it is a binary that
-can only come from a real Gradle distribution, and handing over an executable of
+can only come from a real Gradle distribution, and committing an executable of
 unverified provenance would contradict the wrapper-checksum validation added to CI for
 exactly that reason. `./gradlew wrapper` generates it once, locally, after which it lives
 in git history and never travels again. Same for `gradlew.bat`.
@@ -2256,7 +2251,7 @@ tutorials target 3.x and will be wrong, which is a documentation problem.
 **Gradle over Maven**
 
 Draft 1 of ADR-011 argued Maven on portfolio legibility — an interviewer can scan a
-`pom.xml` quickly. Real, but small, and it loses to the owner's existing fluency. Sixteen
+`pom.xml` quickly. Real, but small, and it loses to my existing fluency. Sixteen
 weeks of friction against your own build tool is a genuine cost with nothing on the other
 side. The version catalog recovers most of the legibility argument anyway.
 

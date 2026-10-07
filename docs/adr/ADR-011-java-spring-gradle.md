@@ -58,8 +58,8 @@ not an engineering one.
 ## Rationale — Gradle over Maven
 
 Draft 1 argued Maven on *portfolio legibility*: an interviewer can scan a `pom.xml` in
-ten seconds. That argument is real but small, and it loses to the project owner's
-existing fluency. Sixteen weeks of friction against your own build tool is a genuine
+ten seconds. That argument is real but small, and it loses to existing fluency
+with Gradle. Sixteen weeks of friction against your own build tool is a genuine
 cost with no offsetting benefit, and Gradle is not exotic in Java shops.
 
 Using the Kotlin DSL with a **version catalog** (`gradle/libs.versions.toml`): versions
@@ -145,7 +145,7 @@ the friction?" and the answer turned out to be "the old version is unsupported,"
 no amount of reasoning about friction would have surfaced. Checking the support timeline
 should be the *first* step in a framework-version decision, not a detail.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Why Spring Boot 4?"
 **A:** Because 3.x went end-of-life in June 2026 — 3.5 was the last of the line and

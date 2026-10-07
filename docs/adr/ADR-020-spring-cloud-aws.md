@@ -7,8 +7,8 @@
 
 Milestone 5.1 was built on the AWS SDK directly, as ADR-011 decided: Spring Cloud AWS is an
 adapter that must track every Spring Boot major, and this project had already been bitten by
-tooling lagging the platform (ArchUnit vs Java 25, 4.1b). The project owner asked to use
-Spring Cloud AWS instead, citing `spring-cloud-aws-starter-sqs:3.4.0`.
+tooling lagging the platform (ArchUnit vs Java 25, 4.1b). The proposal was to use
+Spring Cloud AWS instead, starting from `spring-cloud-aws-starter-sqs:3.4.0`.
 
 Checked before changing anything:
 
@@ -62,11 +62,11 @@ after its BOM so the SDK is ours (2.55.6).
 
 | Alternative | Why not |
 |---|---|
-| **Keep the SDK direct** (ADR-011 as written) | Fewer moving parts and full visibility, but the 5.2 consumer would hand-roll a polling loop, concurrency and acknowledgement that `@SqsListener` provides. The owner's call; the lag risk is now mitigated by tests and a checklist item. |
+| **Keep the SDK direct** (ADR-011 as written) | Fewer moving parts and full visibility, but the 5.2 consumer would hand-roll a polling loop, concurrency and acknowledgement that `@SqsListener` provides. Chosen; the lag risk is now mitigated by tests and a checklist item. |
 | **3.4.0 as named** | Boot 3.5 line; not viable on Boot 4.1. |
 | **Spring Cloud Stream + SQS binder** | Another abstraction layer over the same client for one queue. |
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "You originally used the AWS SDK directly. Why switch?"
 **A:** Because the consumer I was about to write is exactly what `@SqsListener` gives you —

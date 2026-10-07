@@ -47,7 +47,7 @@ solved more cheaply.
   10 MB world would need deltas. The decision is domain-specific and should be presented
   as such.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How do clients recover missed messages?"
 **A:** They don't — they resync. On reconnect the server sends a full snapshot and the

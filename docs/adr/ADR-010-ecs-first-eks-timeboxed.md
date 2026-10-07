@@ -55,7 +55,7 @@ load-balancing decisions that are the point of Phase 7.
   `DEPLOYMENT.md`. A forgotten `terraform apply` is the single most likely way this
   project costs real money.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Is your system deployed on AWS?"
 **A:** There's a permanently-running demo on a t3.small, and a full Terraform stack —

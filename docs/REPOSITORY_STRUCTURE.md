@@ -7,7 +7,6 @@ chess-platform/
 ├── ARCHITECTURE.md            the design
 ├── ROADMAP.md                 phases, budgets, definitions of done
 ├── DEVELOPMENT_LOG.md         chronological record
-├── INTERVIEW_NOTES.md         rehearsal script
 ├── SETUP.md  DEPLOYMENT.md  TROUBLESHOOTING.md
 │
 ├── docs/
@@ -15,6 +14,7 @@ chess-platform/
 │   ├── api/                   OpenAPI spec (Phase 1)
 │   ├── diagrams/              Mermaid sources
 │   ├── perf/                  k6 reports — the ONLY source of performance claims
+│   ├── design-qa.md           design questions, answered
 │   └── REPOSITORY_STRUCTURE.md
 │
 ├── settings.gradle.kts        single build; frontend stays outside Gradle

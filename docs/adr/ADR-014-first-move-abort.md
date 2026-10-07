@@ -75,7 +75,7 @@ same move accepted or refused according to a one-second scheduling race.
 - Metrics: `chess.game.aborts` (games aborted), `chess.move.late_first_moves` (moves refused
   because the window had closed).
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How do you stop someone farming rating with a second account?"
 **A:** The cheapest loop — challenge, instantly resign, repeat — is closed structurally: until

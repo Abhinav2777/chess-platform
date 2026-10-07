@@ -56,7 +56,7 @@ column.
 - A concurrency integration test (N threads, one ply, real Postgres) proves exactly one
   commit. This test is the evidence for the whole ADR.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How do you handle two players moving at the same time?"
 **A:** In chess only one side can legally move at a time, so simultaneous submissions

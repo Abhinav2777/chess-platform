@@ -64,7 +64,7 @@ The matchmaker publishes `MatchFound` (an application event — `realtime` depen
 across instances and sends `MATCH_FOUND` to the player's sockets. Pub/sub is
 fire-and-forget, so the match is also kept in `mm:match:{userId}` for 60 s: a re-seek
 returns it, and a reconnecting socket is told it after `AUTH_OK`. Same shape as ADR-007 —
-push for latency, pull for correctness. Chosen over status polling by the project owner for
+push for latency, pull for correctness. Chosen over status polling for
 UX and real-time depth, at ~2–3 h extra.
 
 ### Game state read cache: not built
@@ -72,7 +72,7 @@ UX and real-time depth, at ~2–3 h extra.
 The roadmap listed a `game:{id}:state` cache. Game reads are primary-key lookups (sub-ms
 at this scale), the move pipeline must read PostgreSQL anyway for the optimistic lock, and
 a cache adds invalidation risk to the most correctness-critical path. Revisit only if Phase
-9 load tests show read pressure. Decided with the project owner, 2026-09-28.
+9 load tests show read pressure. Decided 2026-09-28.
 
 ## Correction, 2026-09-30 — a seek racing its own pairing
 
@@ -139,7 +139,7 @@ sleeping); nearest rating wins; lapsed heartbeat evicted; crash between claim an
 recovered; and **20 players × 2 concurrent seeks against 4 concurrent matchmakers → exactly
 10 games, every player in exactly one, nothing left in Valkey.**
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Two matchmaker instances run at once. How do you stop a player being paired twice?"
 **A:** Pairing is a Lua script. Valkey runs scripts one at a time, so "pick two players and
