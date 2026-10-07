@@ -10,7 +10,7 @@
 Phase 8's done-when: *a rolling deploy under live games causes reconnects but zero lost games or
 corrupted clocks — demonstrated with a k6 run across the deploy.*
 
-Owner's decisions (2026-10-01): **kind only** — no EKS window (it would mostly repeat what ECS
+Decisions (2026-10-01): **kind only** — no EKS window (it would mostly repeat what ECS
 proved in Phase 7; IRSA is the task-role idea again; the ~4–6 h go to Phases 9–10) — and
 **Kustomize** for manifests (built into kubectl; the roadmap skips authoring Helm charts).
 
@@ -110,7 +110,7 @@ SIGTERM).
 **Recorded honestly:** the re-send path was never exercised (no move in flight at a cut); the HPA
 had scaled to 4 pods before the measured run; cluster and generator share one host.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "What happens to open WebSockets when you deploy?"
 **A:** Spring's graceful shutdown doesn't cover them — an upgraded socket isn't an in-flight

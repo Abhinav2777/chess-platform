@@ -52,7 +52,7 @@ test in the suite still passes.
 That is worth more than the reasoning above, because the failure it guards against is the
 silent kind: nothing throws, nothing logs, and one player's board simply stops updating.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Spring has STOMP support built in. Why write your own protocol?"
 **A:** Spring's simple STOMP broker is in-memory per JVM, so it doesn't fan out across

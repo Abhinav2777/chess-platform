@@ -139,7 +139,7 @@ than it gets.
 - **The 250-game run was not 500 concurrent sockets.** With a 600 s ramp and 120 s of play, games
   finished long before the last one started: about 250 × 120 / 600 ≈ **50 concurrent games**. It
   shows 500 sign-ups at about 0.8/s with zero failures, at the same concurrency as the 50-game run.
-  A run with play longer than the ramp would have measured 500 concurrent sockets. **The owner chose
+  A run with play longer than the ramp would have measured 500 concurrent sockets. **I chose
   to stop there** (cost and time). **Fargate is measured to ~100 concurrent sockets; the
   1,000-socket figure exists only for kind** (`baseline.md`).
 - **The hashing queue is too deep for this hardware.** In the 50-game run, registrations waited up

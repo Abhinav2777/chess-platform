@@ -117,7 +117,7 @@ on kind, tracing, load testing, a security review and failure drills.
 | [`ROADMAP.md`](ROADMAP.md) | Phases, time budgets, definitions of done |
 | [`SETUP.md`](SETUP.md) · [`DEPLOYMENT.md`](DEPLOYMENT.md) | Local development · AWS and Kubernetes, with the destroy checklist |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Problems met, and how they were resolved |
-| [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | The questions this project should let its author answer |
+| [`docs/design-qa.md`](docs/design-qa.md) | Design questions the system raises — trade-offs, failures, limits — answered |
 | [`DEVELOPMENT_LOG.md`](DEVELOPMENT_LOG.md) | Chronological record of work and decisions |
 
 ## A note on numbers

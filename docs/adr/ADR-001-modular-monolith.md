@@ -59,7 +59,7 @@ Fixed: ArchUnit 1.5.1; token verification via `IdentityFacade.verifyAccessToken`
 the rule was mutation-checked (a planted violation fails it). The decision stands; the
 claim that it was enforced did not, until now.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Why isn't this microservices?"
 **A:** Extraction is justified by an independent scaling need, an independent

@@ -94,7 +94,7 @@ scoped repository is a bad trade.
   explains why, because an unexplained third-party repository in a build file is exactly
   the thing a security reviewer should flag.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "I see a JitPack repository in your build. Isn't that a supply-chain risk?"
 **A:** It is, and it's why it's scoped rather than just added. chesslib is only

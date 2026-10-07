@@ -1,7 +1,7 @@
 # The cost alarm. First in the stack and first in DEPLOYMENT.md, because every other mistake in
 # this project is survivable if someone hears about it within a day.
 #
-# The owner created this budget by hand before any Terraform existed (the right order), so it
+# This budget was created by hand before any Terraform existed (the right order), so it
 # is adopted with `terraform import`, not recreated. The name is part of the budget's identity:
 # changing it replaces the budget.
 resource "aws_budgets_budget" "monthly" {

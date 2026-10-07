@@ -47,7 +47,7 @@ decision: see **ADR-012**.
   positions (initial, Kiwipete, position 3–5) against published node counts. If the
   counts match, move generation is correct. This is ~2 hours and it is not optional.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Why didn't you write the chess engine yourself?"
 **A:** Because the interesting problem in this system isn't chess, it's making a

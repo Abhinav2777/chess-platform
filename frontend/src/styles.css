@@ -1,4 +1,4 @@
-/* Design tokens — a calm dark theme, one accent, the board as the hero (owner's choice:
+/* Design tokens — a calm dark theme, one accent, the board as the hero (the brief:
    "modern dark, lichess-like"). Every colour on the page comes from here. */
 :root {
   --bg: #161512;

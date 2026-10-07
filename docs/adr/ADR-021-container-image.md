@@ -83,7 +83,7 @@ goes to die. Waiting for Temurin: blocks every merge for an unknown number of da
 | **Copy a CI-built jar into a single-stage image** | Faster in CI (no second Gradle run), but the image then depends on the build environment; `docker build` alone would not reproduce it. |
 | **Alpine JRE** | ~40 MB smaller; musl vs Netty's glibc native transport. |
 | **Distroless / `jlink` custom runtime** | ~80 MB instead of ~310 MB base and fewer CVE surfaces. Worth doing if image pull time or scan noise matters — recorded, not built. |
-| **Buildpacks (`bootBuildImage`)** | Good defaults, less control and less to explain; the Dockerfile is the interview artifact. |
+| **Buildpacks (`bootBuildImage`)** | Good defaults, less control and less to explain; the Dockerfile is the artifact worth being able to explain. |
 | **Separate images per role** | Three artifacts to version and scan for one codebase; ADR-001 decided otherwise. |
 | **Migrate on application startup only** | Couples schema change to rollout; many replicas race for the Flyway lock; failure happens mid-deploy. |
 
@@ -94,7 +94,7 @@ goes to die. Waiting for Temurin: blocks every merge for an unknown number of da
 - The worker serves HTTP only for probes; nothing routes player traffic to it.
 - Exit code 143 on normal shutdown: noted for Phase 7 task definitions / Phase 8 probes.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "Walk me through your Dockerfile."
 **A:** Multi-stage: a JDK build stage where dependencies get their own layer before the

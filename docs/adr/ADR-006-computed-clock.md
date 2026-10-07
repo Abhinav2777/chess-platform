@@ -100,7 +100,7 @@ A skewed `Clock` bean cannot catch a bare `Instant.now()`, which reads the OS cl
 class of leak is closed by construction (the parameter) and by review, not by the skew
 test.
 
-## Interview angle
+## Questions this decision raises
 
 **Q:** "How does your chess clock work?"
 **A:** It doesn't tick. I store each player's remaining milliseconds, the timestamp of

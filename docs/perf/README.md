@@ -2,8 +2,8 @@
 
 **This directory is the only legitimate source of performance numbers in this project.**
 
-If a figure appears in the README, in `ARCHITECTURE.md`, on a resume bullet, or in an
-interview answer, it must trace back to a file here — or be explicitly labelled an
+If a figure appears in the README, in `ARCHITECTURE.md`, or anywhere the project is described,
+it must trace back to a file here — or be explicitly labelled an
 estimate.
 
 Each report must state:
